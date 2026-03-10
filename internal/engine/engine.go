@@ -7,6 +7,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -31,7 +32,11 @@ func OrchestrateScan(profile *models.Profile) {
 	}
 
 	database.DB.Model(&p).Update("is_scanning", true)
-	defer database.DB.Model(&p).Update("is_scanning", false)
+	events.Broadcast("profile_update", p.ID.String(), nil)
+	defer func() {
+		database.DB.Model(&p).Update("is_scanning", false)
+		events.Broadcast("profile_update", p.ID.String(), nil)
+	}()
 
 	log.Printf("======================")
 	log.Printf("[+] INITIATING SCAN PIPELINE for Profile: %s", profile.Domain)
@@ -127,6 +132,10 @@ func OrchestrateScan(profile *models.Profile) {
 	newHosts := diffHosts(&profile.ID, hosts)
 	newVulns := diffVulns(&profile.ID, vulns)
 	newSecrets := diffSecrets(&profile.ID, secrets)
+
+	if newSubdomains > 0 || newHosts > 0 || newVulns > 0 || newSecrets > 0 {
+		events.Broadcast("discovery_update", profile.ID.String(), nil)
+	}
 
 	log.Printf("======================")
 	log.Printf("[+] PIPELINE COMPLETE for %s", profile.Domain)

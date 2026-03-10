@@ -20,6 +20,7 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/engine"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
 )
@@ -56,6 +57,11 @@ func StartServer(port int, s *scheduler.Scheduler) {
 			r.Get("/subdomains", getProfileSubdomains)
 			r.Get("/secrets", getProfileSecrets)
 		})
+	})
+
+	r.Route("/api/events", func(r chi.Router) {
+		r.Use(authMiddleware)
+		r.Get("/", handleEvents)
 	})
 
 	addr := fmt.Sprintf(":%d", port)
@@ -127,6 +133,40 @@ func authMiddleware(next http.Handler) http.Handler {
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func handleEvents(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	broker := events.GetBroker()
+	clientChan := broker.Subscribe()
+	defer broker.Unsubscribe(clientChan)
+
+	// Keep alive immediately
+	fmt.Fprintf(w, ": keep-alive\n\n")
+	flusher.Flush()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return // Client disconnected
+		case e := <-clientChan:
+			msg, err := json.Marshal(e)
+			if err == nil {
+				fmt.Fprintf(w, "data: %s\n\n", msg)
+				flusher.Flush()
+			}
+		}
+	}
 }
 
 func handleLogin(w http.ResponseWriter, r *http.Request) {
