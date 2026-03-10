@@ -245,6 +245,22 @@
             const tr = document.createElement('tr');
             tr.id = `row-profile-${p.ID}`;
             tr.className = "hover:bg-slate-800/30 transition-colors group animate-fade-in";
+            
+            let statusHtml = p.IsScanning ? 
+                `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 ring-1 ring-inset ring-amber-500/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                    Scanning
+                </span>` : 
+                `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
+                    Idle
+                </span>`;
+
+            let actionHtml = '';
+            if (!p.IsScanning) {
+                actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors">Scan Now</button> `;
+            }
+            actionHtml += `<button onclick="deleteTarget('${p.ID}')" class="text-xs bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded transition-colors">Delete</button>`;
+
             tr.innerHTML = `
                 <td class="p-4 text-slate-400">#${p.ID}</td>
                 <td class="p-4 font-medium text-slate-200">${p.Domain}</td>
@@ -255,14 +271,39 @@
                     </button>
                 </td>
                 <td class="p-4">
-                    <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">Idle</span>
+                    ${statusHtml}
                 </td>
                 <td class="p-4 flex gap-2 justify-end opacity-60 group-hover:opacity-100 transition-opacity">
-                    <button onclick="forceScan('${p.ID}')" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors">Scan Now</button>
-                    <button onclick="deleteTarget('${p.ID}')" class="text-xs bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded transition-colors">Delete</button>
+                    ${actionHtml}
                 </td>
             `;
             tbody.appendChild(tr);
+        }
+
+        async function refreshProfiles() {
+            try {
+                const res = await fetch('/api/profiles');
+                if (!res.ok) throw new Error("Failed to fetch profiles");
+                const profiles = await res.json();
+                
+                const tbody = document.getElementById('targets-tbody');
+                tbody.innerHTML = '';
+                
+                if (!profiles || profiles.length === 0) {
+                    document.getElementById('targets-empty').classList.remove('hidden');
+                } else {
+                    document.getElementById('targets-empty').classList.add('hidden');
+                    profiles.forEach(p => renderTargetRow(p));
+                }
+                
+                const countBadge = document.getElementById('target-count');
+                if(countBadge) {
+                    countBadge.innerText = `${profiles ? profiles.length : 0} Total`;
+                }
+
+            } catch (err) {
+                console.error("Error refreshing profiles:", err);
+            }
         }
 
         async function deleteTarget(id) {
@@ -472,6 +513,32 @@
                 console.error("Logout failed:", err);
             }
         }
+
+        // --- SSE Listener Setup ---
+        const sse = new EventSource('/api/events');
+        let discoveryTimeout = null;
+
+        sse.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
+                if (data.type === 'profile_update') {
+                    refreshProfiles();
+                } else if (data.type === 'discovery_update') {
+                    if (currentProfileId == data.profile_id) {
+                        clearTimeout(discoveryTimeout);
+                        discoveryTimeout = setTimeout(() => {
+                            fetchDiscoveries();
+                        }, 1000);
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to parse SSE event", e);
+            }
+        };
+
+        sse.onerror = (error) => {
+            console.error("SSE Error:", error);
+        };
     </script>
 </body>
 </html>
