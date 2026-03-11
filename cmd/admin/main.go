@@ -22,6 +22,7 @@ func main() {
 	userCmd := flag.NewFlagSet("create", flag.ExitOnError)
 	username := userCmd.String("username", "", "Username for the admin")
 	password := userCmd.String("password", "", "Password for the admin")
+	dbPathFlag := userCmd.String("db-path", "", "Path to the database file")
 
 	switch os.Args[1] {
 	case "create":
@@ -31,16 +32,15 @@ func main() {
 			os.Exit(1)
 		}
 
-		dbPath := "icevirtue.db"
-		if _, err := os.Stat("../../go.mod"); err == nil {
-			dbPath = filepath.Join("..", "..", "icevirtue.db")
-		} else if _, err := os.Stat("go.mod"); err == nil {
-			dbPath = "icevirtue.db" 
+		var dbPath string
+		if *dbPathFlag != "" {
+			dbPath = *dbPathFlag
 		} else {
-			ex, err := os.Executable()
-			if err == nil {
-				dbPath = filepath.Join(filepath.Dir(ex), "icevirtue.db")
+			cwd, err := os.Getwd()
+			if err != nil {
+				log.Fatalf("[-] Failed to get current working directory: %v", err)
 			}
+			dbPath = filepath.Join(cwd, "icevirtue.db")
 		}
 
 		err := database.InitDatabase(dbPath)
