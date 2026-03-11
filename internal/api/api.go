@@ -292,7 +292,20 @@ func deleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := database.DB.Delete(&models.Profile{}, id).Error; err != nil {
+	var profile models.Profile
+	if err := database.DB.First(&profile, id).Error; err != nil {
+		http.Error(w, "profile not found", http.StatusNotFound)
+		return
+	}
+
+	// Delete related child records first to ensure we don't leave orphaned data
+	database.DB.Where("profile_id = ?", id).Delete(&models.Subdomain{})
+	database.DB.Where("profile_id = ?", id).Delete(&models.AliveHost{})
+	database.DB.Where("profile_id = ?", id).Delete(&models.Vulnerability{})
+	database.DB.Where("profile_id = ?", id).Delete(&models.SecretFinding{})
+
+	// Hard delete the profile itself
+	if err := database.DB.Unscoped().Delete(&profile).Error; err != nil {
 		http.Error(w, "failed to delete profile: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
