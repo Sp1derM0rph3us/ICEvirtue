@@ -33,7 +33,13 @@ func (s *Scheduler) Start() error {
 	for _, p := range profiles {
 		profile := p
 		
-		_, err := s.Cron.AddFunc(profile.Schedule, func() {
+		cronExpr, err := ParseSchedule(profile.Schedule)
+		if err != nil {
+			log.Printf("[-] Failed to parse schedule for profile %s: %v", profile.Domain, err)
+			continue
+		}
+
+		_, err = s.Cron.AddFunc(cronExpr, func() {
 			log.Printf("[*] [Target: %s] Triggering scheduled scan mode: %s", profile.Domain, profile.Mode)
 			engine.OrchestrateScan(&profile)
 		})
@@ -41,7 +47,7 @@ func (s *Scheduler) Start() error {
 		if err != nil {
 			log.Printf("[-] Failed to schedule profile %s: %v", profile.Domain, err)
 		} else {
-			log.Printf("[+] Scheduled %s with interval: %s", profile.Domain, profile.Schedule)
+			log.Printf("[+] Scheduled %s with interval: %s (Parsed: %s)", profile.Domain, profile.Schedule, cronExpr)
 		}
 	}
 	
@@ -72,7 +78,14 @@ func (s *Scheduler) Sync() error {
 
 	for _, p := range profiles {
 		profile := p
-		_, err := s.Cron.AddFunc(profile.Schedule, func() {
+
+		cronExpr, err := ParseSchedule(profile.Schedule)
+		if err != nil {
+			log.Printf("[-] Failed to parse schedule for sync on profile %s: %v", profile.Domain, err)
+			continue
+		}
+
+		_, err = s.Cron.AddFunc(cronExpr, func() {
 			log.Printf("[*] [Target: %s] Triggering scheduled scan mode: %s", profile.Domain, profile.Mode)
 			engine.OrchestrateScan(&profile)
 		})
@@ -80,7 +93,7 @@ func (s *Scheduler) Sync() error {
 		if err != nil {
 			log.Printf("[-] Failed to schedule profile %s: %v", profile.Domain, err)
 		} else {
-			log.Printf("[+] Synchronized schedule for %s with interval: %s", profile.Domain, profile.Schedule)
+			log.Printf("[+] Synchronized schedule for %s with interval: %s (Parsed: %s)", profile.Domain, profile.Schedule, cronExpr)
 		}
 	}
 

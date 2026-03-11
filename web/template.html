@@ -51,11 +51,37 @@
                 <form id="form-add-target" class="flex gap-4 items-end">
                     <div class="flex-grow">
                         <label class="block text-sm text-slate-400 mb-1">Domain URL</label>
-                        <input type="text" id="input-domain" required placeholder="example.com" class="w-full bg-slate-800 border-none rounded p-2.5 text-white focus:ring-2 focus:ring-accent outline-none">
+                        <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="example.com" class="w-full bg-slate-800 border-none rounded p-2.5 text-white focus:ring-2 focus:ring-accent outline-none">
                     </div>
-                    <div class="w-48">
-                        <label class="block text-sm text-slate-400 mb-1">Schedule (Cron)</label>
-                        <input type="text" id="input-schedule" required value="@every 12h" class="w-full bg-slate-800 border-none rounded p-2.5 text-white focus:ring-2 focus:ring-accent outline-none">
+                    <div class="w-auto">
+                        <label class="block text-sm text-slate-400 mb-1">Schedule</label>
+                        <div class="flex items-center gap-1.5 bg-slate-800 rounded p-1.5 focus-within:ring-2 focus-within:ring-accent w-max h-[44px]">
+                            <span class="text-slate-400 text-sm pl-2">every</span>
+                            <select id="sched-freq" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                                <option value="day">Day</option>
+                                <option value="month">Month</option>
+                                <option value="year">Year</option>
+                            </select>
+                            <span class="text-slate-400 text-sm pl-1">at</span>
+                            <select id="sched-hour" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                                <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                            </select>
+                            <span class="text-slate-400 text-sm font-bold">:</span>
+                            <select id="sched-min" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer"></select>
+                            <script>
+                                const minSel = document.getElementById('sched-min');
+                                for(let i=0; i<60; i++) {
+                                    let v = i.toString().padStart(2, '0');
+                                    let opt = document.createElement('option');
+                                    opt.value = v; opt.text = v;
+                                    minSel.appendChild(opt);
+                                }
+                            </script>
+                            <select id="sched-ampm" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                                <option value="AM">AM</option>
+                                <option value="PM">PM</option>
+                            </select>
+                        </div>
                     </div>
                     <div>
                         <button type="submit" class="bg-accent hover:bg-sky-500 text-slate-900 font-bold py-2.5 px-6 rounded transition-colors shadow-lg shadow-sky-500/30">
@@ -88,7 +114,7 @@
                                 <td class="p-4 font-medium text-slate-200">{{.Domain}}</td>
                                 <td class="p-4 text-sm text-slate-400 group/sched relative">
                                     <code id="schedule-text-{{.ID}}" class="bg-slate-900 px-2 py-1 rounded">{{.Schedule}}</code>
-                                    <button onclick="editSchedule('{{.ID}}', '{{.Schedule}}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
+                                    <button onclick="editSchedule('{{.ID}}', '{{.Domain}}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
                                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                                     </button>
                                 </td>
@@ -184,10 +210,131 @@
                         </tbody>
                     </table>
                 </div>
+
+                <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full h-full bg-slate-900/50">
+                    <!-- Sub-dashboard Header -->
+                    <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80 sticky top-0 z-20">
+                        <div class="flex items-center gap-4">
+                            <button onclick="closeSubDashboard()" class="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm font-medium bg-slate-700/50 hover:bg-slate-700 px-3 py-1.5 rounded">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+                                Back
+                            </button>
+                            <div class="h-6 w-px bg-slate-600"></div>
+                            <div>
+                                <h3 id="sub-dash-title" class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                    Subdomain
+                                </h3>
+                                <div id="sub-dash-ip" class="text-xs text-accent font-mono mt-0.5">IP: Unknown</div>
+                            </div>
+                        </div>
+                        <div class="bg-slate-900/80 p-1 rounded-lg flex gap-1 border border-slate-700/50 shadow-inner">
+                            <button id="sub-tab-vulns" onclick="switchSubDashboardTab('vulns')" class="px-3 py-1 rounded text-xs font-semibold bg-accent text-slate-900 shadow transition-all">Vulnerabilities</button>
+                            <button id="sub-tab-dirs" onclick="switchSubDashboardTab('dirs')" class="px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">Directories</button>
+                            <button id="sub-tab-secs" onclick="switchSubDashboardTab('secs')" class="px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">Secrets</button>
+                        </div>
+                    </div>
+
+                    <!-- Sub-dashboard Content Area -->
+                    <div class="flex-grow overflow-auto relative p-4">
+                        
+                        <!-- Vulnerabilities Tab -->
+                        <div id="sub-content-vulns" class="block">
+                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
+                                <thead class="bg-slate-800/80">
+                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
+                                        <th class="p-3 font-medium w-32">Severity</th>
+                                        <th class="p-3 font-medium">Vulnerability Name</th>
+                                        <th class="p-3 font-medium">Template ID</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-sub-vulns" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Directories Tab (Placeholder) -->
+                        <div id="sub-content-dirs" class="hidden">
+                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
+                                <thead class="bg-slate-800/80">
+                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
+                                        <th class="p-3 font-medium w-32">Status</th>
+                                        <th class="p-3 font-medium">Directory URL</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-sub-dirs" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                </tbody>
+                            </table>
+                        </div>
+
+                        <!-- Secrets Tab -->
+                        <div id="sub-content-secs" class="hidden">
+                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
+                                <thead class="bg-slate-800/80">
+                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
+                                        <th class="p-3 font-medium w-1/4">Type</th>
+                                        <th class="p-3 font-medium w-1/2">Secret Value</th>
+                                        <th class="p-3 font-medium w-1/4">Source File</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbody-sub-secs" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                </tbody>
+                            </table>
+                        </div>
+
+                    </div>
+                </div>
             </div>
         </section>
 
     </main>
+
+    <!-- Edit Schedule Modal -->
+    <div id="modal-edit-schedule" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50 animate-fade-in">
+        <div class="bg-card w-full max-w-md p-6 rounded-xl shadow-2xl border border-slate-700 mx-4">
+            <h3 class="text-xl font-semibold text-slate-200 mb-4">Edit Target Schedule</h3>
+            <p id="edit-schedule-domain" class="text-sm text-slate-400 mb-6 tracking-wide"></p>
+            
+            <form id="form-edit-schedule" class="space-y-6">
+                <input type="hidden" id="edit-schedule-id">
+                
+                <div>
+                    <label class="block text-sm text-slate-400 mb-2">New Schedule</label>
+                    <div class="flex items-center gap-1.5 bg-slate-800 rounded p-2 focus-within:ring-2 focus-within:ring-accent w-full justify-between">
+                        <span class="text-slate-400 text-sm pl-2">every</span>
+                        <select id="edit-sched-freq" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                            <option value="day">Day</option>
+                            <option value="month">Month</option>
+                            <option value="year">Year</option>
+                        </select>
+                        <span class="text-slate-400 text-sm pl-1">at</span>
+                        <select id="edit-sched-hour" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                            <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                        </select>
+                        <span class="text-slate-400 text-sm font-bold">:</span>
+                        <select id="edit-sched-min" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer"></select>
+                        <script>
+                            const editMinSel = document.getElementById('edit-sched-min');
+                            for(let i=0; i<60; i++) {
+                                let v = i.toString().padStart(2, '0');
+                                let opt = document.createElement('option');
+                                opt.value = v; opt.text = v;
+                                editMinSel.appendChild(opt);
+                            }
+                        </script>
+                        <select id="edit-sched-ampm" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                            <option value="AM">AM</option>
+                            <option value="PM">PM</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="flex justify-end gap-3 mt-8">
+                    <button type="button" onclick="closeEditModal()" class="px-5 py-2 rounded text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">Cancel</button>
+                    <button type="submit" id="btn-save-schedule" class="bg-accent hover:bg-sky-500 text-slate-900 font-bold py-2 px-6 rounded transition-colors shadow-lg shadow-sky-500/30">Save Schedule</button>
+                </div>
+            </form>
+        </div>
+    </div>
 
     <script>
         function switchView(view) {
@@ -214,7 +361,15 @@
             btn.disabled = true;
 
             const domain = document.getElementById('input-domain').value;
-            const schedule = document.getElementById('input-schedule').value;
+            const freq = document.getElementById('sched-freq').value;
+            let hour = parseInt(document.getElementById('sched-hour').value, 10);
+            const min = document.getElementById('sched-min').value;
+            const ampm = document.getElementById('sched-ampm').value;
+
+            if (ampm === "PM" && hour < 12) hour += 12;
+            if (ampm === "AM" && hour === 12) hour = 0;
+            
+            const schedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
 
             try {
                 const res = await fetch('/api/profiles', {
@@ -231,7 +386,6 @@
                 document.getElementById('targets-empty').classList.add('hidden');
                 updateProfileSelect(newProfile);
                 e.target.reset();
-                document.getElementById('input-schedule').value = "@every 12h";
             } catch (err) {
                 alert("Failed to add target: " + err.message);
             } finally {
@@ -266,7 +420,7 @@
                 <td class="p-4 font-medium text-slate-200">${p.Domain}</td>
                 <td class="p-4 text-sm text-slate-400 group/sched relative">
                     <code id="schedule-text-${p.ID}" class="bg-slate-900 px-2 py-1 rounded">${p.Schedule}</code>
-                    <button onclick="editSchedule('${p.ID}', '${p.Schedule}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
+                    <button onclick="editSchedule('${p.ID}', '${p.Domain}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                     </button>
                 </td>
@@ -332,9 +486,39 @@
             }
         }
 
-        async function editSchedule(id, currentSchedule) {
-            const newSchedule = prompt("Enter new target schedule (e.g. @every 24h):", currentSchedule);
-            if (!newSchedule || newSchedule === currentSchedule) return;
+        function editSchedule(id, domain) {
+            document.getElementById('edit-schedule-id').value = id;
+            document.getElementById('edit-schedule-domain').innerText = `Target: ${domain}`;
+            
+            const modal = document.getElementById('modal-edit-schedule');
+            modal.classList.remove('hidden');
+            modal.classList.add('flex');
+        }
+
+        function closeEditModal() {
+            const modal = document.getElementById('modal-edit-schedule');
+            modal.classList.add('hidden');
+            modal.classList.remove('flex');
+            document.getElementById('form-edit-schedule').reset();
+        }
+
+        document.getElementById('form-edit-schedule').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const btn = document.getElementById('btn-save-schedule');
+            const originalText = btn.innerText;
+            btn.innerText = "Saving...";
+            btn.disabled = true;
+
+            const id = document.getElementById('edit-schedule-id').value;
+            const freq = document.getElementById('edit-sched-freq').value;
+            let hour = parseInt(document.getElementById('edit-sched-hour').value, 10);
+            const min = document.getElementById('edit-sched-min').value;
+            const ampm = document.getElementById('edit-sched-ampm').value;
+
+            if (ampm === "PM" && hour < 12) hour += 12;
+            if (ampm === "AM" && hour === 12) hour = 0;
+            
+            const newSchedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
 
             try {
                 const res = await fetch(`/api/profiles/${id}/schedule`, {
@@ -351,14 +535,14 @@
                 if (codeEl) {
                     codeEl.innerText = data.schedule;
                 }
-                
-                const btnEl = codeEl.nextElementSibling;
-                btnEl.setAttribute("onclick", `editSchedule('${id}', '${data.schedule}')`);
-
+                closeEditModal();
             } catch (err) {
                 alert("Failed to update schedule: " + err.message);
+            } finally {
+                btn.innerText = originalText;
+                btn.disabled = false;
             }
-        }
+        });
 
         async function forceScan(id) {
             try {
@@ -380,6 +564,7 @@
 
         let currentDiscTab = 'subs';
         let currentProfileId = null;
+        let currentSubDashboardDomain = null;
 
         function switchDiscTab(tab) {
             currentDiscTab = tab;
@@ -415,17 +600,28 @@
             showLoader(true);
 
             try {
-                const [resSubs, resSecs] = await Promise.all([
+                const [resSubs, resSecs, resHosts, resVulns, resDirs] = await Promise.all([
                     fetch(`/api/profiles/${currentProfileId}/subdomains`),
-                    fetch(`/api/profiles/${currentProfileId}/secrets`)
+                    fetch(`/api/profiles/${currentProfileId}/secrets`),
+                    fetch(`/api/profiles/${currentProfileId}/hosts`),
+                    fetch(`/api/profiles/${currentProfileId}/vulnerabilities`),
+                    fetch(`/api/profiles/${currentProfileId}/directories`)
                 ]);
 
                 window.cachedData = {
                     subs: await resSubs.json() || [],
-                    secs: await resSecs.json() || []
+                    secs: await resSecs.json() || [],
+                    hosts: await resHosts.json() || [],
+                    vulns: await resVulns.json() || [],
+                    dirs: await resDirs.json() || []
                 };
 
-                renderVisibleDiscoveriesTable();
+                // If a sub-dashboard is open, refresh its contents. Otherwise, render the main table.
+                if (currentSubDashboardDomain) {
+                    openSubDashboard(currentSubDashboardDomain);
+                } else {
+                    renderVisibleDiscoveriesTable();
+                }
 
             } catch(err) {
                 console.error(err);
@@ -455,12 +651,17 @@
                 window.cachedData.subs.forEach(s => {
                     const d = new Date(s.FirstSeen).toLocaleDateString();
                     tbody.innerHTML += `
-                        <tr class="hover:bg-slate-800/30 transition-colors">
+                        <tr class="hover:bg-slate-800/30 transition-colors group">
                             <td class="p-4 text-slate-400">#${s.ID}</td>
                             <td class="p-4 font-mono font-medium text-accent">
-                                <a href="http://${s.Domain}" target="_blank" class="hover:underline">${s.Domain}</a>
+                                <button onclick="openSubDashboard('${s.Domain}')" class="hover:underline hover:text-sky-300 text-left">${s.Domain}</button>
                             </td>
-                            <td class="p-4 text-right text-sm text-slate-400">${d}</td>
+                            <td class="p-4 text-right text-sm text-slate-400 flex justify-end items-center gap-4">
+                                <span>${d}</span>
+                                <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-700 hover:bg-slate-600 text-white p-1.5 rounded" title="Visit in browser">
+                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                </a>
+                            </td>
                         </tr>
                     `;
                 });
@@ -488,11 +689,134 @@
             }
         }
 
+        function openSubDashboard(domain) {
+            currentSubDashboardDomain = domain;
+            document.getElementById('table-subs').classList.add('hidden');
+            document.getElementById('table-secs').classList.add('hidden');
+            document.getElementById('sub-dashboard').classList.remove('hidden');
+            document.getElementById('sub-dashboard').classList.add('flex');
+            
+            // Set Titles
+            const titleEl = document.getElementById('sub-dash-title');
+            titleEl.innerHTML = `<span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded text-xs font-mono uppercase tracking-widest mr-2">Target</span> ${domain}`;
+            
+            // Find Associated IP
+            const ipEl = document.getElementById('sub-dash-ip');
+            const hostMatches = window.cachedData.hosts.filter(h => h.URL.includes(domain));
+            if (hostMatches.length > 0 && hostMatches[0].IP) {
+                // Remove duplicates if multiple hosts return same IP
+                const uniqueIPs = [...new Set(hostMatches.map(h => h.IP).filter(ip => ip))];
+                ipEl.innerText = `IP: ${uniqueIPs.join(', ')}`;
+            } else {
+                ipEl.innerText = `IP: Unknown / Resolving`;
+            }
+
+            // Populate Vulnerabilities
+            const tbodyVulns = document.getElementById('tbody-sub-vulns');
+            tbodyVulns.innerHTML = '';
+            const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(domain));
+            
+            if (subVulns.length === 0) {
+                tbodyVulns.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-500 bg-slate-800/10">No vulnerabilities detected for this subdomain.</td></tr>';
+            } else {
+                subVulns.forEach(v => {
+                    let sevClass = "bg-slate-500/10 text-slate-400 border-slate-500/20";
+                    if (v.Severity.toLowerCase() === 'critical') sevClass = "bg-red-500/10 text-red-500 border-red-500/30";
+                    else if (v.Severity.toLowerCase() === 'high') sevClass = "bg-orange-500/10 text-orange-500 border-orange-500/30";
+                    else if (v.Severity.toLowerCase() === 'medium') sevClass = "bg-yellow-500/10 text-yellow-500 border-yellow-500/30";
+                    else if (v.Severity.toLowerCase() === 'low') sevClass = "bg-emerald-500/10 text-emerald-500 border-emerald-500/30";
+
+                    tbodyVulns.innerHTML += `
+                        <tr class="hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3"><span class="px-2 py-1 border rounded text-xs font-bold uppercase tracking-wider ${sevClass}">${v.Severity}</span></td>
+                            <td class="p-3 font-medium text-slate-300">${v.Name}</td>
+                            <td class="p-3 font-mono text-xs text-slate-500">${v.TemplateID}</td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // Populate Directories
+            const tbodyDirs = document.getElementById('tbody-sub-dirs');
+            tbodyDirs.innerHTML = '';
+            const subDirs = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(domain));
+            
+            if (subDirs.length === 0) {
+                tbodyDirs.innerHTML = '<tr><td colspan="2" class="p-6 text-center text-slate-500 bg-slate-800/10">No directories found yet. Configure a Wordlist for this profile and ensure Directory Fuzzing has run.</td></tr>';
+            } else {
+                subDirs.forEach(d => {
+                    let statusClass = "bg-slate-500/10 text-slate-400 border-slate-500/20";
+                    if (d.StatusCode === 200) statusClass = "bg-emerald-500/10 text-emerald-500 border-emerald-500/30";
+                    else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = "bg-blue-500/10 text-blue-500 border-blue-500/30";
+                    else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = "bg-orange-500/10 text-orange-500 border-orange-500/30";
+
+                    tbodyDirs.innerHTML += `
+                        <tr class="hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3"><span class="px-2 py-1 border rounded text-xs font-bold tracking-wider ${statusClass}">${d.StatusCode}</span></td>
+                            <td class="p-3 font-mono text-sm"><a href="${d.DirURL}" target="_blank" class="text-sky-400 hover:text-sky-300 hover:underline break-all">${d.DirURL}</a></td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // Populate Secrets
+            const tbodySecs = document.getElementById('tbody-sub-secs');
+            tbodySecs.innerHTML = '';
+            const subSecs = window.cachedData.secs.filter(s => s.SourceURL.includes(domain));
+
+            if (subSecs.length === 0) {
+                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-500 bg-slate-800/10">No secrets found associated with this subdomain.</td></tr>';
+            } else {
+                subSecs.forEach(s => {
+                    tbodySecs.innerHTML += `
+                        <tr class="hover:bg-slate-800/40 transition-colors">
+                            <td class="p-3"><span class="px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold tracking-wider uppercase">${s.SecretType}</span></td>
+                            <td class="p-3 font-mono text-xs text-rose-300 break-all select-all">${s.SecretValue}</td>
+                            <td class="p-3 text-xs"><a href="${s.SourceURL}" target="_blank" class="text-blue-400 hover:text-blue-300 truncate inline-block w-40" title="${s.SourceURL}">File Source &rarr;</a></td>
+                        </tr>
+                    `;
+                });
+            }
+
+            // Default to Vulns Tab when opened
+            switchSubDashboardTab('vulns');
+        }
+
+        function closeSubDashboard() {
+            currentSubDashboardDomain = null;
+            document.getElementById('sub-dashboard').classList.add('hidden');
+            document.getElementById('sub-dashboard').classList.remove('flex');
+            renderVisibleDiscoveriesTable();
+        }
+
+        function switchSubDashboardTab(tab) {
+            const tabs = ['vulns', 'dirs', 'secs'];
+            const activeClass = "px-3 py-1 rounded text-xs font-semibold bg-accent text-slate-900 shadow transition-all";
+            const inactiveClass = "px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all";
+
+            tabs.forEach(t => {
+                const btn = document.getElementById(`sub-tab-${t}`);
+                const content = document.getElementById(`sub-content-${t}`);
+                
+                if (t === tab) {
+                    btn.className = activeClass;
+                    content.classList.remove('hidden');
+                    content.classList.add('block');
+                } else {
+                    btn.className = inactiveClass;
+                    content.classList.remove('block');
+                    content.classList.add('hidden');
+                }
+            });
+        }
+
         function showEmptyState(show) {
             document.getElementById('empty-state').classList.toggle('hidden', !show);
             if(show) {
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
+                document.getElementById('sub-dashboard').classList.add('hidden');
+                document.getElementById('sub-dashboard').classList.remove('flex');
             }
         }
 
@@ -502,6 +826,8 @@
                 showEmptyState(false);
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
+                document.getElementById('sub-dashboard').classList.add('hidden');
+                document.getElementById('sub-dashboard').classList.remove('flex');
             }
         }
 

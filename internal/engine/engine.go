@@ -13,7 +13,9 @@ import (
 
 var Verbose bool
 
-var Wordlist string
+var DnsxList string
+
+var DirectoryList string
 
 var SkipAmass bool
 
@@ -77,8 +79,8 @@ func OrchestrateScan(profile *models.Profile) {
 			log.Printf("[*] [Target: %s] Skipping Amass execution as requested via flags.", profile.Domain)
 		}
 
-		if Wordlist != "" {
-			dnsxSubs, err := RunDnsx(profile, Wordlist)
+		if DnsxList != "" {
+			dnsxSubs, err := RunDnsx(profile, DnsxList)
 			if err != nil {
 				log.Printf("[-] Error in Dnsx Phase: %v", err)
 			} else {
@@ -90,7 +92,7 @@ func OrchestrateScan(profile *models.Profile) {
 				}
 			}
 		} else {
-			log.Printf("[-] Skipping dnsx bruteforce: No --wordlist provided.")
+			log.Printf("[-] Skipping dnsx bruteforce: No --dnsx-list provided.")
 		}
 	}
 
@@ -99,6 +101,11 @@ func OrchestrateScan(profile *models.Profile) {
 		return
 	}
 	
+	newSubdomains := diffSubdomains(&profile.ID, finalSubdomains)
+	if newSubdomains > 0 {
+		events.Broadcast("discovery_update", profile.ID.String(), nil)
+	}
+
 	hosts, err := RunHttpx(profile, finalSubdomains)
 	if err != nil {
 		log.Printf("[-] Critical Error in Httpx Phase: %v", err)
@@ -110,10 +117,39 @@ func OrchestrateScan(profile *models.Profile) {
 		return
 	}
 
+	newHosts := diffHosts(&profile.ID, hosts)
+	if newHosts > 0 {
+		events.Broadcast("discovery_update", profile.ID.String(), nil)
+	}
+
+	var validHosts []models.AliveHost
+	for _, h := range hosts {
+		if h.StatusCode == 200 || h.StatusCode == 301 || h.StatusCode == 302 || h.StatusCode == 307 {
+			validHosts = append(validHosts, h)
+		}
+	}
+
+	// Phase 2: Directory Fuzzing
+	var dirs []models.DirectoryFinding
+	if DirectoryList != "" {
+		dirs, err = RunDirectoryFuzzing(profile, validHosts, DirectoryList)
+		if err != nil {
+			log.Printf("[-] Error in Directory Fuzzing Phase: %v", err)
+		}
+	} else {
+		log.Printf("[-] Skipping directory fuzzing: No --directory-list provided.")
+	}
+
+	newDirs := diffDirectories(&profile.ID, dirs)
+	if newDirs > 0 {
+		events.Broadcast("discovery_update", profile.ID.String(), nil)
+	}
+
+	// Phase 3: Nuclei
 	var vulns []models.Vulnerability
 	if !SkipNuclei {
 		var err error
-		vulns, err = RunNuclei(profile, hosts)
+		vulns, err = RunNuclei(profile, validHosts)
 		if err != nil {
 			log.Printf("[-] Error in Nuclei Phase: %v", err)
 		}
@@ -121,19 +157,19 @@ func OrchestrateScan(profile *models.Profile) {
 		log.Printf("[*] [Target: %s] Skipping Nuclei execution as requested via flags.", profile.Domain)
 	}
 
-	secrets, err := RunSourceReviewPipeline(profile, hosts, finalSubdomains)
+	newVulns := diffVulns(&profile.ID, vulns)
+	if newVulns > 0 {
+		events.Broadcast("discovery_update", profile.ID.String(), nil)
+	}
+
+	// Phase 4: Secrets Hunting
+	secrets, err := RunSourceReviewPipeline(profile, validHosts, finalSubdomains)
 	if err != nil {
 		log.Printf("[-] Error in Source Review Phase: %v", err)
 	}
 
-	log.Printf("[*] Executing Diffing Engine against State Database...")
-	
-	newSubdomains := diffSubdomains(&profile.ID, finalSubdomains)
-	newHosts := diffHosts(&profile.ID, hosts)
-	newVulns := diffVulns(&profile.ID, vulns)
 	newSecrets := diffSecrets(&profile.ID, secrets)
-
-	if newSubdomains > 0 || newHosts > 0 || newVulns > 0 || newSecrets > 0 {
+	if newSecrets > 0 {
 		events.Broadcast("discovery_update", profile.ID.String(), nil)
 	}
 
@@ -141,6 +177,7 @@ func OrchestrateScan(profile *models.Profile) {
 	log.Printf("[+] PIPELINE COMPLETE for %s", profile.Domain)
 	log.Printf("[+] New Subdomains: %d", newSubdomains)
 	log.Printf("[+] New Alive Hosts: %d", newHosts)
+	log.Printf("[+] New Directories: %d", newDirs)
 	log.Printf("[+] New Vulnerabilities: %d", newVulns)
 	log.Printf("[+] New Secrets Found: %d", newSecrets)
 	log.Printf("======================\n")
@@ -188,6 +225,13 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 				log.Printf("[VERBOSE] [*] Old Alive Host: %s", h.URL)
 			}
 			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+			
+			if h.IP != "" && existing.IP != h.IP {
+				database.DB.Model(&existing).Update("IP", h.IP)
+			}
+			if h.StatusCode != 0 && existing.StatusCode != h.StatusCode {
+				database.DB.Model(&existing).Update("StatusCode", h.StatusCode)
+			}
 		}
 	}
 	return newCount
@@ -232,6 +276,31 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 				log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
 			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+		}
+	}
+	return newCount
+}
+
+func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
+	newCount := 0
+	for _, d := range dirs {
+		var existing models.DirectoryFinding
+		result := database.DB.Where("profile_id = ? AND dir_url = ?", *profileID, d.DirURL).First(&existing)
+		
+		if result.Error != nil {
+			if Verbose {
+				log.Printf("[VERBOSE] [+] NEW Directory: %s (%d)", d.DirURL, d.StatusCode)
+			}
+			database.DB.Create(&d)
+			newCount++
+		} else {
+			if Verbose {
+				log.Printf("[VERBOSE] [*] Old Directory: %s", d.DirURL)
+			}
+			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+			if existing.StatusCode != d.StatusCode {
+				database.DB.Model(&existing).Update("StatusCode", d.StatusCode)
+			}
 		}
 	}
 	return newCount

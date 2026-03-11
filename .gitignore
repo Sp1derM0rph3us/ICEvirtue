@@ -33,3 +33,7 @@ go.work.sum
 
 *.db*
 jwt*
+test_*
+tmp_*
+ICEvirtue
+resume.cfg

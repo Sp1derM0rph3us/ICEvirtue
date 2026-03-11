@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"time"
 
@@ -56,6 +57,9 @@ func StartServer(port int, s *scheduler.Scheduler) {
 			r.Post("/scan", forceScanProfile)
 			r.Get("/subdomains", getProfileSubdomains)
 			r.Get("/secrets", getProfileSecrets)
+			r.Get("/hosts", getProfileHosts)
+			r.Get("/vulnerabilities", getProfileVulnerabilities)
+			r.Get("/directories", getProfileDirectories)
 		})
 	})
 
@@ -250,6 +254,13 @@ func createProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "domain and schedule are required", http.StatusBadRequest)
 		return
 	}
+	
+	domainRegex := regexp.MustCompile(`^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
+	if !domainRegex.MatchString(req.Domain) {
+		http.Error(w, "Invalid domain format", http.StatusBadRequest)
+		return
+	}
+
 	if req.Mode == "" {
 		req.Mode = "full"
 	}
@@ -425,6 +436,60 @@ func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 	var secrets []models.SecretFinding
 	database.DB.Where("profile_id = ?", id).Find(&secrets)
 	respondJSON(w, http.StatusOK, secrets)
+}
+
+func getProfileHosts(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	if idParam == "" {
+		http.Error(w, "missing profile id", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		http.Error(w, "invalid UUID format", http.StatusBadRequest)
+		return
+	}
+
+	var hosts []models.AliveHost
+	database.DB.Where("profile_id = ?", id).Find(&hosts)
+	respondJSON(w, http.StatusOK, hosts)
+}
+
+func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	if idParam == "" {
+		http.Error(w, "missing profile id", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		http.Error(w, "invalid UUID format", http.StatusBadRequest)
+		return
+	}
+
+	var vulns []models.Vulnerability
+	database.DB.Where("profile_id = ?", id).Find(&vulns)
+	respondJSON(w, http.StatusOK, vulns)
+}
+
+func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
+	idParam := chi.URLParam(r, "id")
+	if idParam == "" {
+		http.Error(w, "missing profile id", http.StatusBadRequest)
+		return
+	}
+
+	id, err := uuid.Parse(idParam)
+	if err != nil {
+		http.Error(w, "invalid UUID format", http.StatusBadRequest)
+		return
+	}
+
+	var dirs []models.DirectoryFinding
+	database.DB.Where("profile_id = ?", id).Find(&dirs)
+	respondJSON(w, http.StatusOK, dirs)
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
