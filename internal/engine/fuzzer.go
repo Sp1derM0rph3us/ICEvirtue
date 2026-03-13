@@ -13,35 +13,43 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
-func RunDirectoryFuzzing(profile *models.Profile, validHosts []models.AliveHost, wordlistPath string) ([]models.DirectoryFinding, error) {
-	log.Printf("[*] [Target: %s] Starting Phase 2: Directory Fuzzing on %d valid hosts...", profile.Domain, len(validHosts))
+func RunDirectoryFuzzing(profile *models.Profile, validHosts []models.AliveHost, wordlistPaths []string) ([]models.DirectoryFinding, error) {
+	log.Printf("[*] [Target: %s] Starting Phase 2: Directory Fuzzing on %d valid hosts with %d wordlist(s)...", profile.Domain, len(validHosts), len(wordlistPaths))
 
 	if len(validHosts) == 0 {
 		return nil, fmt.Errorf("no valid hosts provided for directory fuzzing")
 	}
 
-	file, err := os.Open(wordlistPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open directory wordlist: %v", err)
-	}
-	defer file.Close()
-
+	seen := make(map[string]bool)
 	var words []string
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		word := strings.TrimSpace(scanner.Text())
-		if word != "" && !strings.HasPrefix(word, "#") {
-			words = append(words, word)
-		}
-	}
 
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading directory wordlist: %v", err)
+	for _, wordlistPath := range wordlistPaths {
+		file, err := os.Open(wordlistPath)
+		if err != nil {
+			log.Printf("[-] Failed to open directory wordlist %s: %v", wordlistPath, err)
+			continue
+		}
+
+		scanner := bufio.NewScanner(file)
+		for scanner.Scan() {
+			word := strings.TrimSpace(scanner.Text())
+			if word != "" && !strings.HasPrefix(word, "#") && !seen[word] {
+				seen[word] = true
+				words = append(words, word)
+			}
+		}
+
+		if err := scanner.Err(); err != nil {
+			log.Printf("[-] Error reading directory wordlist %s: %v", wordlistPath, err)
+		}
+		file.Close()
 	}
 
 	if len(words) == 0 {
-		return nil, fmt.Errorf("directory wordlist is empty")
+		return nil, fmt.Errorf("all directory wordlists are empty or unreadable")
 	}
+
+	log.Printf("[*] [Target: %s] Loaded %d unique words from %d wordlist(s)", profile.Domain, len(words), len(wordlistPaths))
 
 	var findings []models.DirectoryFinding
 	var mu sync.Mutex

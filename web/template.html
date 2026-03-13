@@ -156,7 +156,6 @@
                     <label class="block text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Select Profile</label>
                     <div class="relative">
                         <select id="select-profile" onchange="fetchDiscoveries()" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white appearance-none focus:ring-2 focus:ring-accent outline-none font-medium">
-                            <option value="">-- Choose Target --</option>
                             {{range .Profiles}}
                                 <option value="{{.ID}}">{{.Domain}}</option>
                             {{end}}
@@ -171,6 +170,17 @@
                     <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-4 py-1.5 rounded-md text-sm font-medium bg-slate-600 text-white shadow shadow-black/20 transition-all">Subdomains</button>
                     <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-4 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all">Secrets</button>
                 </div>
+            </div>
+
+            <!-- Filter Bar -->
+            <div id="filter-bar" class="flex items-center gap-2 p-3 bg-card rounded-xl border border-slate-700 shadow-sm shrink-0 flex-wrap">
+                <span class="text-xs text-slate-500 font-semibold uppercase tracking-wider mr-1">Filter:</span>
+                <button onclick="toggleFilter('ip')" id="filter-btn-ip" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">IP Addresses</button>
+                <button onclick="toggleFilter('subdomain')" id="filter-btn-subdomain" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Subdomains</button>
+                <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Critical–Low Vulns</button>
+                <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Info / No Vulns</button>
+                <button onclick="toggleFilter('secrets')" id="filter-btn-secrets" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Has Secrets</button>
+                <button onclick="toggleFilter('updated')" id="filter-btn-updated" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Updated Since First Seen</button>
             </div>
 
             <div class="flex-grow bg-card rounded-xl shadow-md border border-slate-700 overflow-hidden flex flex-col min-h-[400px]">
@@ -190,6 +200,7 @@
                                 <th class="p-4 font-medium w-24">ID</th>
                                 <th class="p-4 font-medium">Discovered Subdomain</th>
                                 <th class="p-4 font-medium text-right">First Seen</th>
+                                <th class="p-4 font-medium text-right">Last Update</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-subs" class="divide-y divide-slate-700/50 text-slate-200">
@@ -350,6 +361,14 @@
             } else {
                 btnD.className = "tab-active pb-1 transition-colors";
                 btnT.className = "tab-inactive pb-1 transition-colors";
+                // Auto-select the first profile if none selected
+                const select = document.getElementById('select-profile');
+                if (!select.value && select.options.length > 0) {
+                    select.value = select.options[0].value;
+                }
+                if (select.value && !currentProfileId) {
+                    fetchDiscoveries();
+                }
             }
         }
 
@@ -470,11 +489,17 @@
                 document.getElementById(`row-profile-${id}`).remove();
                 
                 const select = document.getElementById('select-profile');
+                const wasSelected = (select.value == id);
                 Array.from(select.options).forEach(opt => {
                     if (opt.value == id) opt.remove();
                 });
-                if(select.value == id) {
-                    select.value = "";
+                if (wasSelected) {
+                    // Auto-select the first remaining profile
+                    if (select.options.length > 0) {
+                        select.value = select.options[0].value;
+                    } else {
+                        select.value = "";
+                    }
                     fetchDiscoveries();
                 }
 
@@ -565,9 +590,70 @@
         let currentDiscTab = 'subs';
         let currentProfileId = null;
         let currentSubDashboardDomain = null;
+        let currentFilter = null;
+        const IP_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+        function toggleFilter(filter) {
+            const allBtns = document.querySelectorAll('.filter-pill');
+            const activeClass = 'bg-accent text-slate-900 border-accent';
+            const inactiveClass = 'bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200';
+
+            if (currentFilter === filter) {
+                currentFilter = null;
+                allBtns.forEach(b => { b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${inactiveClass}`; });
+            } else {
+                currentFilter = filter;
+                allBtns.forEach(b => { b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${inactiveClass}`; });
+                const active = document.getElementById(`filter-btn-${filter}`);
+                if (active) active.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${activeClass}`;
+            }
+
+            if (currentProfileId && !currentSubDashboardDomain) {
+                renderVisibleDiscoveriesTable();
+            }
+        }
+
+        function applyFilter(subs) {
+            if (!currentFilter || !window.cachedData) return subs;
+
+            return subs.filter(s => {
+                const isIP = IP_REGEX.test(s.Domain);
+
+                switch (currentFilter) {
+                    case 'ip':
+                        return isIP;
+                    case 'subdomain':
+                        return !isIP;
+                    case 'vuln-critical': {
+                        const sevLevels = ['critical', 'high', 'medium', 'low'];
+                        return window.cachedData.vulns.some(v => v.URL.includes(s.Domain) && sevLevels.includes(v.Severity.toLowerCase()));
+                    }
+                    case 'vuln-info': {
+                        const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain));
+                        return subVulns.length === 0 || subVulns.every(v => v.Severity.toLowerCase() === 'info');
+                    }
+                    case 'secrets':
+                        return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
+                    case 'updated': {
+                        const first = new Date(s.FirstSeen).getTime();
+                        const last = new Date(s.LastSeen).getTime();
+                        return Math.abs(last - first) > 1000;
+                    }
+                    default:
+                        return true;
+                }
+            });
+        }
 
         function switchDiscTab(tab) {
             currentDiscTab = tab;
+
+            // Close sub-dashboard if open so the main table is visible
+            if (currentSubDashboardDomain) {
+                currentSubDashboardDomain = null;
+                document.getElementById('sub-dashboard').classList.add('hidden');
+                document.getElementById('sub-dashboard').classList.remove('flex');
+            }
             
             const btnS = document.getElementById('disc-tab-subs');
             const btnC = document.getElementById('disc-tab-secs');
@@ -642,22 +728,29 @@
                 
                 const tbody = document.getElementById('tbody-subs');
                 tbody.innerHTML = '';
+
+                const filteredSubs = applyFilter(window.cachedData.subs);
                 
-                if (window.cachedData.subs.length === 0) {
-                     tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-500 bg-slate-800/10">No subdomains found yet. Try running a scan.</td></tr>';
+                if (filteredSubs.length === 0) {
+                     const msg = currentFilter ? 'No subdomains match the active filter.' : 'No subdomains found yet. Try running a scan.';
+                     tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-500 bg-slate-800/10">${msg}</td></tr>`;
                      return
                 }
 
-                window.cachedData.subs.forEach(s => {
-                    const d = new Date(s.FirstSeen).toLocaleDateString();
+                filteredSubs.forEach(s => {
+                    const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
+                    const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
                     tbody.innerHTML += `
                         <tr class="hover:bg-slate-800/30 transition-colors group">
                             <td class="p-4 text-slate-400">#${s.ID}</td>
                             <td class="p-4 font-mono font-medium text-accent">
                                 <button onclick="openSubDashboard('${s.Domain}')" class="hover:underline hover:text-sky-300 text-left">${s.Domain}</button>
                             </td>
+                            <td class="p-4 text-right text-sm text-slate-400">
+                                <span>${firstSeen}</span>
+                            </td>
                             <td class="p-4 text-right text-sm text-slate-400 flex justify-end items-center gap-4">
-                                <span>${d}</span>
+                                <span>${lastUpdate}</span>
                                 <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-700 hover:bg-slate-600 text-white p-1.5 rounded" title="Visit in browser">
                                     <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                                 </a>
@@ -695,6 +788,13 @@
             document.getElementById('table-secs').classList.add('hidden');
             document.getElementById('sub-dashboard').classList.remove('hidden');
             document.getElementById('sub-dashboard').classList.add('flex');
+
+            // Hide filter bar and reset active filter
+            document.getElementById('filter-bar').classList.add('hidden');
+            currentFilter = null;
+            document.querySelectorAll('.filter-pill').forEach(b => {
+                b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200`;
+            });
             
             // Set Titles
             const titleEl = document.getElementById('sub-dash-title');
@@ -786,6 +886,7 @@
             currentSubDashboardDomain = null;
             document.getElementById('sub-dashboard').classList.add('hidden');
             document.getElementById('sub-dashboard').classList.remove('flex');
+            document.getElementById('filter-bar').classList.remove('hidden');
             renderVisibleDiscoveriesTable();
         }
 

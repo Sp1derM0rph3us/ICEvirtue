@@ -2,6 +2,7 @@ package engine
 
 import (
 	"log"
+	"strings"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -80,14 +81,21 @@ func OrchestrateScan(profile *models.Profile) {
 		}
 
 		if DnsxList != "" {
-			dnsxSubs, err := RunDnsx(profile, DnsxList)
-			if err != nil {
-				log.Printf("[-] Error in Dnsx Phase: %v", err)
-			} else {
-				for _, sub := range dnsxSubs {
-					if !uniqueSubs[sub] {
-						uniqueSubs[sub] = true
-						finalSubdomains = append(finalSubdomains, sub)
+			dnsxPaths := strings.Split(DnsxList, ",")
+			for _, wlPath := range dnsxPaths {
+				wlPath = strings.TrimSpace(wlPath)
+				if wlPath == "" {
+					continue
+				}
+				dnsxSubs, err := RunDnsx(profile, wlPath)
+				if err != nil {
+					log.Printf("[-] Error in Dnsx Phase (wordlist: %s): %v", wlPath, err)
+				} else {
+					for _, sub := range dnsxSubs {
+						if !uniqueSubs[sub] {
+							uniqueSubs[sub] = true
+							finalSubdomains = append(finalSubdomains, sub)
+						}
 					}
 				}
 			}
@@ -132,9 +140,19 @@ func OrchestrateScan(profile *models.Profile) {
 	// Phase 2: Directory Fuzzing
 	var dirs []models.DirectoryFinding
 	if DirectoryList != "" {
-		dirs, err = RunDirectoryFuzzing(profile, validHosts, DirectoryList)
-		if err != nil {
-			log.Printf("[-] Error in Directory Fuzzing Phase: %v", err)
+		dirPaths := strings.Split(DirectoryList, ",")
+		var cleanPaths []string
+		for _, p := range dirPaths {
+			p = strings.TrimSpace(p)
+			if p != "" {
+				cleanPaths = append(cleanPaths, p)
+			}
+		}
+		if len(cleanPaths) > 0 {
+			dirs, err = RunDirectoryFuzzing(profile, validHosts, cleanPaths)
+			if err != nil {
+				log.Printf("[-] Error in Directory Fuzzing Phase: %v", err)
+			}
 		}
 	} else {
 		log.Printf("[-] Skipping directory fuzzing: No --directory-list provided.")
