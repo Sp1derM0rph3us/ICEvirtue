@@ -16,7 +16,8 @@ import (
 
 func main() {
 	flag.BoolVar(&engine.Verbose, "verbose", false, "Print detailed scan findings to the terminal")
-	flag.StringVar(&engine.Wordlist, "wordlist", "", "Absolute path to wordlist for active dnsx bruteforcing (Full Mode only)")
+	flag.StringVar(&engine.DnsxList, "dnsx-list", "", "Comma-separated absolute paths to wordlists for active dnsx bruteforcing (Full Mode only)")
+	flag.StringVar(&engine.DirectoryList, "directory-list", "", "Comma-separated absolute paths to wordlists for directory fuzzing")
 	flag.BoolVar(&engine.SkipAmass, "skip-amass", false, "Skip Amass execution during subdomain enumeration (Full Mode only)")
 	flag.BoolVar(&engine.SkipNuclei, "skip-nuclei", false, "Skip Nuclei execution during vulnerability scanning")
 	

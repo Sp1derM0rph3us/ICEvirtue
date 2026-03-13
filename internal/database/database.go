@@ -46,6 +46,7 @@ func InitDatabase(dbPath string) error {
 		&models.AliveHost{},
 		&models.Vulnerability{},
 		&models.SecretFinding{},
+		&models.DirectoryFinding{},
 	)
 	if err != nil {
 		return err

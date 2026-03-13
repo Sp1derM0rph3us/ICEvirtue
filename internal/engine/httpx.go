@@ -15,9 +15,10 @@ import (
 type HttpxResult struct {
 	URL       string `json:"url"`
 	Host      string `json:"host"`
-	IP        string `json:"ip"`
+	A         []string `json:"a"`
 	Title     string `json:"title"`
 	WebServer string `json:"webserver"`
+	StatusCode int   `json:"status-code"`
 	Failed    bool   `json:"failed"`
 }
 
@@ -28,7 +29,7 @@ func RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost,
 		return nil, fmt.Errorf("no input subdomains provided to RunHttpx")
 	}
 
-	args := []string{"-silent", "-json", "-title", "-web-server", "-ip"}
+	args := []string{"-silent", "-json", "-title", "-web-server", "-ip", "-status-code"}
 	cmd := exec.Command("httpx", args...)
 
 	cmd.Stdin = strings.NewReader(strings.Join(subdomains, "\n"))
@@ -60,9 +61,10 @@ func RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost,
 			aliveHosts = append(aliveHosts, models.AliveHost{
 				ProfileID: profile.ID,
 				URL:       result.URL,
-				IP:        result.IP,
+				IP:        strings.Join(result.A, ", "),
 				Title:     result.Title,
 				WebServer: result.WebServer,
+				StatusCode: result.StatusCode,
 			})
 		}
 	}

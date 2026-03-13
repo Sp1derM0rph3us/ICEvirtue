@@ -32,6 +32,7 @@ type Profile struct {
 	AliveHosts      []AliveHost
 	Vulnerabilities []Vulnerability
 	SecretFindings  []SecretFinding
+	DirectoryFindings []DirectoryFinding
 }
 
 func (profile *Profile) BeforeCreate(tx *gorm.DB) (err error) {
@@ -57,6 +58,7 @@ type AliveHost struct {
 	IP        string
 	Title     string
 	WebServer string
+	StatusCode int
 	FirstSeen time.Time      `gorm:"autoCreateTime"`
 	LastSeen  time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt gorm.DeletedAt `gorm:"index"`
@@ -81,6 +83,17 @@ type SecretFinding struct {
 	SourceURL   string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
 	SecretType  string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
 	SecretValue string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
+	FirstSeen   time.Time      `gorm:"autoCreateTime"`
+	LastSeen    time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt   gorm.DeletedAt `gorm:"index"`
+}
+
+type DirectoryFinding struct {
+	ID          uint           `gorm:"primaryKey"`
+	ProfileID   uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_dir;not null"`
+	SubdomainURL string        `gorm:"uniqueIndex:idx_profile_dir;not null"`
+	DirURL      string         `gorm:"uniqueIndex:idx_profile_dir;not null"`
+	StatusCode  int
 	FirstSeen   time.Time      `gorm:"autoCreateTime"`
 	LastSeen    time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`
