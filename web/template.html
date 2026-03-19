@@ -4,40 +4,62 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ICEvirtue Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
-                        dark: '#0f172a',
-                        card: '#1e293b',
-                        accent: '#38bdf8'
+                        dark: '#000000',
+                        card: '#0d0d0d',
+                        accent: '#bc13fe',
+                        'accent-glow': 'rgba(188, 19, 254, 0.5)'
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
+                        mono: ['Space Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace']
                     }
                 }
             }
         }
     </script>
     <style>
-        body { background-color: #0f172a; color: #f8fafc; }
-        .tab-active { border-bottom: 2px solid #38bdf8; color: #38bdf8; }
-        .tab-inactive { color: #94a3b8; }
-        .tab-inactive:hover { color: #e2e8f0; }
+        body { background-color: #000000; color: #f8fafc; }
+        .tab-active { border-bottom: 2px solid #bc13fe; color: #bc13fe; text-shadow: 0 0 8px rgba(188, 19, 254, 0.4); }
+        .tab-inactive { color: #64748b; }
+        .tab-inactive:hover { color: #bc13fe; }
+        
+        /* Custom UI Elements */
+        .neon-border { border: 1px solid #bc13fe; box-shadow: 0 0 10px rgba(188, 19, 254, 0.2); }
+        .neon-text { color: #bc13fe; text-shadow: 0 0 5px rgba(188, 19, 254, 0.5); }
+        .glass-header { backdrop-filter: blur(12px); background: rgba(13, 13, 13, 0.8); border-bottom: 1px solid rgba(188, 19, 254, 0.2); }
+        
+        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #000000; }
+        ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #bc13fe; }
     </style>
 </head>
 <body class="min-h-screen flex flex-col font-sans">
     
-    <nav class="bg-card border-b border-slate-700 p-4 shadow-lg shrink-0">
+    <nav class="glass-header sticky top-0 z-50 p-4 shrink-0 transition-all">
         <div class="max-w-7xl mx-auto flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <svg class="w-8 h-8 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                <h1 class="text-2xl font-bold tracking-tight text-white drop-shadow-md">ICEvirtue</h1>
+                <svg class="w-8 h-8 text-accent drop-shadow-[0_0_8px_rgba(188,19,254,0.6)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                <h1 class="text-2xl font-bold tracking-tighter text-white neon-text uppercase italic">ICEvirtue</h1>
             </div>
-            <div class="flex gap-6 font-medium items-center">
-                <button id="nav-btn-targets" class="tab-active pb-1 transition-colors" onclick="switchView('targets')">Targets</button>
-                <button id="nav-btn-discoveries" class="tab-inactive pb-1 transition-colors" onclick="switchView('discoveries')">Discoveries</button>
-                <div class="h-6 w-px bg-slate-700 mx-2"></div>
-                <button id="nav-btn-logout" class="text-rose-400 hover:text-rose-300 text-sm tracking-wide transition-colors" onclick="logout()">Sign Out</button>
+            <div class="flex gap-8 font-sans text-xs font-bold items-center uppercase tracking-[0.2em]">
+                <button id="nav-btn-targets" class="tab-active pb-1 transition-all hover:text-accent" onclick="switchView('targets')">Targets</button>
+                <button id="nav-btn-discoveries" class="tab-inactive pb-1 transition-all hover:text-accent" onclick="switchView('discoveries')">Discoveries</button>
+                <div class="h-4 w-px bg-slate-800 mx-2"></div>
+                <button id="nav-btn-logout" class="text-rose-500/80 hover:text-rose-400 transition-all font-black" onclick="logout()">[ TERMINATE SESSION ]</button>
             </div>
         </div>
     </nav>
@@ -46,104 +68,102 @@
         
         <section id="view-targets" class="space-y-8 animate-fade-in block">
             
-            <div class="bg-card p-6 rounded-xl shadow-md border border-slate-700">
-                <h2 class="text-xl font-semibold mb-4 text-slate-200">Add New Target</h2>
-                <form id="form-add-target" class="flex gap-4 items-end">
+            <div class="bg-card p-8 rounded-md border border-slate-800 relative overflow-hidden group">
+                <div class="absolute top-0 left-0 w-1 h-full bg-accent opacity-50 group-hover:opacity-100 transition-opacity"></div>
+                <h2 class="text-xs font-sans font-black mb-8 text-accent uppercase tracking-[0.25em] flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 bg-accent rounded-full animate-pulse shadow-[0_0_10px_#bc13fe]"></span>
+                    Initialize New Target
+                </h2>
+                <form id="form-add-target" class="flex gap-8 items-end">
                     <div class="flex-grow">
-                        <label class="block text-sm text-slate-400 mb-1">Domain URL</label>
-                        <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="example.com" class="w-full bg-slate-800 border-none rounded p-2.5 text-white focus:ring-2 focus:ring-accent outline-none">
+                        <label class="block text-xs font-sans font-bold text-slate-500 mb-2 uppercase tracking-widest">Interface Node (Domain)</label>
+                        <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="TARGET_DOMAIN.RUN" class="w-full bg-black border border-slate-800 rounded-sm p-4 text-white font-mono text-base focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all outline-none placeholder:text-slate-800">
                     </div>
                     <div class="w-auto">
-                        <label class="block text-sm text-slate-400 mb-1">Schedule</label>
-                        <div class="flex items-center gap-1.5 bg-slate-800 rounded p-1.5 focus-within:ring-2 focus-within:ring-accent w-max h-[44px]">
-                            <span class="text-slate-400 text-sm pl-2">every</span>
-                            <select id="sched-freq" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                        <label class="block text-xs font-sans font-bold text-slate-500 mb-2 uppercase tracking-widest">Recurrence Cycle</label>
+                        <div class="flex items-center gap-2 bg-black border border-slate-800 rounded-sm p-2 focus-within:border-accent/50 w-max h-[60px] transition-all">
+                            <span class="text-slate-600 font-sans text-xs font-bold pl-3 uppercase">Every</span>
+                            <select id="sched-freq" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                                 <option value="day">Day</option>
                                 <option value="month">Month</option>
                                 <option value="year">Year</option>
                             </select>
-                            <span class="text-slate-400 text-sm pl-1">at</span>
-                            <select id="sched-hour" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                            <span class="text-slate-600 font-sans text-xs font-bold pl-2 uppercase">At</span>
+                            <select id="sched-hour" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                                 <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
                             </select>
-                            <span class="text-slate-400 text-sm font-bold">:</span>
-                            <select id="sched-min" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer"></select>
-                            <script>
-                                const minSel = document.getElementById('sched-min');
-                                for(let i=0; i<60; i++) {
-                                    let v = i.toString().padStart(2, '0');
-                                    let opt = document.createElement('option');
-                                    opt.value = v; opt.text = v;
-                                    minSel.appendChild(opt);
-                                }
-                            </script>
-                            <select id="sched-ampm" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                            <span class="text-accent font-bold">:</span>
+                            <select id="sched-min" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors"></select>
+                            <select id="sched-ampm" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                                 <option value="AM">AM</option>
                                 <option value="PM">PM</option>
                             </select>
                         </div>
                     </div>
                     <div>
-                        <button type="submit" class="bg-accent hover:bg-sky-500 text-slate-900 font-bold py-2.5 px-6 rounded transition-colors shadow-lg shadow-sky-500/30">
-                            Add Profile
+                        <button type="submit" class="bg-accent hover:bg-[#d000ff] text-black font-sans font-black text-sm uppercase tracking-tighter py-[19px] px-10 rounded-sm transition-all shadow-[0_0_15px_rgba(188,19,254,0.3)] hover:shadow-[0_0_25px_rgba(188,19,254,0.5)] active:scale-95">
+                            Establish Link
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-card rounded-xl shadow-md border border-slate-700 overflow-hidden">
-                <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/50">
-                    <h2 class="text-xl font-semibold text-slate-200">Scanning Profiles</h2>
-                    <span class="text-xs font-semibold bg-slate-700 text-slate-300 px-2 py-1 rounded" id="target-count">{{len .Profiles}} Total</span>
+            <div class="bg-card rounded-md shadow-md border border-slate-900 overflow-hidden">
+                <div class="p-6 border-b border-slate-900 flex justify-between items-center bg-black/60">
+                    <h2 class="text-sm font-sans font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
+                        Scanning Profiles Table
+                    </h2>
+                    <span class="text-[11px] font-sans font-black border border-slate-800 text-slate-500 px-4 py-1.5 rounded-sm uppercase tracking-widest" id="target-count">{{len .Profiles}} Active Nodes</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse">
+                    <table class="w-full text-left border-collapse font-sans text-sm">
                         <thead>
-                            <tr class="bg-slate-800/80 text-slate-400 text-sm uppercase tracking-wider">
-                                <th class="p-4 font-medium">ID</th>
-                                <th class="p-4 font-medium">Domain</th>
-                                <th class="p-4 font-medium">Schedule</th>
-                                <th class="p-4 font-medium">Status</th>
-                                <th class="p-4 font-medium text-right">Actions</th>
+                            <tr class="bg-black/90 text-slate-600 uppercase tracking-widest border-b border-slate-900">
+                                <th class="p-5 font-black w-24">ID</th>
+                                <th class="p-5 font-black">Endpoint Trace</th>
+                                <th class="p-5 font-black">Sync Logic</th>
+                                <th class="p-5 font-black">Operational Status</th>
+                                <th class="p-5 font-black text-right">Node Protocol</th>
                             </tr>
                         </thead>
-                        <tbody id="targets-tbody" class="divide-y divide-slate-700/50">
+                        <tbody id="targets-tbody" class="divide-y divide-slate-950">
                             {{range .Profiles}}
-                            <tr id="row-profile-{{.ID}}" class="hover:bg-slate-800/30 transition-colors group">
-                                <td class="p-4 text-slate-400">#{{.ID}}</td>
-                                <td class="p-4 font-medium text-slate-200">{{.Domain}}</td>
-                                <td class="p-4 text-sm text-slate-400 group/sched relative">
-                                    <code id="schedule-text-{{.ID}}" class="bg-slate-900 px-2 py-1 rounded">{{.Schedule}}</code>
-                                    <button onclick="editSchedule('{{.ID}}', '{{.Domain}}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
+                            <tr id="row-profile-{{.ID}}" class="hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10">
+                                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#{{.ID}}</td>
+                                <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">{{.Domain}}</td>
+                                <td class="p-5 text-slate-500 group/sched relative">
+                                    <code id="schedule-text-{{.ID}}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">{{.Schedule}}</code>
+                                    <button onclick="editSchedule('{{.ID}}', '{{.Domain}}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
                                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                                     </button>
                                 </td>
-                                <td class="p-4">
+                                <td class="p-5">
                                     {{if .IsScanning}}
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 ring-1 ring-inset ring-amber-500/20">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                                            Scanning
+                                        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
+                                            <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shadow-[0_0_8px_#bc13fe]"></span>
+                                            Active Scan
                                         </span>
                                     {{else}}
-                                        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
-                                            Idle
+                                        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-slate-900/50 text-slate-600 border border-slate-800">
+                                            Hibernation
                                         </span>
                                     {{end}}
                                 </td>
-                                <td class="p-4 flex gap-2 justify-end opacity-60 group-hover:opacity-100 transition-opacity">
-                                    <button onclick="forceScan('{{.ID}}')" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors" title="Force Start Scan">
-                                        Scan Now
+                                <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">
+                                    <button onclick="forceScan('{{.ID}}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]" title="Force Start Scan">
+                                        Initiate
                                     </button>
-                                    <button onclick="deleteTarget('{{.ID}}', '{{.Domain}}')" class="text-xs bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded transition-colors">
-                                        Delete
+                                    <button onclick="deleteTarget('{{.ID}}', '{{.Domain}}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">
+                                        Purge
                                     </button>
                                 </td>
                             </tr>
                             {{end}}
                         </tbody>
                     </table>
-                    <div id="targets-empty" class="{{if .Profiles}}hidden{{end}} p-8 text-center text-slate-500">
-                        No targets configured. Add one above.
+                    <div id="targets-empty" class="{{if .Profiles}}hidden{{end}} p-12 text-center text-slate-700 font-sans font-bold uppercase tracking-widest italic text-sm">
+                        No active nodes configured in the matrix. Establish link above.
                     </div>
                 </div>
             </div>
@@ -151,143 +171,168 @@
 
         <section id="view-discoveries" class="hidden space-y-6 animate-fade-in h-full flex flex-col">
             
-            <div class="flex items-center justify-between gap-4 p-4 bg-card rounded-xl border border-slate-700 shadow-sm shrink-0">
-                <div class="flex-grow max-w-sm">
-                    <label class="block text-xs text-slate-400 font-semibold uppercase tracking-wider mb-1">Select Profile</label>
-                    <div class="relative">
-                        <select id="select-profile" onchange="fetchDiscoveries()" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white appearance-none focus:ring-2 focus:ring-accent outline-none font-medium">
+            <div class="flex items-center justify-between gap-6 p-6 bg-card rounded-md border border-slate-900 shadow-sm shrink-0">
+                <div class="flex-grow max-w-md">
+                    <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mb-2">Target Data Stream</label>
+                    <div class="relative group">
+                        <select id="select-profile" onchange="fetchDiscoveries()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer">
                             {{range .Profiles}}
                                 <option value="{{.ID}}">{{.Domain}}</option>
                             {{end}}
                         </select>
-                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
-                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
+                            <svg class="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
                         </div>
                     </div>
                 </div>
                 
-                <div class="bg-slate-800 p-1 rounded-lg flex gap-1 self-end">
-                    <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-4 py-1.5 rounded-md text-sm font-medium bg-slate-600 text-white shadow shadow-black/20 transition-all">Subdomains</button>
-                    <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-4 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all">Secrets</button>
+                <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5 self-end">
+                    <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all">Nodes</button>
+                    <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Credentials</button>
+                </div>
+            </div>
+
+            <!-- Sort Bar -->
+            <div id="sort-bar" class="flex items-center gap-4 p-5 bg-card rounded-md border border-slate-900 shadow-sm shrink-0">
+                <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mr-2">Sort Matrix:</span>
+                <div class="relative w-80 group">
+                    <select id="select-sort" onchange="renderVisibleDiscoveriesTable()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-sans text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
+                        <option value="name-asc">Alphabetical: A &rarr; Z</option>
+                        <option value="name-desc">Alphabetical: Z &rarr; A</option>
+                        <option value="findings-desc">Priority: High Volume First</option>
+                        <option value="findings-asc">Priority: Low Volume First</option>
+                        <option value="first-asc">Chronological: Oldest First</option>
+                        <option value="first-desc">Chronological: Newest First</option>
+                        <option value="update-asc">Recent Sync: Oldest First</option>
+                        <option value="update-desc">Recent Sync: Newest First</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
+                        <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                    </div>
                 </div>
             </div>
 
             <!-- Filter Bar -->
-            <div id="filter-bar" class="flex items-center gap-2 p-3 bg-card rounded-xl border border-slate-700 shadow-sm shrink-0 flex-wrap">
-                <span class="text-xs text-slate-500 font-semibold uppercase tracking-wider mr-1">Filter:</span>
-                <button onclick="toggleFilter('ip')" id="filter-btn-ip" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">IP Addresses</button>
-                <button onclick="toggleFilter('subdomain')" id="filter-btn-subdomain" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Subdomains</button>
-                <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Critical–Low Vulns</button>
-                <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Info / No Vulns</button>
-                <button onclick="toggleFilter('secrets')" id="filter-btn-secrets" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Has Secrets</button>
-                <button onclick="toggleFilter('updated')" id="filter-btn-updated" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Updated Since First Seen</button>
+            <div id="filter-bar" class="flex items-center gap-2.5 p-4 bg-card rounded-md border border-slate-900 shadow-sm shrink-0 flex-wrap">
+                <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mr-3">Filter Matrix:</span>
+                <button onclick="toggleFilter('ip')" id="filter-btn-ip" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">IP Addr</button>
+                <button onclick="toggleFilter('subdomain')" id="filter-btn-subdomain" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Nodes</button>
+                <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Vulns</button>
+                <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Ops Info</button>
+                <button onclick="toggleFilter('secrets')" id="filter-btn-secrets" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Credentials</button>
+                <button onclick="toggleFilter('status-2xx-3xx')" id="filter-btn-status-2xx-3xx" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">2xx/3xx</button>
+                <button onclick="toggleFilter('status-403')" id="filter-btn-status-403" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">403 Block</button>
+                <button onclick="toggleFilter('status-other')" id="filter-btn-status-other" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Others</button>
+                <button onclick="toggleFilter('updated')" id="filter-btn-updated" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Last Sync</button>
             </div>
 
-            <div class="flex-grow bg-card rounded-xl shadow-md border border-slate-700 overflow-hidden flex flex-col min-h-[400px]">
+            <div class="flex-grow bg-card rounded-md shadow-md border border-slate-900 overflow-hidden flex flex-col min-h-[400px]">
                 
                 <div id="loader" class="hidden flex-grow flex items-center justify-center p-12">
                     <svg class="animate-spin h-10 w-10 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </div>
 
-                <div id="empty-state" class="flex-grow flex items-center justify-center text-slate-500 p-12 text-center text-lg">
-                    Select a profile from the dropdown to view its discoveries.
+                <div id="empty-state" class="flex-grow flex items-center justify-center text-slate-600 font-mono text-xs p-12 text-center uppercase tracking-widest italic">
+                    Node selection required... Link established profile from data stream above.
                 </div>
 
                 <div id="table-subs" class="hidden flex-grow overflow-auto relative">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="sticky top-0 bg-slate-800/95 backdrop-blur shadow-sm z-10">
-                            <tr class="text-slate-400 text-sm uppercase tracking-wider">
-                                <th class="p-4 font-medium w-24">ID</th>
-                                <th class="p-4 font-medium">Discovered Subdomain</th>
-                                <th class="p-4 font-medium text-right">First Seen</th>
-                                <th class="p-4 font-medium text-right">Last Update</th>
+                    <table class="w-full text-left border-collapse font-sans text-sm">
+                        <thead class="sticky top-0 bg-black/95 backdrop-blur shadow-sm z-10 border-b border-slate-800">
+                            <tr class="text-slate-500 uppercase tracking-widest">
+                                <th class="p-5 font-black w-24">ID</th>
+                                <th class="p-5 font-black">Node Endpoint</th>
+                                <th class="p-5 font-black text-center">Protocol Code</th>
+                                <th class="p-5 font-black text-center">Observations</th>
+                                <th class="p-5 font-black text-right">Initiated</th>
+                                <th class="p-5 font-black text-right">Last Sync</th>
                             </tr>
                         </thead>
-                        <tbody id="tbody-subs" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tbody id="tbody-subs" class="divide-y divide-slate-900 text-slate-300">
                         </tbody>
                     </table>
                 </div>
 
                 <div id="table-secs" class="hidden flex-grow overflow-auto relative">
-                    <table class="w-full text-left border-collapse">
-                        <thead class="sticky top-0 bg-slate-800/95 backdrop-blur shadow-sm z-10">
-                            <tr class="text-slate-400 text-sm uppercase tracking-wider">
-                                <th class="p-4 font-medium w-1/4">Type</th>
-                                <th class="p-4 font-medium w-1/2">Secret Value</th>
-                                <th class="p-4 font-medium w-1/4">Source File</th>
+                    <table class="w-full text-left border-collapse font-sans text-sm">
+                        <thead class="sticky top-0 bg-black/95 backdrop-blur shadow-sm z-10 border-b border-slate-800">
+                            <tr class="text-slate-500 uppercase tracking-widest">
+                                <th class="p-5 font-black w-1/4">Extraction Type</th>
+                                <th class="p-5 font-black w-1/2">Secret Fragment</th>
+                                <th class="p-5 font-black w-1/4">Source Origin</th>
                             </tr>
                         </thead>
-                        <tbody id="tbody-secs" class="divide-y divide-slate-700/50 text-slate-200">
+                        <tbody id="tbody-secs" class="divide-y divide-slate-900 text-slate-300">
                         </tbody>
                     </table>
                 </div>
 
-                <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full h-full bg-slate-900/50">
+                <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full h-full bg-black/60">
                     <!-- Sub-dashboard Header -->
-                    <div class="p-4 border-b border-slate-700 flex justify-between items-center bg-slate-800/80 sticky top-0 z-20">
-                        <div class="flex items-center gap-4">
-                            <button onclick="closeSubDashboard()" class="text-slate-400 hover:text-white transition-colors flex items-center gap-1 text-sm font-medium bg-slate-700/50 hover:bg-slate-700 px-3 py-1.5 rounded">
+                    <div class="p-6 border-b border-slate-800 flex justify-between items-center glass-header sticky top-0 z-20">
+                        <div class="flex items-center gap-6">
+                            <button onclick="closeSubDashboard()" class="text-slate-500 hover:text-accent transition-all flex items-center gap-2 text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 hover:border-accent hover:bg-accent/5 px-4 py-2 rounded-sm bg-black">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                                Back
+                                Back To Matrix
                             </button>
-                            <div class="h-6 w-px bg-slate-600"></div>
+                            <div class="h-8 w-px bg-slate-800"></div>
                             <div>
-                                <h3 id="sub-dash-title" class="text-lg font-bold text-slate-100 flex items-center gap-2">
+                                <h3 id="sub-dash-title" class="text-lg font-sans font-black text-white uppercase tracking-[0.25em] italic flex items-center gap-3">
                                     Subdomain
                                 </h3>
-                                <div id="sub-dash-ip" class="text-xs text-accent font-mono mt-0.5">IP: Unknown</div>
+                                <div id="sub-dash-ip" class="text-xs text-accent font-mono font-bold mt-1 tracking-tighter uppercase opacity-90">IP: Unknown Node</div>
                             </div>
                         </div>
-                        <div class="bg-slate-900/80 p-1 rounded-lg flex gap-1 border border-slate-700/50 shadow-inner">
-                            <button id="sub-tab-vulns" onclick="switchSubDashboardTab('vulns')" class="px-3 py-1 rounded text-xs font-semibold bg-accent text-slate-900 shadow transition-all">Vulnerabilities</button>
-                            <button id="sub-tab-dirs" onclick="switchSubDashboardTab('dirs')" class="px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">Directories</button>
-                            <button id="sub-tab-secs" onclick="switchSubDashboardTab('secs')" class="px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all">Secrets</button>
+                        <div class="bg-black border border-slate-900 p-1.5 rounded-sm flex gap-1.5 shadow-inner">
+                            <button id="sub-tab-vulns" onclick="switchSubDashboardTab('vulns')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all">Vulns</button>
+                            <button id="sub-tab-dirs" onclick="switchSubDashboardTab('dirs')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Dirs</button>
+                            <button id="sub-tab-secs" onclick="switchSubDashboardTab('secs')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Creds</button>
                         </div>
                     </div>
 
                     <!-- Sub-dashboard Content Area -->
-                    <div class="flex-grow overflow-auto relative p-4">
+                    <div class="flex-grow overflow-auto relative p-8">
                         
                         <!-- Vulnerabilities Tab -->
                         <div id="sub-content-vulns" class="block">
-                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
-                                <thead class="bg-slate-800/80">
-                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
-                                        <th class="p-3 font-medium w-32">Severity</th>
-                                        <th class="p-3 font-medium">Vulnerability Name</th>
-                                        <th class="p-3 font-medium">Template ID</th>
+                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                                <thead class="bg-black border-b border-slate-900">
+                                    <tr class="text-slate-500 text-xs uppercase tracking-widest">
+                                        <th class="p-5 font-black w-40">Risk Level</th>
+                                        <th class="p-5 font-black">Vuln Identifier</th>
+                                        <th class="p-5 font-black">Link ID</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tbody-sub-vulns" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                <tbody id="tbody-sub-vulns" class="divide-y divide-slate-950 text-slate-300 text-sm">
                                 </tbody>
                             </table>
                         </div>
 
-                        <!-- Directories Tab (Placeholder) -->
+                        <!-- Directories Tab -->
                         <div id="sub-content-dirs" class="hidden">
-                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
-                                <thead class="bg-slate-800/80">
-                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
-                                        <th class="p-3 font-medium w-32">Status</th>
-                                        <th class="p-3 font-medium">Directory URL</th>
+                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                                <thead class="bg-black border-b border-slate-900">
+                                    <tr class="text-slate-500 text-xs uppercase tracking-widest">
+                                        <th class="p-5 font-black w-40">Protocol Response</th>
+                                        <th class="p-5 font-black">Route Fragment</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tbody-sub-dirs" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                <tbody id="tbody-sub-dirs" class="divide-y divide-slate-950 text-slate-300 text-sm">
                                 </tbody>
                             </table>
                         </div>
 
                         <!-- Secrets Tab -->
                         <div id="sub-content-secs" class="hidden">
-                            <table class="w-full text-left border-collapse bg-card rounded-lg overflow-hidden border border-slate-700/50 shadow">
-                                <thead class="bg-slate-800/80">
-                                    <tr class="text-slate-400 text-xs uppercase tracking-wider">
-                                        <th class="p-3 font-medium w-1/4">Type</th>
-                                        <th class="p-3 font-medium w-1/2">Secret Value</th>
-                                        <th class="p-3 font-medium w-1/4">Source File</th>
+                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                                <thead class="bg-black border-b border-slate-900">
+                                    <tr class="text-slate-500 text-xs uppercase tracking-widest">
+                                        <th class="p-5 font-black w-1/4">Data Type</th>
+                                        <th class="p-5 font-black w-1/2">Data Fragment</th>
+                                        <th class="p-5 font-black w-1/4">Origin Trace</th>
                                     </tr>
                                 </thead>
-                                <tbody id="tbody-sub-secs" class="divide-y divide-slate-700/50 text-slate-200 text-sm">
+                                <tbody id="tbody-sub-secs" class="divide-y divide-slate-950 text-slate-300 text-sm">
                                 </tbody>
                             </table>
                         </div>
@@ -300,48 +345,41 @@
     </main>
 
     <!-- Edit Schedule Modal -->
-    <div id="modal-edit-schedule" class="fixed inset-0 bg-black/60 backdrop-blur-sm hidden items-center justify-center z-50 animate-fade-in">
-        <div class="bg-card w-full max-w-md p-6 rounded-xl shadow-2xl border border-slate-700 mx-4">
-            <h3 class="text-xl font-semibold text-slate-200 mb-4">Edit Target Schedule</h3>
-            <p id="edit-schedule-domain" class="text-sm text-slate-400 mb-6 tracking-wide"></p>
+    <div id="modal-edit-schedule" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-[100] animate-fade-in px-4">
+        <div class="bg-card w-full max-w-lg p-10 rounded-md shadow-[0_0_60px_rgba(0,0,0,0.9)] border border-slate-800 relative group overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-accent/40"></div>
+            <div class="absolute top-0 left-0 w-1.5 h-full bg-accent/40"></div>
+            <h3 class="text-xs font-sans font-black text-accent uppercase tracking-[0.3em] mb-3 drop-shadow-[0_0_12px_rgba(188,19,254,0.5)]">Re-Schedule Cycle</h3>
+            <p id="edit-schedule-domain" class="text-[11px] font-mono font-bold text-slate-500 mb-10 uppercase tracking-widest bg-black border border-slate-900 px-4 py-2 w-max italic"></p>
             
-            <form id="form-edit-schedule" class="space-y-6">
+            <form id="form-edit-schedule" class="space-y-10">
                 <input type="hidden" id="edit-schedule-id">
                 
-                <div>
-                    <label class="block text-sm text-slate-400 mb-2">New Schedule</label>
-                    <div class="flex items-center gap-1.5 bg-slate-800 rounded p-2 focus-within:ring-2 focus-within:ring-accent w-full justify-between">
-                        <span class="text-slate-400 text-sm pl-2">every</span>
-                        <select id="edit-sched-freq" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                <div class="space-y-5">
+                    <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Interface Frequency</label>
+                    <div class="flex items-center gap-3 bg-black border border-slate-800 rounded-sm p-2.5 focus-within:border-accent/40 w-full justify-between transition-all">
+                        <span class="text-slate-600 font-sans text-xs font-bold uppercase pl-3">Every</span>
+                        <select id="edit-sched-freq" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                             <option value="day">Day</option>
                             <option value="month">Month</option>
                             <option value="year">Year</option>
                         </select>
-                        <span class="text-slate-400 text-sm pl-1">at</span>
-                        <select id="edit-sched-hour" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                        <span class="text-slate-600 font-sans text-xs font-bold uppercase px-2 text-center">At</span>
+                        <select id="edit-sched-hour" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                             <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
                         </select>
-                        <span class="text-slate-400 text-sm font-bold">:</span>
-                        <select id="edit-sched-min" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer"></select>
-                        <script>
-                            const editMinSel = document.getElementById('edit-sched-min');
-                            for(let i=0; i<60; i++) {
-                                let v = i.toString().padStart(2, '0');
-                                let opt = document.createElement('option');
-                                opt.value = v; opt.text = v;
-                                editMinSel.appendChild(opt);
-                            }
-                        </script>
-                        <select id="edit-sched-ampm" class="bg-slate-700 text-white border-none rounded p-1.5 text-sm outline-none cursor-pointer">
+                        <span class="text-accent font-bold">:</span>
+                        <select id="edit-sched-min" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors"></select>
+                        <select id="edit-sched-ampm" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                             <option value="AM">AM</option>
                             <option value="PM">PM</option>
                         </select>
                     </div>
                 </div>
 
-                <div class="flex justify-end gap-3 mt-8">
-                    <button type="button" onclick="closeEditModal()" class="px-5 py-2 rounded text-slate-300 hover:text-white hover:bg-slate-700 transition-colors">Cancel</button>
-                    <button type="submit" id="btn-save-schedule" class="bg-accent hover:bg-sky-500 text-slate-900 font-bold py-2 px-6 rounded transition-colors shadow-lg shadow-sky-500/30">Save Schedule</button>
+                <div class="flex justify-end gap-6 mt-16 pt-6 border-t border-slate-900">
+                    <button type="button" onclick="closeEditModal()" class="px-8 py-3 rounded-sm text-xs font-sans font-black uppercase text-slate-600 hover:text-slate-300 hover:bg-slate-900 transition-all tracking-widest">Disconnect</button>
+                    <button type="submit" id="btn-save-schedule" class="bg-accent hover:bg-[#d000ff] text-black font-sans font-black text-xs uppercase tracking-tighter py-3 px-10 rounded-sm transition-all shadow-md hover:shadow-[0_0_20px_rgba(188,19,254,0.5)]">Save Cycle</button>
                 </div>
             </form>
         </div>
@@ -417,36 +455,36 @@
             const tbody = document.getElementById('targets-tbody');
             const tr = document.createElement('tr');
             tr.id = `row-profile-${p.ID}`;
-            tr.className = "hover:bg-slate-800/30 transition-colors group animate-fade-in";
+            tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent animate-fade-in bg-black/10";
             
             let statusHtml = p.IsScanning ? 
-                `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-amber-500/10 text-amber-400 ring-1 ring-inset ring-amber-500/20">
-                    <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
-                    Scanning
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
+                    <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shadow-[0_0_8px_#bc13fe]"></span>
+                    Active Scan
                 </span>` : 
-                `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium bg-emerald-500/10 text-emerald-400 ring-1 ring-inset ring-emerald-500/20">
-                    Idle
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-slate-900/50 text-slate-600 border border-slate-800">
+                    Hibernation
                 </span>`;
 
             let actionHtml = '';
             if (!p.IsScanning) {
-                actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-xs bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded transition-colors">Scan Now</button> `;
+                actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
             }
-            actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-xs bg-red-900/40 hover:bg-red-600 text-red-200 hover:text-white px-3 py-1.5 rounded transition-colors">Delete</button>`;
+            actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
 
             tr.innerHTML = `
-                <td class="p-4 text-slate-400">#${p.ID}</td>
-                <td class="p-4 font-medium text-slate-200">${p.Domain}</td>
-                <td class="p-4 text-sm text-slate-400 group/sched relative">
-                    <code id="schedule-text-${p.ID}" class="bg-slate-900 px-2 py-1 rounded">${p.Schedule}</code>
-                    <button onclick="editSchedule('${p.ID}', '${p.Domain}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-2 text-accent hover:text-sky-300" title="Edit Schedule">
+                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${p.ID}</td>
+                <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${p.Domain}</td>
+                <td class="p-5 text-slate-500 group/sched relative">
+                    <code id="schedule-text-${p.ID}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">${p.Schedule}</code>
+                    <button onclick="editSchedule('${p.ID}', '${p.Domain}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                     </button>
                 </td>
-                <td class="p-4">
+                <td class="p-5">
                     ${statusHtml}
                 </td>
-                <td class="p-4 flex gap-2 justify-end opacity-60 group-hover:opacity-100 transition-opacity">
+                <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">
                     ${actionHtml}
                 </td>
             `;
@@ -595,22 +633,49 @@
 
         function toggleFilter(filter) {
             const allBtns = document.querySelectorAll('.filter-pill');
-            const activeClass = 'bg-accent text-slate-900 border-accent';
-            const inactiveClass = 'bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200';
+            const activeClass = 'bg-accent text-black border-accent shadow-[0_0_15px_rgba(188,19,254,0.4)]';
+            const inactiveClass = 'bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent';
+
+            const baseClass = 'filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest';
 
             if (currentFilter === filter) {
                 currentFilter = null;
-                allBtns.forEach(b => { b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${inactiveClass}`; });
+                allBtns.forEach(b => { b.className = `${baseClass} ${inactiveClass}`; });
             } else {
                 currentFilter = filter;
-                allBtns.forEach(b => { b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${inactiveClass}`; });
+                allBtns.forEach(b => { b.className = `${baseClass} ${inactiveClass}`; });
                 const active = document.getElementById(`filter-btn-${filter}`);
-                if (active) active.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all ${activeClass}`;
+                if (active) active.className = `${baseClass} ${activeClass}`;
             }
 
             if (currentProfileId && !currentSubDashboardDomain) {
                 renderVisibleDiscoveriesTable();
             }
+        }
+
+        function totalFindings(s) {
+            if (!window.cachedData) return 0;
+            return window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length
+                 + window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length
+                 + window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+        }
+
+        function applySort(subs) {
+            const sortEl = document.getElementById('select-sort');
+            const sortKey = sortEl ? sortEl.value : 'name-asc';
+            return [...subs].sort((a, b) => {
+                switch (sortKey) {
+                    case 'name-asc':      return a.Domain.localeCompare(b.Domain);
+                    case 'name-desc':     return b.Domain.localeCompare(a.Domain);
+                    case 'findings-desc': return totalFindings(b) - totalFindings(a);
+                    case 'findings-asc':  return totalFindings(a) - totalFindings(b);
+                    case 'first-asc':     return new Date(a.FirstSeen) - new Date(b.FirstSeen);
+                    case 'first-desc':    return new Date(b.FirstSeen) - new Date(a.FirstSeen);
+                    case 'update-asc':    return new Date(a.LastSeen)  - new Date(b.LastSeen);
+                    case 'update-desc':   return new Date(b.LastSeen)  - new Date(a.LastSeen);
+                    default:              return 0;
+                }
+            });
         }
 
         function applyFilter(subs) {
@@ -634,6 +699,18 @@
                     }
                     case 'secrets':
                         return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
+                    case 'status-2xx-3xx': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && (host.StatusCode >= 200 && host.StatusCode < 400);
+                    }
+                    case 'status-403': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && host.StatusCode === 403;
+                    }
+                    case 'status-other': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && (host.StatusCode < 200 || (host.StatusCode >= 400 && host.StatusCode !== 403));
+                    }
                     case 'updated': {
                         const first = new Date(s.FirstSeen).getTime();
                         const last = new Date(s.LastSeen).getTime();
@@ -658,8 +735,8 @@
             const btnS = document.getElementById('disc-tab-subs');
             const btnC = document.getElementById('disc-tab-secs');
             
-            const activeClass = "px-4 py-1.5 rounded-md text-sm font-medium bg-slate-600 text-white shadow shadow-black/20 transition-all";
-            const inactiveClass = "px-4 py-1.5 rounded-md text-sm font-medium text-slate-400 hover:text-white hover:bg-slate-700/50 transition-all";
+            const activeClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all";
+            const inactiveClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
 
             if (tab === 'subs') {
                 btnS.className = activeClass;
@@ -729,30 +806,66 @@
                 const tbody = document.getElementById('tbody-subs');
                 tbody.innerHTML = '';
 
-                const filteredSubs = applyFilter(window.cachedData.subs);
+                const filteredSubs = applySort(applyFilter(window.cachedData.subs));
                 
                 if (filteredSubs.length === 0) {
-                     const msg = currentFilter ? 'No subdomains match the active filter.' : 'No subdomains found yet. Try running a scan.';
-                     tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-500 bg-slate-800/10">${msg}</td></tr>`;
+                     const msg = currentFilter ? 'No nodes match the active filter matrix.' : 'No nodes detected in stream.';
+                     tbody.innerHTML = `<tr><td colspan="6" class="p-12 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">${msg}</td></tr>`;
                      return
                 }
 
                 filteredSubs.forEach(s => {
                     const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
                     const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
+
+                    // Status code lookup from cached hosts
+                    const hostMatch = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                    let statusHtml = '';
+                    if (hostMatch) {
+                        const code = hostMatch.StatusCode;
+                        let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
+                        if (code === 200) statusClass = 'bg-emerald-950/30 text-emerald-500 border-emerald-900/50';
+                        else if (code === 301 || code === 302 || code === 307) statusClass = 'bg-blue-950/30 text-blue-400 border-blue-900/50';
+                        else if (code === 403 || code === 401) statusClass = 'bg-orange-950/30 text-orange-400 border-orange-900/50';
+                        else if (code >= 500) statusClass = 'bg-rose-950/30 text-rose-500 border-rose-900/50';
+                        statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${code}</span>`;
+                    } else {
+                        statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
+                    }
+
+                    // Findings counts from cached data
+                    const vulnCount = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length;
+                    const dirCount = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length;
+                    const secCount = window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+
+                    let findingsHtml = '';
+                    if (vulnCount === 0 && dirCount === 0 && secCount === 0) {
+                        findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
+                    } else {
+                        if (vulnCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20" title="Vulnerabilities">${vulnCount} Vuln</span> `;
+                        if (dirCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20" title="Directories">${dirCount} Dir</span> `;
+                        if (secCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30" title="Credentials">${secCount} Cred</span>`;
+                    }
+
                     tbody.innerHTML += `
-                        <tr class="hover:bg-slate-800/30 transition-colors group">
-                            <td class="p-4 text-slate-400">#${s.ID}</td>
-                            <td class="p-4 font-mono font-medium text-accent">
-                                <button onclick="openSubDashboard('${s.Domain}')" class="hover:underline hover:text-sky-300 text-left">${s.Domain}</button>
+                        <tr class="hover:bg-accent/[0.04] transition-colors group">
+                            <td class="p-5 text-slate-700 font-mono font-bold text-xs">#${s.ID}</td>
+                            <td class="p-5 font-mono font-bold text-accent text-sm">
+                                <button onclick="openSubDashboard('${s.Domain}')" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${s.Domain}</button>
                             </td>
-                            <td class="p-4 text-right text-sm text-slate-400">
+                            <td class="p-5 text-center">
+                                ${statusHtml}
+                            </td>
+                            <td class="p-5 text-center">
+                                <div class="flex items-center justify-center gap-1.5 flex-wrap">${findingsHtml}</div>
+                            </td>
+                            <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter">
                                 <span>${firstSeen}</span>
                             </td>
-                            <td class="p-4 text-right text-sm text-slate-400 flex justify-end items-center gap-4">
+                            <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter flex justify-end items-center gap-6">
                                 <span>${lastUpdate}</span>
-                                <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-700 hover:bg-slate-600 text-white p-1.5 rounded" title="Visit in browser">
-                                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                                <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm" title="Visit Node">
+                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                                 </a>
                             </td>
                         </tr>
@@ -772,10 +885,10 @@
 
                 window.cachedData.secs.forEach(s => {
                     tbody.innerHTML += `
-                        <tr class="hover:bg-slate-800/30 transition-colors group">
-                            <td class="p-4"><span class="px-2 py-1 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded text-xs font-bold tracking-wider">${s.SecretType}</span></td>
-                            <td class="p-4 font-mono text-sm text-rose-300 break-all select-all">${s.SecretValue}</td>
-                            <td class="p-4 text-sm"><a href="${s.SourceURL}" target="_blank" class="text-blue-400 hover:text-blue-300 truncate inline-block w-48" title="${s.SourceURL}">File Source &rarr;</a></td>
+                        <tr class="hover:bg-accent/[0.04] transition-colors group">
+                            <td class="p-5 font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
+                            <td class="p-5 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
+                            <td class="p-5 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-64 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
                         </tr>
                     `;
                 });
@@ -789,8 +902,9 @@
             document.getElementById('sub-dashboard').classList.remove('hidden');
             document.getElementById('sub-dashboard').classList.add('flex');
 
-            // Hide filter bar and reset active filter
+            // Hide sort and filter bars
             document.getElementById('filter-bar').classList.add('hidden');
+            document.getElementById('sort-bar').classList.add('hidden');
             currentFilter = null;
             document.querySelectorAll('.filter-pill').forEach(b => {
                 b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200`;
@@ -798,7 +912,7 @@
             
             // Set Titles
             const titleEl = document.getElementById('sub-dash-title');
-            titleEl.innerHTML = `<span class="bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 px-2 py-0.5 rounded text-xs font-mono uppercase tracking-widest mr-2">Target</span> ${domain}`;
+            titleEl.innerHTML = `<span class="bg-accent/20 text-accent border border-accent/40 px-3 py-1 rounded-sm text-[11px] font-sans font-black uppercase tracking-[0.2em] mr-3 shadow-[0_0_10px_rgba(188,19,254,0.3)]">NODE</span> ${domain}`;
             
             // Find Associated IP
             const ipEl = document.getElementById('sub-dash-ip');
@@ -806,9 +920,9 @@
             if (hostMatches.length > 0 && hostMatches[0].IP) {
                 // Remove duplicates if multiple hosts return same IP
                 const uniqueIPs = [...new Set(hostMatches.map(h => h.IP).filter(ip => ip))];
-                ipEl.innerText = `IP: ${uniqueIPs.join(', ')}`;
+                ipEl.innerText = `IP ADDR: ${uniqueIPs.join(', ')}`;
             } else {
-                ipEl.innerText = `IP: Unknown / Resolving`;
+                ipEl.innerText = `IP ADDR: UNKNOWN NODE / RESOLVING`;
             }
 
             // Populate Vulnerabilities
@@ -817,20 +931,20 @@
             const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(domain));
             
             if (subVulns.length === 0) {
-                tbodyVulns.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-500 bg-slate-800/10">No vulnerabilities detected for this subdomain.</td></tr>';
+                tbodyVulns.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">No vulnerabilities detected in this node.</td></tr>';
             } else {
                 subVulns.forEach(v => {
-                    let sevClass = "bg-slate-500/10 text-slate-400 border-slate-500/20";
-                    if (v.Severity.toLowerCase() === 'critical') sevClass = "bg-red-500/10 text-red-500 border-red-500/30";
-                    else if (v.Severity.toLowerCase() === 'high') sevClass = "bg-orange-500/10 text-orange-500 border-orange-500/30";
-                    else if (v.Severity.toLowerCase() === 'medium') sevClass = "bg-yellow-500/10 text-yellow-500 border-yellow-500/30";
-                    else if (v.Severity.toLowerCase() === 'low') sevClass = "bg-emerald-500/10 text-emerald-500 border-emerald-500/30";
+                    let sevClass = "bg-slate-900 text-slate-600 border-slate-800";
+                    if (v.Severity.toLowerCase() === 'critical') sevClass = "bg-rose-950/40 text-rose-500 border-rose-900/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]";
+                    else if (v.Severity.toLowerCase() === 'high') sevClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
+                    else if (v.Severity.toLowerCase() === 'medium') sevClass = "bg-amber-950/40 text-amber-500 border-amber-900/50";
+                    else if (v.Severity.toLowerCase() === 'low') sevClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
 
                     tbodyVulns.innerHTML += `
-                        <tr class="hover:bg-slate-800/40 transition-colors">
-                            <td class="p-3"><span class="px-2 py-1 border rounded text-xs font-bold uppercase tracking-wider ${sevClass}">${v.Severity}</span></td>
-                            <td class="p-3 font-medium text-slate-300">${v.Name}</td>
-                            <td class="p-3 font-mono text-xs text-slate-500">${v.TemplateID}</td>
+                        <tr class="hover:bg-accent/[0.04] transition-colors group">
+                            <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[10px] font-sans font-black uppercase tracking-widest ${sevClass}">${v.Severity}</span></td>
+                            <td class="p-4 font-sans font-bold text-slate-200 tracking-tight text-sm">${v.Name}</td>
+                            <td class="p-4 font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors uppercase font-bold">${v.TemplateID}</td>
                         </tr>
                     `;
                 });
@@ -842,18 +956,18 @@
             const subDirs = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(domain));
             
             if (subDirs.length === 0) {
-                tbodyDirs.innerHTML = '<tr><td colspan="2" class="p-6 text-center text-slate-500 bg-slate-800/10">No directories found yet. Configure a Wordlist for this profile and ensure Directory Fuzzing has run.</td></tr>';
+                tbodyDirs.innerHTML = '<tr><td colspan="2" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">Node isolation... No route fragments discovered.</td></tr>';
             } else {
                 subDirs.forEach(d => {
-                    let statusClass = "bg-slate-500/10 text-slate-400 border-slate-500/20";
-                    if (d.StatusCode === 200) statusClass = "bg-emerald-500/10 text-emerald-500 border-emerald-500/30";
-                    else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = "bg-blue-500/10 text-blue-500 border-blue-500/30";
-                    else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = "bg-orange-500/10 text-orange-500 border-orange-500/30";
+                    let statusClass = "bg-slate-900 text-slate-600 border-slate-800";
+                    if (d.StatusCode === 200) statusClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
+                    else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = "bg-blue-950/40 text-blue-400 border-blue-900/50";
+                    else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
 
                     tbodyDirs.innerHTML += `
-                        <tr class="hover:bg-slate-800/40 transition-colors">
-                            <td class="p-3"><span class="px-2 py-1 border rounded text-xs font-bold tracking-wider ${statusClass}">${d.StatusCode}</span></td>
-                            <td class="p-3 font-mono text-sm"><a href="${d.DirURL}" target="_blank" class="text-sky-400 hover:text-sky-300 hover:underline break-all">${d.DirURL}</a></td>
+                        <tr class="hover:bg-accent/[0.04] transition-colors group">
+                            <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${d.StatusCode}</span></td>
+                            <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${d.DirURL}" target="_blank" class="text-accent hover:text-white transition-colors break-all">${d.DirURL}</a></td>
                         </tr>
                     `;
                 });
@@ -865,14 +979,14 @@
             const subSecs = window.cachedData.secs.filter(s => s.SourceURL.includes(domain));
 
             if (subSecs.length === 0) {
-                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-500 bg-slate-800/10">No secrets found associated with this subdomain.</td></tr>';
+                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs text-xs">Extraction void... No credentials located.</td></tr>';
             } else {
                 subSecs.forEach(s => {
                     tbodySecs.innerHTML += `
-                        <tr class="hover:bg-slate-800/40 transition-colors">
-                            <td class="p-3"><span class="px-2 py-0.5 bg-purple-500/10 text-purple-400 border border-purple-500/20 rounded text-[10px] font-bold tracking-wider uppercase">${s.SecretType}</span></td>
-                            <td class="p-3 font-mono text-xs text-rose-300 break-all select-all">${s.SecretValue}</td>
-                            <td class="p-3 text-xs"><a href="${s.SourceURL}" target="_blank" class="text-blue-400 hover:text-blue-300 truncate inline-block w-40" title="${s.SourceURL}">File Source &rarr;</a></td>
+                        <tr class="hover:bg-accent/[0.04] transition-colors group">
+                            <td class="p-4"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
+                            <td class="p-4 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
+                            <td class="p-4 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-48 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
                         </tr>
                     `;
                 });
@@ -887,13 +1001,14 @@
             document.getElementById('sub-dashboard').classList.add('hidden');
             document.getElementById('sub-dashboard').classList.remove('flex');
             document.getElementById('filter-bar').classList.remove('hidden');
+            document.getElementById('sort-bar').classList.remove('hidden');
             renderVisibleDiscoveriesTable();
         }
 
         function switchSubDashboardTab(tab) {
             const tabs = ['vulns', 'dirs', 'secs'];
-            const activeClass = "px-3 py-1 rounded text-xs font-semibold bg-accent text-slate-900 shadow transition-all";
-            const inactiveClass = "px-3 py-1 rounded text-xs font-semibold text-slate-400 hover:text-white hover:bg-slate-800 transition-all";
+            const activeClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all";
+            const inactiveClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
 
             tabs.forEach(t => {
                 const btn = document.getElementById(`sub-tab-${t}`);
