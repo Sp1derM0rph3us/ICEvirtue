@@ -172,6 +172,26 @@
                 </div>
             </div>
 
+            <!-- Sort Bar -->
+            <div id="sort-bar" class="flex items-center gap-3 p-4 bg-card rounded-xl border border-slate-700 shadow-sm shrink-0">
+                <span class="text-xs text-slate-400 font-semibold uppercase tracking-wider mr-1">Sort By:</span>
+                <div class="relative w-72">
+                    <select id="select-sort" onchange="renderVisibleDiscoveriesTable()" class="w-full bg-slate-800 border border-slate-600 rounded p-2 text-white appearance-none focus:ring-2 focus:ring-accent outline-none font-medium text-sm">
+                        <option value="name-asc">A &rarr; Z (Name)</option>
+                        <option value="name-desc">Z &rarr; A (Name)</option>
+                        <option value="findings-desc">Most Findings First</option>
+                        <option value="findings-asc">Fewest Findings First</option>
+                        <option value="first-asc">First Seen &mdash; Oldest First</option>
+                        <option value="first-desc">First Seen &mdash; Newest First</option>
+                        <option value="update-asc">Last Update &mdash; Oldest First</option>
+                        <option value="update-desc">Last Update &mdash; Newest First</option>
+                    </select>
+                    <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-2 text-slate-400">
+                        <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                    </div>
+                </div>
+            </div>
+
             <!-- Filter Bar -->
             <div id="filter-bar" class="flex items-center gap-2 p-3 bg-card rounded-xl border border-slate-700 shadow-sm shrink-0 flex-wrap">
                 <span class="text-xs text-slate-500 font-semibold uppercase tracking-wider mr-1">Filter:</span>
@@ -180,6 +200,9 @@
                 <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Critical–Low Vulns</button>
                 <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Info / No Vulns</button>
                 <button onclick="toggleFilter('secrets')" id="filter-btn-secrets" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Has Secrets</button>
+                <button onclick="toggleFilter('status-2xx-3xx')" id="filter-btn-status-2xx-3xx" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">2xx/3xx</button>
+                <button onclick="toggleFilter('status-403')" id="filter-btn-status-403" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">403 Forbidden</button>
+                <button onclick="toggleFilter('status-other')" id="filter-btn-status-other" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Other Status</button>
                 <button onclick="toggleFilter('updated')" id="filter-btn-updated" class="filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200">Updated Since First Seen</button>
             </div>
 
@@ -199,6 +222,8 @@
                             <tr class="text-slate-400 text-sm uppercase tracking-wider">
                                 <th class="p-4 font-medium w-24">ID</th>
                                 <th class="p-4 font-medium">Discovered Subdomain</th>
+                                <th class="p-4 font-medium text-center">Status</th>
+                                <th class="p-4 font-medium text-center">Findings</th>
                                 <th class="p-4 font-medium text-right">First Seen</th>
                                 <th class="p-4 font-medium text-right">Last Update</th>
                             </tr>
@@ -613,6 +638,31 @@
             }
         }
 
+        function totalFindings(s) {
+            if (!window.cachedData) return 0;
+            return window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length
+                 + window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length
+                 + window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+        }
+
+        function applySort(subs) {
+            const sortEl = document.getElementById('select-sort');
+            const sortKey = sortEl ? sortEl.value : 'name-asc';
+            return [...subs].sort((a, b) => {
+                switch (sortKey) {
+                    case 'name-asc':      return a.Domain.localeCompare(b.Domain);
+                    case 'name-desc':     return b.Domain.localeCompare(a.Domain);
+                    case 'findings-desc': return totalFindings(b) - totalFindings(a);
+                    case 'findings-asc':  return totalFindings(a) - totalFindings(b);
+                    case 'first-asc':     return new Date(a.FirstSeen) - new Date(b.FirstSeen);
+                    case 'first-desc':    return new Date(b.FirstSeen) - new Date(a.FirstSeen);
+                    case 'update-asc':    return new Date(a.LastSeen)  - new Date(b.LastSeen);
+                    case 'update-desc':   return new Date(b.LastSeen)  - new Date(a.LastSeen);
+                    default:              return 0;
+                }
+            });
+        }
+
         function applyFilter(subs) {
             if (!currentFilter || !window.cachedData) return subs;
 
@@ -634,6 +684,18 @@
                     }
                     case 'secrets':
                         return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
+                    case 'status-2xx-3xx': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && (host.StatusCode >= 200 && host.StatusCode < 400);
+                    }
+                    case 'status-403': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && host.StatusCode === 403;
+                    }
+                    case 'status-other': {
+                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                        return host && (host.StatusCode < 200 || (host.StatusCode >= 400 && host.StatusCode !== 403));
+                    }
                     case 'updated': {
                         const first = new Date(s.FirstSeen).getTime();
                         const last = new Date(s.LastSeen).getTime();
@@ -729,22 +791,58 @@
                 const tbody = document.getElementById('tbody-subs');
                 tbody.innerHTML = '';
 
-                const filteredSubs = applyFilter(window.cachedData.subs);
+                const filteredSubs = applySort(applyFilter(window.cachedData.subs));
                 
                 if (filteredSubs.length === 0) {
                      const msg = currentFilter ? 'No subdomains match the active filter.' : 'No subdomains found yet. Try running a scan.';
-                     tbody.innerHTML = `<tr><td colspan="4" class="p-8 text-center text-slate-500 bg-slate-800/10">${msg}</td></tr>`;
+                     tbody.innerHTML = `<tr><td colspan="6" class="p-8 text-center text-slate-500 bg-slate-800/10">${msg}</td></tr>`;
                      return
                 }
 
                 filteredSubs.forEach(s => {
                     const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
                     const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
+
+                    // Status code lookup from cached hosts
+                    const hostMatch = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+                    let statusHtml = '';
+                    if (hostMatch) {
+                        const code = hostMatch.StatusCode;
+                        let statusClass = 'bg-slate-500/10 text-slate-400 border-slate-500/20';
+                        if (code === 200) statusClass = 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30';
+                        else if (code === 301 || code === 302 || code === 307) statusClass = 'bg-blue-500/10 text-blue-500 border-blue-500/30';
+                        else if (code === 403 || code === 401) statusClass = 'bg-orange-500/10 text-orange-500 border-orange-500/30';
+                        else if (code >= 500) statusClass = 'bg-red-500/10 text-red-500 border-red-500/30';
+                        statusHtml = `<span class="px-2 py-1 border rounded text-xs font-bold tracking-wider ${statusClass}">${code}</span>`;
+                    } else {
+                        statusHtml = `<span class="px-2 py-1 border rounded text-xs font-medium tracking-wider bg-slate-800/50 text-slate-600 border-slate-700">N/A</span>`;
+                    }
+
+                    // Findings counts from cached data
+                    const vulnCount = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length;
+                    const dirCount = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length;
+                    const secCount = window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+
+                    let findingsHtml = '';
+                    if (vulnCount === 0 && dirCount === 0 && secCount === 0) {
+                        findingsHtml = `<span class="text-slate-600 text-sm">&mdash;</span>`;
+                    } else {
+                        if (vulnCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20" title="Vulnerabilities">${vulnCount} vuln${vulnCount > 1 ? 's' : ''}</span> `;
+                        if (dirCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-sky-500/10 text-sky-400 border border-sky-500/20" title="Directories">${dirCount} dir${dirCount > 1 ? 's' : ''}</span> `;
+                        if (secCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20" title="Credentials">${secCount} cred${secCount > 1 ? 's' : ''}</span>`;
+                    }
+
                     tbody.innerHTML += `
                         <tr class="hover:bg-slate-800/30 transition-colors group">
                             <td class="p-4 text-slate-400">#${s.ID}</td>
                             <td class="p-4 font-mono font-medium text-accent">
                                 <button onclick="openSubDashboard('${s.Domain}')" class="hover:underline hover:text-sky-300 text-left">${s.Domain}</button>
+                            </td>
+                            <td class="p-4 text-center">
+                                ${statusHtml}
+                            </td>
+                            <td class="p-4 text-center">
+                                <div class="flex items-center justify-center gap-1 flex-wrap">${findingsHtml}</div>
                             </td>
                             <td class="p-4 text-right text-sm text-slate-400">
                                 <span>${firstSeen}</span>
@@ -789,8 +887,9 @@
             document.getElementById('sub-dashboard').classList.remove('hidden');
             document.getElementById('sub-dashboard').classList.add('flex');
 
-            // Hide filter bar and reset active filter
+            // Hide sort and filter bars
             document.getElementById('filter-bar').classList.add('hidden');
+            document.getElementById('sort-bar').classList.add('hidden');
             currentFilter = null;
             document.querySelectorAll('.filter-pill').forEach(b => {
                 b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200`;
@@ -887,6 +986,7 @@
             document.getElementById('sub-dashboard').classList.add('hidden');
             document.getElementById('sub-dashboard').classList.remove('flex');
             document.getElementById('filter-bar').classList.remove('hidden');
+            document.getElementById('sort-bar').classList.remove('hidden');
             renderVisibleDiscoveriesTable();
         }
 
