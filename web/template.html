@@ -85,6 +85,7 @@
                             <span class="text-slate-600 font-sans text-xs font-bold pl-3 uppercase">Every</span>
                             <select id="sched-freq" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                                 <option value="day">Day</option>
+                                <option value="week">Week</option>
                                 <option value="month">Month</option>
                                 <option value="year">Year</option>
                             </select>
@@ -361,6 +362,7 @@
                         <span class="text-slate-600 font-sans text-xs font-bold uppercase pl-3">Every</span>
                         <select id="edit-sched-freq" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                             <option value="day">Day</option>
+                            <option value="week">Week</option>
                             <option value="month">Month</option>
                             <option value="year">Year</option>
                         </select>
@@ -386,6 +388,23 @@
     </div>
 
     <script>
+        function populateMinutes() {
+            const selects = ['sched-min', 'edit-sched-min'];
+            selects.forEach(id => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                el.innerHTML = '';
+                for (let i = 0; i < 60; i++) {
+                    const val = i.toString().padStart(2, '0');
+                    const opt = document.createElement('option');
+                    opt.value = val;
+                    opt.innerText = val;
+                    el.appendChild(opt);
+                }
+            });
+        }
+        populateMinutes();
+
         function switchView(view) {
             document.getElementById('view-targets').classList.toggle('hidden', view !== 'targets');
             document.getElementById('view-discoveries').classList.toggle('hidden', view !== 'discoveries');
@@ -553,6 +572,36 @@
             document.getElementById('edit-schedule-id').value = id;
             document.getElementById('edit-schedule-domain').innerText = `Target: ${domain}`;
             
+            const scheduleText = document.getElementById(`schedule-text-${id}`).innerText;
+            // Format: "every <freq> at <HH>:<MM>"
+            const regex = /every (\w+) at (\d{2}):(\d{2})/i;
+            const match = scheduleText.match(regex);
+            
+            if (match) {
+                const freq = match[1].toLowerCase();
+                let hour24 = parseInt(match[2], 10);
+                const min = match[3];
+                
+                let ampm = "AM";
+                let hour12 = hour24;
+                
+                if (hour24 === 0) {
+                    hour12 = 12;
+                    ampm = "AM";
+                } else if (hour24 === 12) {
+                    hour12 = 12;
+                    ampm = "PM";
+                } else if (hour24 > 12) {
+                    hour12 = hour24 - 12;
+                    ampm = "PM";
+                }
+                
+                document.getElementById('edit-sched-freq').value = freq;
+                document.getElementById('edit-sched-hour').value = hour12.toString().padStart(2, '0');
+                document.getElementById('edit-sched-min').value = min;
+                document.getElementById('edit-sched-ampm').value = ampm;
+            }
+
             const modal = document.getElementById('modal-edit-schedule');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
