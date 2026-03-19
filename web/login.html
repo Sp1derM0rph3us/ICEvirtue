@@ -3,104 +3,162 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICEvirtue - Login</title>
+    <title>ICEVIRTUE // ACCESS-POINT</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        accent: '#bc13fe',
+                        dark: '#000000',
+                        card: '#0a0a0a',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['Space+Mono', 'monospace'],
+                    },
+                }
+            }
+        }
+    </script>
     <style>
         body {
-            font-family: 'Inter', 'Segoe UI', sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
+            background-color: #000000;
+            background-image: 
+                radial-gradient(circle at 50% 50%, rgba(188, 19, 254, 0.05) 0%, transparent 50%),
+                linear-gradient(rgba(18, 18, 18, 0.2) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(18, 18, 18, 0.2) 1px, transparent 1px);
+            background-size: 100% 100%, 30px 30px, 30px 30px;
+            color: #e2e8f0;
             display: flex;
             justify-content: center;
             align-items: center;
             height: 100vh;
             margin: 0;
+            overflow: hidden;
         }
-        .login-box {
-            background-color: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            padding: 2.5rem;
+
+        .glass-box {
+            background: rgba(10, 10, 10, 0.8);
+            backdrop-filter: blur(12px);
+            border: 1px solid rgba(188, 19, 254, 0.1);
+            position: relative;
+        }
+
+        .glass-box::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
             width: 100%;
-            max-width: 340px;
-            text-align: center;
-            box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+            height: 2px;
+            background: linear-gradient(90deg, transparent, #bc13fe, transparent);
+            animation: scan-line 3s linear infinite;
         }
-        .login-box h2 {
-            margin-top: 0;
-            margin-bottom: 2rem;
-            color: #58a6ff;
-            font-size: 1.5rem;
+
+        @keyframes scan-line {
+            0% { transform: translateY(0); opacity: 0; }
+            50% { opacity: 1; }
+            100% { transform: translateY(400px); opacity: 0; }
         }
-        input {
-            width: 100%;
-            padding: 12px;
-            margin-bottom: 1.2rem;
-            background-color: #0d1117;
-            border: 1px solid #30363d;
-            border-radius: 6px;
-            color: #c9d1d9;
-            box-sizing: border-box;
-            font-size: 1rem;
+
+        .neon-glow {
+            text-shadow: 0 0 10px rgba(188, 19, 254, 0.8), 0 0 20px rgba(188, 19, 254, 0.4);
         }
-        input:focus {
+
+        .input-cyber {
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid #1e293b;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .input-cyber:focus {
+            border-color: #bc13fe;
+            box-shadow: 0 0 15px rgba(188, 19, 254, 0.2);
             outline: none;
-            border-color: #58a6ff;
-            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.3);
         }
-        button {
-            width: 100%;
-            padding: 12px;
-            background-color: #238636;
-            color: white;
-            border: 1px solid rgba(240, 246, 252, 0.1);
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 1rem;
-            transition: background-color 0.2s, transform 0.1s;
+
+        .btn-cyber {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s ease;
         }
-        button:hover {
-            background-color: #2ea043;
+
+        .btn-cyber:hover {
+            box-shadow: 0 0 25px rgba(188, 19, 254, 0.5);
+            transform: translateY(-1px);
         }
-        button:active {
-            transform: scale(0.98);
+
+        .btn-cyber:active {
+            transform: translateY(1px);
         }
-        .error {
-            color: #f85149;
-            margin-bottom: 1rem;
-            font-size: 0.9em;
-            display: none;
-            background: rgba(248, 81, 73, 0.1);
-            padding: 8px;
-            border-radius: 4px;
-            border: 1px solid rgba(248, 81, 73, 0.4);
+
+        @keyframes pulse-fast {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
         }
-        .spinner {
-            display: none;
-            margin: 10px auto;
-            width: 24px;
-            height: 24px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-            border-top-color: #fff;
-            animation: spin 1s ease-in-out infinite;
-        }
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        .animate-pulse-fast {
+            animation: pulse-fast 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
     </style>
 </head>
-<body>
+<body class="font-sans">
 
-<div class="login-box">
-    <h2>ICEvirtue Engine</h2>
-    <div class="error" id="error-msg">Unauthorized</div>
-    <form id="login-form">
-        <input type="text" id="username" placeholder="Username" required autocomplete="username">
-        <input type="password" id="password" placeholder="Password" required autocomplete="current-password">
-        <button type="submit" id="submit-btn">Sign In</button>
-        <div class="spinner" id="spinner"></div>
+<div class="glass-box w-full max-w-[420px] p-12 rounded-sm shadow-[0_0_100px_rgba(0,0,0,1)] border-l-[3px] border-l-accent animate-fade-in">
+    <div class="mb-12">
+        <div class="flex items-center justify-between mb-2">
+            <span class="text-[10px] font-mono font-black text-accent tracking-[0.4em] uppercase opacity-80">System Auth</span>
+            <span class="text-[10px] font-mono text-slate-700 tracking-widest uppercase">v0.0.3</span>
+        </div>
+        <h1 class="text-4xl font-sans font-black text-white italic uppercase tracking-tighter neon-glow leading-none">
+            ICEVIRTUE
+        </h1>
+        <p class="text-[11px] font-mono text-slate-500 mt-3 uppercase tracking-widest font-bold">Encrypted Access Point</p>
+    </div>
+
+    <div id="error-msg" class="hidden mb-8 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-mono font-bold uppercase tracking-widest text-center animate-pulse">
+        Access Denied: Terminal Sync Failed
+    </div>
+
+    <form id="login-form" class="space-y-8">
+        <div class="space-y-2">
+            <label class="block text-[10px] font-sans font-black text-slate-500 uppercase tracking-[0.2em]">Operator ID</label>
+            <input type="text" id="username" placeholder="Username" required autocomplete="username"
+                   class="input-cyber w-full p-4 font-mono font-bold text-sm text-slate-200 uppercase tracking-widest">
+        </div>
+        
+        <div class="space-y-2">
+            <label class="block text-[10px] font-sans font-black text-slate-500 uppercase tracking-[0.2em]">Password</label>
+            <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"
+                   class="input-cyber w-full p-4 font-mono font-bold text-sm text-slate-200 tracking-widest">
+        </div>
+
+        <button type="submit" id="submit-btn" 
+                class="btn-cyber w-full bg-accent hover:bg-[#d000ff] text-black font-sans font-[900] text-xs uppercase tracking-[0.3em] py-5 transition-all shadow-lg flex items-center justify-center gap-3">
+            Establish Link
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+        </button>
+
+        <div id="spinner" class="hidden py-4">
+            <div class="flex items-center justify-center gap-4 text-accent animate-pulse-fast">
+                <span class="text-[10px] font-mono font-black tracking-widest uppercase">Synchronizing Neural Link...</span>
+                <div class="w-8 h-px bg-accent"></div>
+            </div>
+        </div>
     </form>
+
+    <div class="mt-16 pt-8 border-t border-slate-900 flex justify-between items-center opacity-40 hover:opacity-100 transition-opacity">
+        <span class="text-[9px] font-mono text-slate-600 uppercase tracking-widest">Awaiting Command...</span>
+        <div class="flex gap-4">
+            <div class="w-1 h-1 bg-accent rounded-full animate-ping"></div>
+            <div class="w-1 h-1 bg-accent/40 rounded-full"></div>
+            <div class="w-1 h-1 bg-accent/20 rounded-full"></div>
+        </div>
+    </div>
 </div>
 
 <script>
@@ -112,9 +170,9 @@
         const spinner = document.getElementById('spinner');
         const errorMsg = document.getElementById('error-msg');
 
-        submitBtn.style.display = 'none';
-        spinner.style.display = 'block';
-        errorMsg.style.display = 'none';
+        submitBtn.classList.add('hidden');
+        spinner.classList.remove('hidden');
+        errorMsg.classList.add('hidden');
 
         try {
             const res = await fetch('/api/login', {
@@ -124,19 +182,18 @@
             });
 
             if (res.ok) {
-                // Remove the hash and reload to fetch template.html
                 window.location.replace('/'); 
             } else {
-                errorMsg.textContent = "Unauthorized"; // Generic message as required
-                errorMsg.style.display = 'block';
-                submitBtn.style.display = 'block';
-                spinner.style.display = 'none';
+                errorMsg.textContent = "AUTH FAILURE // INVALID CREDENTIALS"; 
+                errorMsg.classList.remove('hidden');
+                submitBtn.classList.remove('hidden');
+                spinner.classList.add('hidden');
             }
         } catch (err) {
-            errorMsg.textContent = "Connection error";
-            errorMsg.style.display = 'block';
-            submitBtn.style.display = 'block';
-            spinner.style.display = 'none';
+            errorMsg.textContent = "UPLINK ERROR // CONNECTION REFUSED";
+            errorMsg.classList.remove('hidden');
+            submitBtn.classList.remove('hidden');
+            spinner.classList.add('hidden');
         }
     });
 </script>
