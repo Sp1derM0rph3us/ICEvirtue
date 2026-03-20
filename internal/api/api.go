@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -46,6 +46,7 @@ func StartServer(port int, s *scheduler.Scheduler) {
 	r.Post("/api/login", handleLogin)
 	r.Post("/api/logout", handleLogout)
 	r.Get("/", handleDashboard)
+	r.Handle("/static/*", http.StripPrefix("/static/", http.FileServer(http.Dir("web"))))
 
 	r.Route("/api/profiles", func(r chi.Router) {
 		r.Use(authMiddleware)
@@ -402,6 +403,22 @@ func forceScanProfile(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan started in background"})
 }
 
+func parsePagination(r *http.Request) (int, int) {
+	limit := 250
+	offset := 0
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 1000 {
+			limit = v
+		}
+	}
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
+			offset = v
+		}
+	}
+	return limit, offset
+}
+
 func getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
 	idParam := chi.URLParam(r, "id")
 	if idParam == "" {
@@ -415,8 +432,9 @@ func getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, offset := parsePagination(r)
 	var subdomains []models.Subdomain
-	database.DB.Where("profile_id = ?", id).Find(&subdomains)
+	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&subdomains)
 	respondJSON(w, http.StatusOK, subdomains)
 }
 
@@ -433,8 +451,9 @@ func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, offset := parsePagination(r)
 	var secrets []models.SecretFinding
-	database.DB.Where("profile_id = ?", id).Find(&secrets)
+	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&secrets)
 	respondJSON(w, http.StatusOK, secrets)
 }
 
@@ -451,8 +470,9 @@ func getProfileHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, offset := parsePagination(r)
 	var hosts []models.AliveHost
-	database.DB.Where("profile_id = ?", id).Find(&hosts)
+	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&hosts)
 	respondJSON(w, http.StatusOK, hosts)
 }
 
@@ -469,8 +489,9 @@ func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, offset := parsePagination(r)
 	var vulns []models.Vulnerability
-	database.DB.Where("profile_id = ?", id).Find(&vulns)
+	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&vulns)
 	respondJSON(w, http.StatusOK, vulns)
 }
 
@@ -487,8 +508,9 @@ func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	limit, offset := parsePagination(r)
 	var dirs []models.DirectoryFinding
-	database.DB.Where("profile_id = ?", id).Find(&dirs)
+	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&dirs)
 	respondJSON(w, http.StatusOK, dirs)
 }
 

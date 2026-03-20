@@ -1,0 +1,11 @@
+{
+  "name": "icevirtue",
+  "version": "1.0.0",
+  "description": "ICEvirtue Performance Enhancement",
+  "devDependencies": {
+    "tailwindcss": "latest"
+  },
+  "scripts": {
+    "build:css": "npx tailwindcss -i ./web/input.css -o ./web/static/css/output.css --minify"
+  }
+}
