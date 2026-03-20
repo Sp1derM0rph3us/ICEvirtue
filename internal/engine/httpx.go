@@ -18,7 +18,7 @@ type HttpxResult struct {
 	A         []string `json:"a"`
 	Title     string `json:"title"`
 	WebServer string `json:"webserver"`
-	StatusCode int   `json:"status-code"`
+	StatusCode int   `json:"status_code"`
 	Failed    bool   `json:"failed"`
 }
 

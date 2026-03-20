@@ -7,25 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        dark: '#000000',
-                        card: '#0d0d0d',
-                        accent: '#bc13fe',
-                        'accent-glow': 'rgba(188, 19, 254, 0.5)'
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'ui-sans-serif', 'system-ui', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'Helvetica Neue', 'Arial', 'sans-serif'],
-                        mono: ['Space Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace']
-                    }
-                }
-            }
-        }
-    </script>
+    <link rel="stylesheet" href="/static/css/output.css">
     <style>
         body { background-color: #000000; color: #f8fafc; }
         .tab-active { border-bottom: 2px solid #bc13fe; color: #bc13fe; text-shadow: 0 0 8px rgba(188, 19, 254, 0.4); }
@@ -115,7 +97,7 @@
                         <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
                         Scanning Profiles Table
                     </h2>
-                    <span class="text-[11px] font-sans font-black border border-slate-800 text-slate-500 px-4 py-1.5 rounded-sm uppercase tracking-widest" id="target-count">{{len .Profiles}} Active Nodes</span>
+                    <span class="text-[11px] font-sans font-black border border-slate-800 text-slate-500 px-4 py-1.5 rounded-sm uppercase tracking-widest" id="target-count">0 Active Nodes</span>
                 </div>
                 <div class="overflow-x-auto">
                     <table class="w-full text-left border-collapse font-sans text-sm">
@@ -129,41 +111,9 @@
                             </tr>
                         </thead>
                         <tbody id="targets-tbody" class="divide-y divide-slate-950">
-                            {{range .Profiles}}
-                            <tr id="row-profile-{{.ID}}" class="hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10">
-                                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#{{.ID}}</td>
-                                <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">{{.Domain}}</td>
-                                <td class="p-5 text-slate-500 group/sched relative">
-                                    <code id="schedule-text-{{.ID}}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">{{.Schedule}}</code>
-                                    <button onclick="editSchedule('{{.ID}}', '{{.Domain}}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
-                                        <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                    </button>
-                                </td>
-                                <td class="p-5">
-                                    {{if .IsScanning}}
-                                        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
-                                            <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shadow-[0_0_8px_#bc13fe]"></span>
-                                            Active Scan
-                                        </span>
-                                    {{else}}
-                                        <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-slate-900/50 text-slate-600 border border-slate-800">
-                                            Hibernation
-                                        </span>
-                                    {{end}}
-                                </td>
-                                <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">
-                                    <button onclick="forceScan('{{.ID}}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]" title="Force Start Scan">
-                                        Initiate
-                                    </button>
-                                    <button onclick="deleteTarget('{{.ID}}', '{{.Domain}}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">
-                                        Purge
-                                    </button>
-                                </td>
-                            </tr>
-                            {{end}}
                         </tbody>
                     </table>
-                    <div id="targets-empty" class="{{if .Profiles}}hidden{{end}} p-12 text-center text-slate-700 font-sans font-bold uppercase tracking-widest italic text-sm">
+                    <div id="targets-empty" class="hidden p-12 text-center text-slate-700 font-sans font-bold uppercase tracking-widest italic text-sm">
                         No active nodes configured in the matrix. Establish link above.
                     </div>
                 </div>
@@ -177,9 +127,6 @@
                     <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mb-2">Target Data Stream</label>
                     <div class="relative group">
                         <select id="select-profile" onchange="fetchDiscoveries()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer">
-                            {{range .Profiles}}
-                                <option value="{{.ID}}">{{.Domain}}</option>
-                            {{end}}
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
                             <svg class="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -388,6 +335,16 @@
     </div>
 
     <script>
+        const CHUNK_SIZE = 100;
+        const IP_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
+
+        let currentDiscTab = 'subs';
+        let currentProfileId = null;
+        let currentSubDashboardDomain = null;
+        let currentFilter = null;
+        let scrollSentinelObserver = null;
+        let pendingSubsChunks = [];
+
         function populateMinutes() {
             const selects = ['sched-min', 'edit-sched-min'];
             selects.forEach(id => {
@@ -408,17 +365,14 @@
         function switchView(view) {
             document.getElementById('view-targets').classList.toggle('hidden', view !== 'targets');
             document.getElementById('view-discoveries').classList.toggle('hidden', view !== 'discoveries');
-            
             const btnT = document.getElementById('nav-btn-targets');
             const btnD = document.getElementById('nav-btn-discoveries');
-            
             if (view === 'targets') {
                 btnT.className = "tab-active pb-1 transition-colors";
                 btnD.className = "tab-inactive pb-1 transition-colors";
             } else {
                 btnD.className = "tab-active pb-1 transition-colors";
                 btnT.className = "tab-inactive pb-1 transition-colors";
-                // Auto-select the first profile if none selected
                 const select = document.getElementById('select-profile');
                 if (!select.value && select.options.length > 0) {
                     select.value = select.options[0].value;
@@ -435,29 +389,22 @@
             const originalText = btn.innerText;
             btn.innerText = "Adding...";
             btn.disabled = true;
-
             const domain = document.getElementById('input-domain').value;
             const freq = document.getElementById('sched-freq').value;
             let hour = parseInt(document.getElementById('sched-hour').value, 10);
             const min = document.getElementById('sched-min').value;
             const ampm = document.getElementById('sched-ampm').value;
-
             if (ampm === "PM" && hour < 12) hour += 12;
             if (ampm === "AM" && hour === 12) hour = 0;
-            
             const schedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
-
             try {
                 const res = await fetch('/api/profiles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ domain, schedule })
                 });
-
                 if (!res.ok) throw new Error(await res.text());
-                
                 const newProfile = await res.json();
-                
                 renderTargetRow(newProfile);
                 document.getElementById('targets-empty').classList.add('hidden');
                 updateProfileSelect(newProfile);
@@ -475,22 +422,19 @@
             const tr = document.createElement('tr');
             tr.id = `row-profile-${p.ID}`;
             tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent animate-fade-in bg-black/10";
-            
-            let statusHtml = p.IsScanning ? 
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
-                    <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse shadow-[0_0_8px_#bc13fe]"></span>
+            let statusHtml = p.IsScanning ?
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>
                     Active Scan
-                </span>` : 
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-slate-900/50 text-slate-600 border border-slate-800">
+                </span>` :
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
                     Hibernation
                 </span>`;
-
             let actionHtml = '';
             if (!p.IsScanning) {
                 actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
             }
             actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
-
             tr.innerHTML = `
                 <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${p.ID}</td>
                 <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${p.Domain}</td>
@@ -500,12 +444,8 @@
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                     </button>
                 </td>
-                <td class="p-5">
-                    ${statusHtml}
-                </td>
-                <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">
-                    ${actionHtml}
-                </td>
+                <td class="p-5">${statusHtml}</td>
+                <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">${actionHtml}</td>
             `;
             tbody.appendChild(tr);
         }
@@ -515,22 +455,54 @@
                 const res = await fetch('/api/profiles');
                 if (!res.ok) throw new Error("Failed to fetch profiles");
                 const profiles = await res.json();
-                
                 const tbody = document.getElementById('targets-tbody');
+                const select = document.getElementById('select-profile');
+                const previousSelection = select.value;
+
                 tbody.innerHTML = '';
-                
+                select.innerHTML = '';
+
                 if (!profiles || profiles.length === 0) {
                     document.getElementById('targets-empty').classList.remove('hidden');
                 } else {
                     document.getElementById('targets-empty').classList.add('hidden');
-                    profiles.forEach(p => renderTargetRow(p));
-                }
-                
-                const countBadge = document.getElementById('target-count');
-                if(countBadge) {
-                    countBadge.innerText = `${profiles ? profiles.length : 0} Total`;
+                    const frag = document.createDocumentFragment();
+                    profiles.forEach(p => {
+                        const tr = document.createElement('tr');
+                        tr.id = `row-profile-${p.ID}`;
+                        tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10";
+                        let statusHtml = p.IsScanning ?
+                            `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>Active Scan</span>` :
+                            `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">Hibernation</span>`;
+                        let actionHtml = '';
+                        if (!p.IsScanning) {
+                            actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
+                        }
+                        actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
+                        tr.innerHTML = `
+                            <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${p.ID}</td>
+                            <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${p.Domain}</td>
+                            <td class="p-5 text-slate-500 group/sched relative">
+                                <code id="schedule-text-${p.ID}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">${p.Schedule}</code>
+                                <button onclick="editSchedule('${p.ID}', '${p.Domain}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
+                                    <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
+                                </button>
+                            </td>
+                            <td class="p-5">${statusHtml}</td>
+                            <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">${actionHtml}</td>
+                        `;
+                        frag.appendChild(tr);
+                        const opt = document.createElement('option');
+                        opt.value = p.ID;
+                        opt.innerText = p.Domain;
+                        select.appendChild(opt);
+                    });
+                    tbody.appendChild(frag);
+                    if (previousSelection) select.value = previousSelection;
                 }
 
+                const countBadge = document.getElementById('target-count');
+                if (countBadge) countBadge.innerText = `${profiles ? profiles.length : 0} Total`;
             } catch (err) {
                 console.error("Error refreshing profiles:", err);
             }
@@ -538,29 +510,18 @@
 
         async function deleteTarget(id, domain) {
             if (!confirm(`Are you sure you want to delete ${domain}?`)) return;
-            
             try {
                 const res = await fetch(`/api/profiles/${id}`, { method: 'DELETE' });
                 if (!res.ok) throw new Error(await res.text());
-                
                 document.getElementById(`row-profile-${id}`).remove();
-                
                 const select = document.getElementById('select-profile');
                 const wasSelected = (select.value == id);
-                Array.from(select.options).forEach(opt => {
-                    if (opt.value == id) opt.remove();
-                });
+                Array.from(select.options).forEach(opt => { if (opt.value == id) opt.remove(); });
                 if (wasSelected) {
-                    // Auto-select the first remaining profile
-                    if (select.options.length > 0) {
-                        select.value = select.options[0].value;
-                    } else {
-                        select.value = "";
-                    }
+                    select.value = select.options.length > 0 ? select.options[0].value : "";
                     fetchDiscoveries();
                 }
-
-                if(document.getElementById('targets-tbody').children.length === 0){
+                if (document.getElementById('targets-tbody').children.length === 0) {
                     document.getElementById('targets-empty').classList.remove('hidden');
                 }
             } catch (err) {
@@ -571,37 +532,22 @@
         function editSchedule(id, domain) {
             document.getElementById('edit-schedule-id').value = id;
             document.getElementById('edit-schedule-domain').innerText = `Target: ${domain}`;
-            
             const scheduleText = document.getElementById(`schedule-text-${id}`).innerText;
-            // Format: "every <freq> at <HH>:<MM>"
             const regex = /every (\w+) at (\d{2}):(\d{2})/i;
             const match = scheduleText.match(regex);
-            
             if (match) {
                 const freq = match[1].toLowerCase();
                 let hour24 = parseInt(match[2], 10);
                 const min = match[3];
-                
-                let ampm = "AM";
-                let hour12 = hour24;
-                
-                if (hour24 === 0) {
-                    hour12 = 12;
-                    ampm = "AM";
-                } else if (hour24 === 12) {
-                    hour12 = 12;
-                    ampm = "PM";
-                } else if (hour24 > 12) {
-                    hour12 = hour24 - 12;
-                    ampm = "PM";
-                }
-                
+                let ampm = "AM", hour12 = hour24;
+                if (hour24 === 0) { hour12 = 12; ampm = "AM"; }
+                else if (hour24 === 12) { hour12 = 12; ampm = "PM"; }
+                else if (hour24 > 12) { hour12 = hour24 - 12; ampm = "PM"; }
                 document.getElementById('edit-sched-freq').value = freq;
                 document.getElementById('edit-sched-hour').value = hour12.toString().padStart(2, '0');
                 document.getElementById('edit-sched-min').value = min;
                 document.getElementById('edit-sched-ampm').value = ampm;
             }
-
             const modal = document.getElementById('modal-edit-schedule');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
@@ -620,33 +566,24 @@
             const originalText = btn.innerText;
             btn.innerText = "Saving...";
             btn.disabled = true;
-
             const id = document.getElementById('edit-schedule-id').value;
             const freq = document.getElementById('edit-sched-freq').value;
             let hour = parseInt(document.getElementById('edit-sched-hour').value, 10);
             const min = document.getElementById('edit-sched-min').value;
             const ampm = document.getElementById('edit-sched-ampm').value;
-
             if (ampm === "PM" && hour < 12) hour += 12;
             if (ampm === "AM" && hour === 12) hour = 0;
-            
             const newSchedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
-
             try {
                 const res = await fetch(`/api/profiles/${id}/schedule`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ schedule: newSchedule })
                 });
-
                 if (!res.ok) throw new Error(await res.text());
-                
                 const data = await res.json();
-                
                 const codeEl = document.getElementById(`schedule-text-${id}`);
-                if (codeEl) {
-                    codeEl.innerText = data.schedule;
-                }
+                if (codeEl) codeEl.innerText = data.schedule;
                 closeEditModal();
             } catch (err) {
                 alert("Failed to update schedule: " + err.message);
@@ -674,19 +611,11 @@
             select.appendChild(opt);
         }
 
-        let currentDiscTab = 'subs';
-        let currentProfileId = null;
-        let currentSubDashboardDomain = null;
-        let currentFilter = null;
-        const IP_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-
         function toggleFilter(filter) {
             const allBtns = document.querySelectorAll('.filter-pill');
             const activeClass = 'bg-accent text-black border-accent shadow-[0_0_15px_rgba(188,19,254,0.4)]';
             const inactiveClass = 'bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent';
-
             const baseClass = 'filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest';
-
             if (currentFilter === filter) {
                 currentFilter = null;
                 allBtns.forEach(b => { b.className = `${baseClass} ${inactiveClass}`; });
@@ -696,48 +625,52 @@
                 const active = document.getElementById(`filter-btn-${filter}`);
                 if (active) active.className = `${baseClass} ${activeClass}`;
             }
-
-            if (currentProfileId && !currentSubDashboardDomain) {
-                renderVisibleDiscoveriesTable();
-            }
+            if (currentProfileId && !currentSubDashboardDomain) renderVisibleDiscoveriesTable();
         }
 
-        function totalFindings(s) {
-            if (!window.cachedData) return 0;
-            return window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length
-                 + window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length
-                 + window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+        function buildFindingsMap(subs) {
+            const map = new Map();
+            if (!window.cachedData) return map;
+            const { vulns, dirs, secs } = window.cachedData;
+            subs.forEach(s => {
+                const d = s.Domain;
+                const count = vulns.filter(v => v.URL.includes(d)).length
+                    + dirs.filter(dir => dir.SubdomainURL && dir.SubdomainURL.includes(d)).length
+                    + secs.filter(sec => sec.SourceURL.includes(d)).length;
+                map.set(d, count);
+            });
+            return map;
         }
 
         function applySort(subs) {
             const sortEl = document.getElementById('select-sort');
             const sortKey = sortEl ? sortEl.value : 'name-asc';
+            if (sortKey === 'findings-desc' || sortKey === 'findings-asc') {
+                const countMap = buildFindingsMap(subs);
+                return [...subs].sort((a, b) => sortKey === 'findings-desc'
+                    ? countMap.get(b.Domain) - countMap.get(a.Domain)
+                    : countMap.get(a.Domain) - countMap.get(b.Domain));
+            }
             return [...subs].sort((a, b) => {
                 switch (sortKey) {
-                    case 'name-asc':      return a.Domain.localeCompare(b.Domain);
-                    case 'name-desc':     return b.Domain.localeCompare(a.Domain);
-                    case 'findings-desc': return totalFindings(b) - totalFindings(a);
-                    case 'findings-asc':  return totalFindings(a) - totalFindings(b);
-                    case 'first-asc':     return new Date(a.FirstSeen) - new Date(b.FirstSeen);
-                    case 'first-desc':    return new Date(b.FirstSeen) - new Date(a.FirstSeen);
-                    case 'update-asc':    return new Date(a.LastSeen)  - new Date(b.LastSeen);
-                    case 'update-desc':   return new Date(b.LastSeen)  - new Date(a.LastSeen);
-                    default:              return 0;
+                    case 'name-asc':    return a.Domain.localeCompare(b.Domain);
+                    case 'name-desc':   return b.Domain.localeCompare(a.Domain);
+                    case 'first-asc':   return new Date(a.FirstSeen) - new Date(b.FirstSeen);
+                    case 'first-desc':  return new Date(b.FirstSeen) - new Date(a.FirstSeen);
+                    case 'update-asc':  return new Date(a.LastSeen) - new Date(b.LastSeen);
+                    case 'update-desc': return new Date(b.LastSeen) - new Date(a.LastSeen);
+                    default: return 0;
                 }
             });
         }
 
         function applyFilter(subs) {
             if (!currentFilter || !window.cachedData) return subs;
-
             return subs.filter(s => {
                 const isIP = IP_REGEX.test(s.Domain);
-
                 switch (currentFilter) {
-                    case 'ip':
-                        return isIP;
-                    case 'subdomain':
-                        return !isIP;
+                    case 'ip': return isIP;
+                    case 'subdomain': return !isIP;
                     case 'vuln-critical': {
                         const sevLevels = ['critical', 'high', 'medium', 'low'];
                         return window.cachedData.vulns.some(v => v.URL.includes(s.Domain) && sevLevels.includes(v.Severity.toLowerCase()));
@@ -746,8 +679,7 @@
                         const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain));
                         return subVulns.length === 0 || subVulns.every(v => v.Severity.toLowerCase() === 'info');
                     }
-                    case 'secrets':
-                        return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
+                    case 'secrets': return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
                     case 'status-2xx-3xx': {
                         const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
                         return host && (host.StatusCode >= 200 && host.StatusCode < 400);
@@ -765,61 +697,109 @@
                         const last = new Date(s.LastSeen).getTime();
                         return Math.abs(last - first) > 1000;
                     }
-                    default:
-                        return true;
+                    default: return true;
                 }
             });
         }
 
+        function buildSubRow(s, isFirstChunk) {
+            const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
+            const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
+            const hostMatch = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
+            let statusHtml = '';
+            if (hostMatch) {
+                const code = hostMatch.StatusCode;
+                let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
+                if (code === 200) statusClass = 'bg-emerald-950/30 text-emerald-500 border-emerald-900/50';
+                else if (code === 301 || code === 302 || code === 307) statusClass = 'bg-blue-950/30 text-blue-400 border-blue-900/50';
+                else if (code === 403 || code === 401) statusClass = 'bg-orange-950/30 text-orange-400 border-orange-900/50';
+                else if (code >= 500) statusClass = 'bg-rose-950/30 text-rose-500 border-rose-900/50';
+                statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${code}</span>`;
+            } else {
+                statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
+            }
+            const vulnCount = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length;
+            const dirCount = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length;
+            const secCount = window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+            let findingsHtml = '';
+            if (vulnCount === 0 && dirCount === 0 && secCount === 0) {
+                findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
+            } else {
+                if (vulnCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${vulnCount} Vuln</span> `;
+                if (dirCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20">${dirCount} Dir</span> `;
+                if (secCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30">${secCount} Cred</span>`;
+            }
+            const tr = document.createElement('tr');
+            tr.className = `hover:bg-accent/[0.04] transition-colors group${isFirstChunk ? ' animate-fade-in' : ''}`;
+            tr.innerHTML = `
+                <td class="p-5 text-slate-700 font-mono font-bold text-xs">#${s.ID}</td>
+                <td class="p-5 font-mono font-bold text-accent text-sm">
+                    <button onclick="openSubDashboard('${s.Domain}')" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${s.Domain}</button>
+                </td>
+                <td class="p-5 text-center">${statusHtml}</td>
+                <td class="p-5 text-center"><div class="flex items-center justify-center gap-1.5 flex-wrap">${findingsHtml}</div></td>
+                <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter"><span>${firstSeen}</span></td>
+                <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter flex justify-end items-center gap-6">
+                    <span>${lastUpdate}</span>
+                    <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                    </a>
+                </td>
+            `;
+            return tr;
+        }
+
+        function renderSubsChunk(tbody, chunks, chunkIndex) {
+            if (chunkIndex >= chunks.length) return;
+            const frag = document.createDocumentFragment();
+            chunks[chunkIndex].forEach(s => frag.appendChild(buildSubRow(s, chunkIndex === 0)));
+            tbody.appendChild(frag);
+            if (chunkIndex + 1 < chunks.length) {
+                const sentinel = document.createElement('tr');
+                sentinel.id = 'scroll-sentinel';
+                sentinel.innerHTML = '<td colspan="6"></td>';
+                tbody.appendChild(sentinel);
+                if (scrollSentinelObserver) scrollSentinelObserver.disconnect();
+                scrollSentinelObserver = new IntersectionObserver(entries => {
+                    if (entries[0].isIntersecting) {
+                        scrollSentinelObserver.disconnect();
+                        sentinel.remove();
+                        renderSubsChunk(tbody, chunks, chunkIndex + 1);
+                    }
+                }, { threshold: 0.1 });
+                scrollSentinelObserver.observe(sentinel);
+            }
+        }
+
         function switchDiscTab(tab) {
             currentDiscTab = tab;
-
-            // Close sub-dashboard if open so the main table is visible
             if (currentSubDashboardDomain) {
                 currentSubDashboardDomain = null;
                 document.getElementById('sub-dashboard').classList.add('hidden');
                 document.getElementById('sub-dashboard').classList.remove('flex');
             }
-            
             const btnS = document.getElementById('disc-tab-subs');
             const btnC = document.getElementById('disc-tab-secs');
-            
             const activeClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all";
             const inactiveClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
-
-            if (tab === 'subs') {
-                btnS.className = activeClass;
-                btnC.className = inactiveClass;
-            } else {
-                btnC.className = activeClass;
-                btnS.className = inactiveClass;
-            }
-
-            if (currentProfileId) {
-                renderVisibleDiscoveriesTable();
-            }
+            if (tab === 'subs') { btnS.className = activeClass; btnC.className = inactiveClass; }
+            else { btnC.className = activeClass; btnS.className = inactiveClass; }
+            if (currentProfileId) renderVisibleDiscoveriesTable();
         }
 
         async function fetchDiscoveries() {
             const select = document.getElementById('select-profile');
             currentProfileId = select.value;
-
-            if (!currentProfileId) {
-                showEmptyState(true);
-                return;
-            }
-
+            if (!currentProfileId) { showEmptyState(true); return; }
             showLoader(true);
-
             try {
                 const [resSubs, resSecs, resHosts, resVulns, resDirs] = await Promise.all([
-                    fetch(`/api/profiles/${currentProfileId}/subdomains`),
-                    fetch(`/api/profiles/${currentProfileId}/secrets`),
-                    fetch(`/api/profiles/${currentProfileId}/hosts`),
-                    fetch(`/api/profiles/${currentProfileId}/vulnerabilities`),
-                    fetch(`/api/profiles/${currentProfileId}/directories`)
+                    fetch(`/api/profiles/${currentProfileId}/subdomains?limit=5000`),
+                    fetch(`/api/profiles/${currentProfileId}/secrets?limit=5000`),
+                    fetch(`/api/profiles/${currentProfileId}/hosts?limit=5000`),
+                    fetch(`/api/profiles/${currentProfileId}/vulnerabilities?limit=5000`),
+                    fetch(`/api/profiles/${currentProfileId}/directories?limit=5000`)
                 ]);
-
                 window.cachedData = {
                     subs: await resSubs.json() || [],
                     secs: await resSecs.json() || [],
@@ -827,14 +807,8 @@
                     vulns: await resVulns.json() || [],
                     dirs: await resDirs.json() || []
                 };
-
-                // If a sub-dashboard is open, refresh its contents. Otherwise, render the main table.
-                if (currentSubDashboardDomain) {
-                    openSubDashboard(currentSubDashboardDomain);
-                } else {
-                    renderVisibleDiscoveriesTable();
-                }
-
+                if (currentSubDashboardDomain) openSubDashboard(currentSubDashboardDomain);
+                else renderVisibleDiscoveriesTable();
             } catch(err) {
                 console.error(err);
                 alert("Failed to fetch discoveries.");
@@ -845,102 +819,44 @@
 
         function renderVisibleDiscoveriesTable() {
             showEmptyState(false);
+            if (scrollSentinelObserver) { scrollSentinelObserver.disconnect(); scrollSentinelObserver = null; }
             const tSubs = document.getElementById('table-subs');
             const tSecs = document.getElementById('table-secs');
-
             if (currentDiscTab === 'subs') {
                 tSecs.classList.add('hidden');
                 tSubs.classList.remove('hidden');
-                
                 const tbody = document.getElementById('tbody-subs');
                 tbody.innerHTML = '';
-
                 const filteredSubs = applySort(applyFilter(window.cachedData.subs));
-                
                 if (filteredSubs.length === 0) {
-                     const msg = currentFilter ? 'No nodes match the active filter matrix.' : 'No nodes detected in stream.';
-                     tbody.innerHTML = `<tr><td colspan="6" class="p-12 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">${msg}</td></tr>`;
-                     return
+                    const msg = currentFilter ? 'No nodes match the active filter matrix.' : 'No nodes detected in stream.';
+                    tbody.innerHTML = `<tr><td colspan="6" class="p-12 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">${msg}</td></tr>`;
+                    return;
                 }
-
-                filteredSubs.forEach(s => {
-                    const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
-                    const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
-
-                    // Status code lookup from cached hosts
-                    const hostMatch = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
-                    let statusHtml = '';
-                    if (hostMatch) {
-                        const code = hostMatch.StatusCode;
-                        let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
-                        if (code === 200) statusClass = 'bg-emerald-950/30 text-emerald-500 border-emerald-900/50';
-                        else if (code === 301 || code === 302 || code === 307) statusClass = 'bg-blue-950/30 text-blue-400 border-blue-900/50';
-                        else if (code === 403 || code === 401) statusClass = 'bg-orange-950/30 text-orange-400 border-orange-900/50';
-                        else if (code >= 500) statusClass = 'bg-rose-950/30 text-rose-500 border-rose-900/50';
-                        statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${code}</span>`;
-                    } else {
-                        statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
-                    }
-
-                    // Findings counts from cached data
-                    const vulnCount = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length;
-                    const dirCount = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length;
-                    const secCount = window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
-
-                    let findingsHtml = '';
-                    if (vulnCount === 0 && dirCount === 0 && secCount === 0) {
-                        findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
-                    } else {
-                        if (vulnCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20" title="Vulnerabilities">${vulnCount} Vuln</span> `;
-                        if (dirCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20" title="Directories">${dirCount} Dir</span> `;
-                        if (secCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30" title="Credentials">${secCount} Cred</span>`;
-                    }
-
-                    tbody.innerHTML += `
-                        <tr class="hover:bg-accent/[0.04] transition-colors group">
-                            <td class="p-5 text-slate-700 font-mono font-bold text-xs">#${s.ID}</td>
-                            <td class="p-5 font-mono font-bold text-accent text-sm">
-                                <button onclick="openSubDashboard('${s.Domain}')" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${s.Domain}</button>
-                            </td>
-                            <td class="p-5 text-center">
-                                ${statusHtml}
-                            </td>
-                            <td class="p-5 text-center">
-                                <div class="flex items-center justify-center gap-1.5 flex-wrap">${findingsHtml}</div>
-                            </td>
-                            <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter">
-                                <span>${firstSeen}</span>
-                            </td>
-                            <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter flex justify-end items-center gap-6">
-                                <span>${lastUpdate}</span>
-                                <a href="http://${s.Domain}" target="_blank" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm" title="Visit Node">
-                                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-                                </a>
-                            </td>
-                        </tr>
-                    `;
-                });
+                const chunks = [];
+                for (let i = 0; i < filteredSubs.length; i += CHUNK_SIZE) chunks.push(filteredSubs.slice(i, i + CHUNK_SIZE));
+                renderSubsChunk(tbody, chunks, 0);
             } else {
                 tSubs.classList.add('hidden');
                 tSecs.classList.remove('hidden');
-                
                 const tbody = document.getElementById('tbody-secs');
                 tbody.innerHTML = '';
-
                 if (window.cachedData.secs.length === 0) {
-                     tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-500 bg-slate-800/10">No secrets found yet.</td></tr>';
-                     return
+                    tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-500 bg-slate-800/10">No secrets found yet.</td></tr>';
+                    return;
                 }
-
+                const frag = document.createDocumentFragment();
                 window.cachedData.secs.forEach(s => {
-                    tbody.innerHTML += `
-                        <tr class="hover:bg-accent/[0.04] transition-colors group">
-                            <td class="p-5 font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
-                            <td class="p-5 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
-                            <td class="p-5 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-64 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
-                        </tr>
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
+                    tr.innerHTML = `
+                        <td class="p-5 font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
+                        <td class="p-5 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
+                        <td class="p-5 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-64 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
                     `;
+                    frag.appendChild(tr);
                 });
+                tbody.appendChild(frag);
             }
         }
 
@@ -950,98 +866,91 @@
             document.getElementById('table-secs').classList.add('hidden');
             document.getElementById('sub-dashboard').classList.remove('hidden');
             document.getElementById('sub-dashboard').classList.add('flex');
-
-            // Hide sort and filter bars
             document.getElementById('filter-bar').classList.add('hidden');
             document.getElementById('sort-bar').classList.add('hidden');
             currentFilter = null;
             document.querySelectorAll('.filter-pill').forEach(b => {
                 b.className = `filter-pill px-3 py-1 rounded-full text-xs font-medium border transition-all bg-transparent text-slate-400 border-slate-600 hover:border-slate-400 hover:text-slate-200`;
             });
-            
-            // Set Titles
             const titleEl = document.getElementById('sub-dash-title');
             titleEl.innerHTML = `<span class="bg-accent/20 text-accent border border-accent/40 px-3 py-1 rounded-sm text-[11px] font-sans font-black uppercase tracking-[0.2em] mr-3 shadow-[0_0_10px_rgba(188,19,254,0.3)]">NODE</span> ${domain}`;
-            
-            // Find Associated IP
             const ipEl = document.getElementById('sub-dash-ip');
             const hostMatches = window.cachedData.hosts.filter(h => h.URL.includes(domain));
             if (hostMatches.length > 0 && hostMatches[0].IP) {
-                // Remove duplicates if multiple hosts return same IP
                 const uniqueIPs = [...new Set(hostMatches.map(h => h.IP).filter(ip => ip))];
                 ipEl.innerText = `IP ADDR: ${uniqueIPs.join(', ')}`;
             } else {
                 ipEl.innerText = `IP ADDR: UNKNOWN NODE / RESOLVING`;
             }
 
-            // Populate Vulnerabilities
             const tbodyVulns = document.getElementById('tbody-sub-vulns');
             tbodyVulns.innerHTML = '';
             const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(domain));
-            
             if (subVulns.length === 0) {
                 tbodyVulns.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">No vulnerabilities detected in this node.</td></tr>';
             } else {
+                const frag = document.createDocumentFragment();
                 subVulns.forEach(v => {
                     let sevClass = "bg-slate-900 text-slate-600 border-slate-800";
                     if (v.Severity.toLowerCase() === 'critical') sevClass = "bg-rose-950/40 text-rose-500 border-rose-900/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]";
                     else if (v.Severity.toLowerCase() === 'high') sevClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
                     else if (v.Severity.toLowerCase() === 'medium') sevClass = "bg-amber-950/40 text-amber-500 border-amber-900/50";
                     else if (v.Severity.toLowerCase() === 'low') sevClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
-
-                    tbodyVulns.innerHTML += `
-                        <tr class="hover:bg-accent/[0.04] transition-colors group">
-                            <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[10px] font-sans font-black uppercase tracking-widest ${sevClass}">${v.Severity}</span></td>
-                            <td class="p-4 font-sans font-bold text-slate-200 tracking-tight text-sm">${v.Name}</td>
-                            <td class="p-4 font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors uppercase font-bold">${v.TemplateID}</td>
-                        </tr>
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
+                    tr.innerHTML = `
+                        <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[10px] font-sans font-black uppercase tracking-widest ${sevClass}">${v.Severity}</span></td>
+                        <td class="p-4 font-sans font-bold text-slate-200 tracking-tight text-sm">${v.Name}</td>
+                        <td class="p-4 font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors uppercase font-bold">${v.TemplateID}</td>
                     `;
+                    frag.appendChild(tr);
                 });
+                tbodyVulns.appendChild(frag);
             }
 
-            // Populate Directories
             const tbodyDirs = document.getElementById('tbody-sub-dirs');
             tbodyDirs.innerHTML = '';
             const subDirs = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(domain));
-            
             if (subDirs.length === 0) {
                 tbodyDirs.innerHTML = '<tr><td colspan="2" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">Node isolation... No route fragments discovered.</td></tr>';
             } else {
+                const frag = document.createDocumentFragment();
                 subDirs.forEach(d => {
                     let statusClass = "bg-slate-900 text-slate-600 border-slate-800";
                     if (d.StatusCode === 200) statusClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
                     else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = "bg-blue-950/40 text-blue-400 border-blue-900/50";
                     else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
-
-                    tbodyDirs.innerHTML += `
-                        <tr class="hover:bg-accent/[0.04] transition-colors group">
-                            <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${d.StatusCode}</span></td>
-                            <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${d.DirURL}" target="_blank" class="text-accent hover:text-white transition-colors break-all">${d.DirURL}</a></td>
-                        </tr>
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
+                    tr.innerHTML = `
+                        <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${d.StatusCode}</span></td>
+                        <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${d.DirURL}" target="_blank" class="text-accent hover:text-white transition-colors break-all">${d.DirURL}</a></td>
                     `;
+                    frag.appendChild(tr);
                 });
+                tbodyDirs.appendChild(frag);
             }
 
-            // Populate Secrets
             const tbodySecs = document.getElementById('tbody-sub-secs');
             tbodySecs.innerHTML = '';
             const subSecs = window.cachedData.secs.filter(s => s.SourceURL.includes(domain));
-
             if (subSecs.length === 0) {
-                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs text-xs">Extraction void... No credentials located.</td></tr>';
+                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">Extraction void... No credentials located.</td></tr>';
             } else {
+                const frag = document.createDocumentFragment();
                 subSecs.forEach(s => {
-                    tbodySecs.innerHTML += `
-                        <tr class="hover:bg-accent/[0.04] transition-colors group">
-                            <td class="p-4"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
-                            <td class="p-4 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
-                            <td class="p-4 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-48 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
-                        </tr>
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
+                    tr.innerHTML = `
+                        <td class="p-4"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${s.SecretType}</span></td>
+                        <td class="p-4 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${s.SecretValue}</td>
+                        <td class="p-4 text-xs font-sans font-bold"><a href="${s.SourceURL}" target="_blank" class="text-accent hover:text-white transition-colors truncate inline-block w-48 uppercase tracking-tighter" title="${s.SourceURL}">Trace Source &rarr;</a></td>
                     `;
+                    frag.appendChild(tr);
                 });
+                tbodySecs.appendChild(frag);
             }
 
-            // Default to Vulns Tab when opened
             switchSubDashboardTab('vulns');
         }
 
@@ -1058,26 +967,17 @@
             const tabs = ['vulns', 'dirs', 'secs'];
             const activeClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all";
             const inactiveClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
-
             tabs.forEach(t => {
-                const btn = document.getElementById(`sub-tab-${t}`);
+                document.getElementById(`sub-tab-${t}`).className = t === tab ? activeClass : inactiveClass;
                 const content = document.getElementById(`sub-content-${t}`);
-                
-                if (t === tab) {
-                    btn.className = activeClass;
-                    content.classList.remove('hidden');
-                    content.classList.add('block');
-                } else {
-                    btn.className = inactiveClass;
-                    content.classList.remove('block');
-                    content.classList.add('hidden');
-                }
+                content.classList.toggle('hidden', t !== tab);
+                content.classList.toggle('block', t === tab);
             });
         }
 
         function showEmptyState(show) {
             document.getElementById('empty-state').classList.toggle('hidden', !show);
-            if(show) {
+            if (show) {
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
                 document.getElementById('sub-dashboard').classList.add('hidden');
@@ -1087,7 +987,7 @@
 
         function showLoader(show) {
             document.getElementById('loader').classList.toggle('hidden', !show);
-            if(show) {
+            if (show) {
                 showEmptyState(false);
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
@@ -1105,7 +1005,6 @@
             }
         }
 
-        // --- SSE Listener Setup ---
         const sse = new EventSource('/api/events');
         let discoveryTimeout = null;
 
@@ -1117,9 +1016,7 @@
                 } else if (data.type === 'discovery_update') {
                     if (currentProfileId == data.profile_id) {
                         clearTimeout(discoveryTimeout);
-                        discoveryTimeout = setTimeout(() => {
-                            fetchDiscoveries();
-                        }, 1000);
+                        discoveryTimeout = setTimeout(() => { fetchDiscoveries(); }, 8000);
                     }
                 }
             } catch (e) {
@@ -1127,9 +1024,10 @@
             }
         };
 
-        sse.onerror = (error) => {
-            console.error("SSE Error:", error);
-        };
+        sse.onerror = (error) => { console.error("SSE Error:", error); };
+
+        document.addEventListener('DOMContentLoaded', () => { refreshProfiles(); });
     </script>
+
 </body>
 </html>

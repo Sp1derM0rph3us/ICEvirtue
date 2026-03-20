@@ -38,6 +38,17 @@ func InitDatabase(dbPath string) error {
 	}
 
 	db.Exec("PRAGMA journal_mode=WAL;")
+	db.Exec("PRAGMA synchronous=NORMAL;")
+	db.Exec("PRAGMA cache_size=-32000;")
+	db.Exec("PRAGMA busy_timeout=5000;")
+	db.Exec("PRAGMA temp_store=MEMORY;")
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return err
+	}
+	sqlDB.SetMaxOpenConns(1)
+	sqlDB.SetMaxIdleConns(1)
 
 	err = db.AutoMigrate(
 		&models.User{},
