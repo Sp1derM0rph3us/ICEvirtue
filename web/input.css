@@ -13,5 +13,67 @@
 @layer base {
   body {
     @apply bg-dark text-slate-200;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Static CRT Scanlines */
+  body::after {
+    content: " ";
+    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.12) 50%);
+    background-size: 100% 3px;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.6;
+  }
+
+  /* Animated Moving Scanline & Flicker */
+  body::before {
+    content: " ";
+    display: block;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(transparent 0%, rgba(255, 255, 255, 0.03) 50%, transparent 100%),
+                radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.4) 150%);
+    background-size: 100% 150px, 100% 100%;
+    z-index: 9998;
+    pointer-events: none;
+    animation: flicker 0.15s infinite, scancross 8s linear infinite;
+  }
+
+  @keyframes scancross {
+    0% { transform: translateY(-100%); }
+    100% { transform: translateY(100%); }
+  }
+
+  @keyframes flicker {
+    0% { opacity: 0.98; }
+    5% { opacity: 0.95; }
+    10% { opacity: 0.9; }
+    15% { opacity: 0.95; }
+    20% { opacity: 0.98; }
+    100% { opacity: 1; }
+  }
+}
+
+@layer components {
+  .neon-text {
+    @apply text-accent;
+    text-shadow: 0 0 8px rgba(188, 19, 254, 0.6), 0 0 20px rgba(188, 19, 254, 0.2);
+  }
+
+  .neon-border {
+    @apply border border-accent/40 rounded-sm;
+    box-shadow: 0 0 10px rgba(188, 19, 254, 0.2), inset 0 0 5px rgba(188, 19, 254, 0.1);
+  }
+
+  .glass-header {
+    backdrop-filter: blur(12px);
+    background: rgba(13, 13, 13, 0.85);
+    border-bottom: 1px solid rgba(188, 19, 254, 0.3);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
   }
 }
