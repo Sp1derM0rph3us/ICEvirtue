@@ -37,3 +37,4 @@ test_*
 tmp_*
 ICEvirtue
 resume.cfg
+.agent/ # ffs
