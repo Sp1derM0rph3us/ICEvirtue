@@ -310,11 +310,14 @@ func deleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete related child records first to ensure we don't leave orphaned data
+	// Delete related child records first to ensure we don't leave orphaned data.
+	// Every finding table a stage can write to has to be listed here; missing one
+	// leaves rows behind that no profile owns and that nothing will ever read.
 	database.DB.Where("profile_id = ?", id).Delete(&models.Subdomain{})
 	database.DB.Where("profile_id = ?", id).Delete(&models.AliveHost{})
 	database.DB.Where("profile_id = ?", id).Delete(&models.Vulnerability{})
 	database.DB.Where("profile_id = ?", id).Delete(&models.SecretFinding{})
+	database.DB.Where("profile_id = ?", id).Delete(&models.DirectoryFinding{})
 
 	// Hard delete the profile itself
 	if err := database.DB.Unscoped().Delete(&profile).Error; err != nil {
@@ -393,6 +396,10 @@ func forceScanProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Optimistic pre-check so the obvious case (double-clicking Initiate) gets a
+	// 409 instead of a 202 that quietly does nothing. It is NOT the guard against
+	// concurrent runs: OrchestrateScan claims the lock atomically and is the only
+	// authority on whether a run actually starts.
 	if profile.IsScanning {
 		http.Error(w, "profile is already scanning", http.StatusConflict)
 		return
@@ -403,12 +410,26 @@ func forceScanProfile(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan started in background"})
 }
 
+// maxPageSize caps how many rows one request may return, so a single call
+// cannot be made to load an entire profile into memory.
+const maxPageSize = 1000
+
+// defaultPageSize is used when no usable limit was supplied.
+const defaultPageSize = 250
+
+// parsePagination reads the limit and offset query parameters.
+//
+// An oversized limit is CLAMPED to maxPageSize rather than rejected. Rejecting
+// it silently fell back to defaultPageSize, so a caller asking for 5000 got 250
+// and had no way to tell that its request had been downgraded: the response is a
+// bare JSON array, so a truncated page is indistinguishable from a complete one.
+// Clamping keeps the ceiling while letting the caller page to the end.
 func parsePagination(r *http.Request) (int, int) {
-	limit := 250
+	limit := defaultPageSize
 	offset := 0
 	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 && v <= 1000 {
-			limit = v
+		if v, err := strconv.Atoi(l); err == nil && v > 0 {
+			limit = min(v, maxPageSize)
 		}
 	}
 	if o := r.URL.Query().Get("offset"); o != "" {

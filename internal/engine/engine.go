@@ -80,17 +80,30 @@ func OrchestrateScan(profile *models.Profile) {
 		return
 	}
 
-	if p.IsScanning {
-		log.Printf("[-] Skipping scan for %s. A scan is already currently running.", p.Domain)
-		return
-	}
-
 	// Work from the freshly loaded row for the rest of the pipeline. The caller's
 	// copy is captured when the scan is triggered and goes stale if the profile's
 	// Domain or Mode is edited before the scan actually starts.
 	profile = &p
 
-	database.DB.Model(&p).Update("is_scanning", true)
+	// Claim the scan lock atomically.
+	//
+	// Reading is_scanning and then writing it left a window in which two triggers
+	// — a forced scan racing its own schedule, or two API calls arriving together
+	// — both saw false and both proceeded, running the whole pipeline twice
+	// against one profile. Making the database arbitrate with a conditional
+	// UPDATE closes that window: exactly one caller can observe RowsAffected == 1.
+	claim := database.DB.Model(&models.Profile{}).
+		Where("id = ? AND is_scanning = ?", p.ID, false).
+		Update("is_scanning", true)
+	if claim.Error != nil {
+		log.Printf("[-] Failed to acquire the scan lock for %s: %v", p.Domain, claim.Error)
+		return
+	}
+	if claim.RowsAffected == 0 {
+		log.Printf("[-] Skipping scan for %s. A scan is already currently running.", p.Domain)
+		return
+	}
+
 	events.Broadcast("profile_update", p.ID.String(), nil)
 
 	status := &runStatus{}
