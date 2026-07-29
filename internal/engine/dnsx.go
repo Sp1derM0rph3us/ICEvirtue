@@ -1,50 +1,52 @@
 package engine
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
 	"log"
-	"os/exec"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
+// RunDnsx bruteforces subdomains against a single wordlist.
+//
+// The results and the error are both meaningful: dnsx streams resolved names, so
+// a run that failed or hit its timeout still returns what it resolved first.
 func RunDnsx(profile *models.Profile, wordlistPath string) ([]string, error) {
-	log.Printf("[*] [Target: %s] Starting dnsx active bruteforce with wordlist: %s", profile.Domain, wordlistPath)
-
 	if wordlistPath == "" {
 		return nil, fmt.Errorf("no wordlist provided for dnsx")
 	}
 
+	log.Printf("[*] [Target: %s] Running dnsx with wordlist: %s", profile.Domain, wordlistPath)
+
 	args := []string{"-silent", "-d", profile.Domain, "-w", wordlistPath, "-resp-only"}
-	cmd := exec.Command("dnsx", args...)
 
-	var outb, errb bytes.Buffer
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
+	outb, err := runTool("dnsx", args, nil, timeoutDnsx)
 
-	err := cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf("dnsx execution failed: %v. Stderr: %s", err, errb.String())
+	return parseDnsxOutput(outb), err
+}
+
+// parseDnsxOutput reads dnsx's plain one-name-per-line output.
+func parseDnsxOutput(out *bytes.Buffer) []string {
+	if out == nil {
+		return nil
 	}
 
-	uniqueSubdomains := make(map[string]bool)
+	unique := make(map[string]bool)
 	var results []string
 
-	scanner := bufio.NewScanner(&outb)
+	scanner := newLineScanner(out)
 	for scanner.Scan() {
 		sub := scanner.Text()
-		if sub != "" && !uniqueSubdomains[sub] {
-			uniqueSubdomains[sub] = true
+		if sub != "" && !unique[sub] {
+			unique[sub] = true
 			results = append(results, sub)
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading dnsx output: %v", err)
+		log.Printf("[-] Stopped reading dnsx output early: %v", err)
 	}
 
-	log.Printf("[+] [Target: %s] dnsx discovered %d valid subdomains", profile.Domain, len(results))
-	return results, nil
+	return results
 }

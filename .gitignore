@@ -38,3 +38,4 @@ tmp_*
 ICEvirtue
 resume.cfg
 .agent/ # ffs
+.claude/

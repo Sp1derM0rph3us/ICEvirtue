@@ -101,6 +101,7 @@
                                 <th class="p-5 font-black">Endpoint Trace</th>
                                 <th class="p-5 font-black">Sync Logic</th>
                                 <th class="p-5 font-black">Operational Status</th>
+                                <th class="p-5 font-black">Last Run</th>
                                 <th class="p-5 font-black text-right">Node Protocol</th>
                             </tr>
                         </thead>
@@ -411,24 +412,45 @@
             }
         });
 
-        function renderTargetRow(p) {
-            const tbody = document.getElementById('targets-tbody');
+        // Formats Profile.LastScan / Profile.LastScanStatus for the Last Run cell.
+        // Returns plain text only; the caller assigns it with textContent, since the
+        // status string originates from the engine rather than from this page.
+        function lastRunText(p) {
+            const status = p.LastScanStatus || '';
+            if (!status) return 'never run';
+
+            const stamp = p.LastScan ? new Date(p.LastScan) : null;
+            if (!stamp || isNaN(stamp) || stamp.getFullYear() < 2000) return status;
+
+            const mins = Math.floor((Date.now() - stamp.getTime()) / 60000);
+            let ago;
+            if (mins < 1) ago = 'just now';
+            else if (mins < 60) ago = `${mins}m ago`;
+            else if (mins < 1440) ago = `${Math.floor(mins / 60)}h ago`;
+            else ago = `${Math.floor(mins / 1440)}d ago`;
+
+            return `${status} · ${ago}`;
+        }
+
+        // Builds one row of the targets table and returns it. Both the add-target
+        // handler and refreshProfiles go through here so the markup lives in one place.
+        function buildTargetRow(p, animate) {
             const tr = document.createElement('tr');
             tr.id = `row-profile-${p.ID}`;
-            tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent animate-fade-in bg-black/10";
-            let statusHtml = p.IsScanning ?
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30">
-                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>
-                    Active Scan
-                </span>` :
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">
-                    Hibernation
-                </span>`;
+            tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10"
+                + (animate ? " animate-fade-in" : "");
+            const statusHtml = p.IsScanning ?
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>Active Scan</span>` :
+                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">Hibernation</span>`;
             let actionHtml = '';
             if (!p.IsScanning) {
                 actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
             }
             actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
+
+            const halted = (p.LastScanStatus || '').startsWith('halted');
+            const lastRunClass = halted ? "text-rose-500/80" : "text-slate-500";
+
             tr.innerHTML = `
                 <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${p.ID}</td>
                 <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${p.Domain}</td>
@@ -439,9 +461,18 @@
                     </button>
                 </td>
                 <td class="p-5">${statusHtml}</td>
+                <td class="p-5 font-mono text-xs tracking-tighter ${lastRunClass}" id="last-run-${p.ID}"></td>
                 <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">${actionHtml}</td>
             `;
-            tbody.appendChild(tr);
+
+            // textContent, not innerHTML: the status comes from the engine.
+            tr.querySelector(`#last-run-${p.ID}`).textContent = lastRunText(p);
+
+            return tr;
+        }
+
+        function renderTargetRow(p) {
+            document.getElementById('targets-tbody').appendChild(buildTargetRow(p, true));
         }
 
         async function refreshProfiles() {
@@ -462,30 +493,7 @@
                     document.getElementById('targets-empty').classList.add('hidden');
                     const frag = document.createDocumentFragment();
                     profiles.forEach(p => {
-                        const tr = document.createElement('tr');
-                        tr.id = `row-profile-${p.ID}`;
-                        tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10";
-                        let statusHtml = p.IsScanning ?
-                            `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>Active Scan</span>` :
-                            `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">Hibernation</span>`;
-                        let actionHtml = '';
-                        if (!p.IsScanning) {
-                            actionHtml += `<button onclick="forceScan('${p.ID}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
-                        }
-                        actionHtml += `<button onclick="deleteTarget('${p.ID}', '${p.Domain}')" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
-                        tr.innerHTML = `
-                            <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${p.ID}</td>
-                            <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${p.Domain}</td>
-                            <td class="p-5 text-slate-500 group/sched relative">
-                                <code id="schedule-text-${p.ID}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">${p.Schedule}</code>
-                                <button onclick="editSchedule('${p.ID}', '${p.Domain}')" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
-                                    <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
-                                </button>
-                            </td>
-                            <td class="p-5">${statusHtml}</td>
-                            <td class="p-5 flex gap-4 justify-end opacity-30 group-hover:opacity-100 transition-opacity">${actionHtml}</td>
-                        `;
-                        frag.appendChild(tr);
+                        frag.appendChild(buildTargetRow(p, false));
                         const opt = document.createElement('option');
                         opt.value = p.ID;
                         opt.innerText = p.Domain;

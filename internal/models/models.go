@@ -17,21 +17,25 @@ type User struct {
 }
 
 type Profile struct {
-	ID        uuid.UUID `gorm:"type:uuid;primaryKey"`
-	Domain    string    `gorm:"uniqueIndex:idx_domain;not null"`
+	ID         uuid.UUID `gorm:"type:uuid;primaryKey"`
+	Domain     string    `gorm:"uniqueIndex:idx_domain;not null"`
 	Schedule   string
 	Mode       string
 	Enabled    bool
 	IsScanning bool
 	LastScan   time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	// LastScanStatus is a short controlled summary of the last run, such as
+	// "completed" or "halted: no host answered HTTP". It is rendered in the
+	// dashboard, so it must never carry raw tool output.
+	LastScanStatus string
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+	DeletedAt      gorm.DeletedAt `gorm:"index"`
 
-	Subdomains      []Subdomain
-	AliveHosts      []AliveHost
-	Vulnerabilities []Vulnerability
-	SecretFindings  []SecretFinding
+	Subdomains        []Subdomain
+	AliveHosts        []AliveHost
+	Vulnerabilities   []Vulnerability
+	SecretFindings    []SecretFinding
 	DirectoryFindings []DirectoryFinding
 }
 
@@ -52,24 +56,24 @@ type Subdomain struct {
 }
 
 type AliveHost struct {
-	ID        uint      `gorm:"primaryKey"`
-	ProfileID uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_host;not null"`
-	URL       string    `gorm:"uniqueIndex:idx_profile_host;not null"`
-	IP        string
-	Title     string
-	WebServer string
+	ID         uint      `gorm:"primaryKey"`
+	ProfileID  uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_host;not null"`
+	URL        string    `gorm:"uniqueIndex:idx_profile_host;not null"`
+	IP         string
+	Title      string
+	WebServer  string
 	StatusCode int
-	FirstSeen time.Time      `gorm:"autoCreateTime"`
-	LastSeen  time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	FirstSeen  time.Time      `gorm:"autoCreateTime"`
+	LastSeen   time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt  gorm.DeletedAt `gorm:"index"`
 }
 
 type Vulnerability struct {
 	ID          uint      `gorm:"primaryKey"`
 	ProfileID   uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_vuln;not null"`
 	TemplateID  string    `gorm:"uniqueIndex:idx_profile_vuln;not null"`
-	URL         string `gorm:"uniqueIndex:idx_profile_vuln;not null"`
-	Severity    string `gorm:"not null"`
+	URL         string    `gorm:"uniqueIndex:idx_profile_vuln;not null"`
+	Severity    string    `gorm:"not null"`
 	Name        string
 	Description string
 	FirstSeen   time.Time      `gorm:"autoCreateTime"`
@@ -89,12 +93,12 @@ type SecretFinding struct {
 }
 
 type DirectoryFinding struct {
-	ID          uint           `gorm:"primaryKey"`
-	ProfileID   uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_dir;not null"`
-	SubdomainURL string        `gorm:"uniqueIndex:idx_profile_dir;not null"`
-	DirURL      string         `gorm:"uniqueIndex:idx_profile_dir;not null"`
-	StatusCode  int
-	FirstSeen   time.Time      `gorm:"autoCreateTime"`
-	LastSeen    time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt   gorm.DeletedAt `gorm:"index"`
+	ID           uint      `gorm:"primaryKey"`
+	ProfileID    uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_dir;not null"`
+	SubdomainURL string    `gorm:"uniqueIndex:idx_profile_dir;not null"`
+	DirURL       string    `gorm:"uniqueIndex:idx_profile_dir;not null"`
+	StatusCode   int
+	FirstSeen    time.Time      `gorm:"autoCreateTime"`
+	LastSeen     time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt    gorm.DeletedAt `gorm:"index"`
 }

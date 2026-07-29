@@ -1,13 +1,13 @@
 package engine
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
-	"os/exec"
 	"strings"
+
+	"github.com/google/uuid"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
@@ -18,17 +18,22 @@ type NucleiResult struct {
 		Severity    string `json:"severity"`
 		Description string `json:"description"`
 	} `json:"info"`
-	TemplateID  string `json:"template-id"`
-	MatchedAt   string `json:"matched-at"`
-	Host        string `json:"host"`
+	TemplateID string `json:"template-id"`
+	MatchedAt  string `json:"matched-at"`
+	Host       string `json:"host"`
 }
 
+// RunNuclei scans the given hosts for known vulnerabilities.
+//
+// The results and the error are both meaningful: nuclei streams JSONL per match,
+// so a run that failed or hit its timeout still returns every finding it had
+// already reported. On a two hour budget that is usually most of them.
 func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vulnerability, error) {
-	log.Printf("[*] [Target: %s] Starting Phase 3: Nuclei Vulnerability Scan (%d hosts)...", profile.Domain, len(hosts))
-
 	if len(hosts) == 0 {
 		return nil, fmt.Errorf("no live hosts provided to RunNuclei")
 	}
+
+	log.Printf("[*] [Target: %s] Running nuclei against %d host(s)...", profile.Domain, len(hosts))
 
 	var urls []string
 	for _, h := range hosts {
@@ -36,39 +41,37 @@ func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vuln
 	}
 
 	args := []string{"-silent", "-jsonl"}
-	cmd := exec.Command("nuclei", args...)
+	stdin := strings.NewReader(strings.Join(urls, "\n"))
 
-	cmd.Stdin = strings.NewReader(strings.Join(urls, "\n"))
+	outb, err := runTool("nuclei", args, stdin, timeoutNuclei)
 
-	var outb, errb bytes.Buffer
-	cmd.Stdout = &outb
-	cmd.Stderr = &errb
+	return parseNucleiOutput(outb, profile.ID), err
+}
 
-	err := cmd.Run()
-	if err != nil {
-		return nil, fmt.Errorf("nuclei execution failed: %v. Stderr: %s", err, errb.String())
+// parseNucleiOutput reads nuclei's JSONL, skipping unparseable lines so a
+// truncated final line from a killed process does not discard the run.
+func parseNucleiOutput(out *bytes.Buffer, profileID uuid.UUID) []models.Vulnerability {
+	if out == nil {
+		return nil
 	}
 
 	var vulnerabilities []models.Vulnerability
 	uniqueVulns := make(map[string]bool)
 
-	scanner := bufio.NewScanner(&outb)
+	scanner := newLineScanner(out)
 	for scanner.Scan() {
-		line := scanner.Bytes()
-
 		var result NucleiResult
-		if err := json.Unmarshal(line, &result); err != nil {
-			log.Printf("[-] Failed to parse Nuclei JSON line: %v", err)
+		if err := json.Unmarshal(scanner.Bytes(), &result); err != nil {
 			continue
 		}
 
 		sig := fmt.Sprintf("%s|%s", result.TemplateID, result.MatchedAt)
-		
+
 		if !uniqueVulns[sig] && result.TemplateID != "" {
 			uniqueVulns[sig] = true
-			
+
 			vulnerabilities = append(vulnerabilities, models.Vulnerability{
-				ProfileID:   profile.ID,
+				ProfileID:   profileID,
 				TemplateID:  result.TemplateID,
 				URL:         result.MatchedAt,
 				Severity:    result.Info.Severity,
@@ -79,9 +82,8 @@ func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vuln
 	}
 
 	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading nuclei output: %v", err)
+		log.Printf("[-] Stopped reading nuclei output early: %v", err)
 	}
 
-	log.Printf("[+] [Target: %s] Nuclei scan finished, discovered %d potential findings", profile.Domain, len(vulnerabilities))
-	return vulnerabilities, nil
+	return vulnerabilities
 }

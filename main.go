@@ -8,6 +8,7 @@ import (
 	"syscall"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/api"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/engine"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -20,18 +21,29 @@ func main() {
 	flag.StringVar(&engine.DirectoryList, "directory-list", "", "Comma-separated absolute paths to wordlists for directory fuzzing")
 	flag.BoolVar(&engine.SkipAmass, "skip-amass", false, "Skip Amass execution during subdomain enumeration (Full Mode only)")
 	flag.BoolVar(&engine.SkipNuclei, "skip-nuclei", false, "Skip Nuclei execution during vulnerability scanning")
-	
+	flag.BoolVar(&engine.WideTargets, "wide-targets", false, "Feed every host that answered HTTP except 404s into fuzzing, Nuclei and secret hunting, instead of only 200/301/302/307")
+	flag.StringVar(&engine.ToolHome, "tool-home", "", "Directory the external tools use for their config (default /opt/icevirtue, falling back to $HOME)")
+
 	var apiPort int
+	var dbPath string
+	var jwtSecretPath string
 	flag.IntVar(&apiPort, "api-port", 8888, "Port for the web dashboard to listen on")
+	flag.StringVar(&dbPath, "db-path", "icevirtue.db", "Path to the database file (must match the path used by ICEvirtue-admin)")
+	flag.StringVar(&jwtSecretPath, "jwt-secret", "", "Path to the JWT signing key (default /var/lib/icevirtue/jwt.secret, falling back to $XDG_STATE_HOME/icevirtue)")
 	flag.Parse()
 
-	err := database.InitDatabase("icevirtue.db")
+	engine.PreflightTools()
+
+	if err := auth.Init(jwtSecretPath); err != nil {
+		log.Fatalf("[-] %v", err)
+	}
+
+	err := database.InitDatabase(dbPath)
 	if err != nil {
 		log.Fatalf("[-] Failed to initialize database: %v", err)
 	}
 
 	database.DB.Model(&models.Profile{}).Where("is_scanning = ?", true).Update("is_scanning", false)
-
 
 	sched := scheduler.NewScheduler()
 	if err := sched.Start(); err != nil {
