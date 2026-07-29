@@ -1,0 +1,223 @@
+/* ICEvirtue light theme.
+ *
+ * ============================ READ THIS FIRST ============================
+ * This file must NEVER be wrapped in @layer, and it is not part of the
+ * Tailwind build -- do not feed it to the compiler and do not import it from
+ * input.css.
+ *
+ * Every rule in web/css/output.css lives inside a cascade layer (properties,
+ * theme, base, components, utilities). Unlayered rules sort above all named
+ * layers, so everything here wins unconditionally without !important and
+ * without specificity tricks. That is the whole mechanism.
+ *
+ * The one thing it does NOT automatically beat is the unlayered <style> block
+ * inside web/template.html, which competes on equal footing and is decided by
+ * specificity and source order. That is why every rule below is prefixed with
+ * [data-theme="light"] and why the <link> to this file must come AFTER that
+ * </style> tag.
+ * =========================================================================
+ *
+ * How the retheming works: Tailwind v4 compiles solid-colour utilities to
+ * var(--color-*) references, and alpha variants to
+ * color-mix(... var(--color-*) ...). Overriding the variables therefore
+ * restyles all ~500 class usages in the markup without touching a single one
+ * of them. This is why the theme is not built from dark:/light: variants --
+ * those are not compiled into output.css and cannot be added without npm.
+ *
+ * Values are literal oklch() copied verbatim out of output.css. Never write
+ * --color-a: var(--color-b) here: CSS detects custom-property cycles and
+ * invalidates every property in the cycle, which would silently blank the
+ * whole palette.
+ */
+
+/* ---------------------------------------------------------------- variables */
+
+[data-theme="light"] {
+  /* Native select popups and scrollbars follow this. Deliberately not set for
+     the dark theme, which would change how they look today. */
+  color-scheme: light;
+
+  /* Surfaces. Dark mode puts its surfaces BELOW the ramp (#000 and #0d0d0d)
+     with borders at 12.9-27.9% lightness, a 7-22 point delta that is what makes
+     the hairlines read. Light mode cannot mirror that, so the surfaces stack
+     slate-100 (page) < white (card) and the border shades are pulled well down
+     the ramp instead -- see the note on the ramp below. */
+  --color-dark: oklch(96.8% .007 247.896);   /* page background */
+  --color-card: #ffffff;                     /* raised panels */
+  --color-black: oklch(98.4% .003 247.858);  /* recessed: inputs, sticky heads */
+
+  /* text-only: verified there is no bg-white, border-white or divide-white
+     anywhere in either page. */
+  --color-white: oklch(20.8% .042 265.755);
+
+  /* Darkened from #bc13fe, which lands at exactly 4.51:1 on white and drags
+     text-accent/80 down to ~3.6:1 on a 12px mono <code>. Still unmistakably
+     the same neon violet. */
+  --color-accent: #a20fd8;
+
+  /* The slate ramp is COMPRESSED, not inverted.
+     A straight inversion breaks in three places: slate-800 serves 26 borders
+     AND 3 text uses, so one value cannot satisfy both; mirroring collapses the
+     border/surface lightness delta to 1.6-7 points and makes divide-slate-950
+     invisible on white; and slate-600 (22 uses) and slate-700 (8 uses) fall to
+     2.5:1 and 1.35:1. Light mode therefore has ~6 usable text steps, not 9. */
+  --color-slate-200: oklch(27.9% .041 260.031);  /* 14.4:1  body text */
+  --color-slate-300: oklch(37.2% .044 257.287);  /*  9.5:1  table body */
+  --color-slate-400: oklch(44.6% .043 257.281);  /*  7.0:1  table headers */
+  --color-slate-500: oklch(52%   .045 257.4);    /*  5.4:1  labels, 28 uses */
+  --color-slate-600: oklch(58%   .045 257.4);    /*  4.5:1  tertiary, 22 uses */
+  --color-slate-700: oklch(66%   .043 257);      /*  3.4:1  decorative, AA-large only */
+  --color-slate-800: oklch(86.9% .022 252.894);  /* 26 borders */
+  --color-slate-900: oklch(92.9% .013 255.508);  /* 22 borders, 4 badge fills */
+  --color-slate-950: oklch(90.5% .015 255.5);    /* divide-*: a touch darker so
+                                                    table rules stay visible */
+
+  /* Semantic status and severity badges.
+     The markup pattern is bg-{hue}-950/30..40 + text-{hue}-400|500 +
+     border-{hue}-900/50, which is dark-mode-native: left alone it paints a dark
+     saturated wash at 30-40% alpha over white with mid-tone text on top, which
+     is muddy and low-contrast. One consistent remap fixes every badge at once:
+     950 -> the 200 value (fill), 900 -> the 400 value (border),
+     400/500 -> the 700 value (text). */
+  --color-emerald-950: oklch(90.5% .093 164.15);
+  --color-emerald-900: oklch(76.5% .177 163.223);
+  --color-emerald-500: oklch(50.8% .118 165.612);
+  --color-emerald-400: oklch(50.8% .118 165.612);
+
+  --color-rose-950: oklch(89.2% .058 10.001);
+  --color-rose-900: oklch(71.2% .194 13.428);
+  --color-rose-500: oklch(51.4% .222 16.935);
+  --color-rose-400: oklch(51.4% .222 16.935);
+
+  --color-blue-950: oklch(88.2% .059 254.128);
+  --color-blue-900: oklch(70.7% .165 254.624);
+  --color-blue-400: oklch(48.8% .243 264.376);
+
+  --color-orange-950: oklch(90.1% .076 70.697);
+  --color-orange-900: oklch(75%   .183 55.934);
+  --color-orange-400: oklch(55.3% .195 38.402);
+
+  --color-amber-950: oklch(92.4% .12 95.746);
+  --color-amber-900: oklch(82.8% .189 84.429);
+  --color-amber-500: oklch(55.5% .163 48.998);
+}
+
+/* ------------------------------------------------- class-level overrides ---
+ * Kept to the irreducible minimum. Because these are unlayered they also beat
+ * the hover:/group-hover: variants that live in @layer utilities, so a
+ * class-level override silently kills an element's hover colour. Only used
+ * where a variable is genuinely role-conflicted AND the element carries no
+ * competing state variant -- each of the sites below was checked.
+ *
+ * [class~="..."] matches one whitespace-separated token exactly, needs no CSS
+ * escaping for the [ ] # ( ) characters in Tailwind's arbitrary values, and has
+ * specificity (0,2,0).
+ */
+
+/* slate-800 is a border shade in light mode, so its three TEXT uses -- the DEAD
+   badge, the "---" no-findings placeholder, and the domain input's placeholder
+   -- would render near-invisible. Verified: none has a hover or group-hover
+   text utility. */
+[data-theme="light"] [class~="text-slate-800"] { color: oklch(70.4% .04 256.788); }
+[data-theme="light"] [class~="placeholder:text-slate-800"]::placeholder { color: oklch(70.4% .04 256.788); }
+
+/* text-black only ever sits on a solid bg-accent (verified: 5 of 5 uses), and
+   the accent is now dark enough that black-on-accent fails. */
+[data-theme="light"] [class~="text-black"] { color: #fff; }
+
+/* #d000ff is a hardcoded hover brighten that was lighter than the base accent.
+   Against the darkened accent that is the wrong direction and only 4.1:1. */
+[data-theme="light"] [class~="hover:bg-[#d000ff]"]:hover { background-color: #8b0fbd; }
+
+/* The modal scrim is bg-black/80. With --color-black now near-white that would
+   white out the page behind the dialog instead of dimming it. */
+[data-theme="light"] [class~="bg-black/80"] { background-color: rgb(15 23 42 / .45); }
+
+/* ------------------------------------------------------------ glow shadows ---
+ * Every arbitrary shadow compiles to
+ *   --tw-shadow: 0 0 15px var(--tw-shadow-color, #bc13fe4d)
+ * so setting --tw-shadow-color recolours the halo while keeping the blur,
+ * spread and the hover growth animation. Do NOT use box-shadow:none here: that
+ * discards the geometry, and on the modal's save button it would also kill the
+ * resting shadow-md.
+ *
+ * @property declares both of these inherits:false, so they cannot be set on
+ * <html> and inherited -- the rule has to match the element carrying the class,
+ * which is what the attribute selector does.
+ *
+ * Order matters: the specific rules must follow the generic one, since they
+ * have equal (0,2,0) specificity and the last match wins.
+ */
+[data-theme="light"] [class*="shadow-[0_0_"]:not([class*="shadow-md"]) {
+  --tw-shadow-color: rgb(162 15 216 / .28);
+  --tw-drop-shadow-color: rgb(162 15 216 / .30);
+}
+/* shadow-md + hover:shadow-[0_0_20px_...]: scope to hover so the resting
+   elevation is left alone. */
+[data-theme="light"] [class*="hover:shadow-[0_0_"]:hover {
+  --tw-shadow-color: rgb(162 15 216 / .28);
+}
+/* Black "void" glows have to become real elevation on a light ground. */
+[data-theme="light"] [class*="rgba(0,0,0"] { --tw-shadow-color: rgb(15 23 42 / .16); }
+/* Non-accent hues: the scanning-status dot and the critical-severity badge. */
+[data-theme="light"] [class*="#4ade80"] { --tw-shadow-color: rgb(0 122 85 / .30); }
+[data-theme="light"] [class*="rgba(244,63,94"] { --tw-shadow-color: rgb(199 0 54 / .22); }
+
+/* ------------------------------- hand-written CSS from the pages themselves ---
+ * These live in unlayered <style> blocks, so they need (0,3,0) to be beaten
+ * where the original selector is already (0,2,0).
+ */
+
+/* web/template.html <style> */
+[data-theme="light"] .tab-active { border-bottom-color: #a20fd8; color: #a20fd8; text-shadow: none; }
+[data-theme="light"] .tab-inactive { color: oklch(52% .045 257.4); }
+[data-theme="light"] .tab-inactive:hover { color: #a20fd8; }
+
+[data-theme="light"] ::-webkit-scrollbar-track { background: oklch(96.8% .007 247.896); }
+[data-theme="light"] ::-webkit-scrollbar-thumb { background: oklch(86.9% .022 252.894); }
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a20fd8; }
+
+/* @layer components, from web/input.css */
+[data-theme="light"] .neon-text { text-shadow: none; }
+[data-theme="light"] .glass-header {
+  background: rgb(255 255 255 / .82);
+  border-bottom: 1px solid rgb(162 15 216 / .22);
+  box-shadow: 0 1px 3px rgb(15 23 42 / .08);
+}
+
+/* web/login.html <style>. Its block is entirely hardcoded, and .input-cyber:focus
+   is (0,2,0) so it needs the (0,3,0) form. */
+[data-theme="light"] body.login-page {
+  background-color: oklch(96.8% .007 247.896);
+  background-image:
+    radial-gradient(circle at 50% 50%, rgb(162 15 216 / .06) 0%, transparent 50%),
+    linear-gradient(rgb(15 23 42 / .05) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(15 23 42 / .05) 1px, transparent 1px);
+  color: oklch(27.9% .041 260.031);
+}
+[data-theme="light"] .glass-box {
+  background: rgb(255 255 255 / .9);
+  border: 1px solid rgb(162 15 216 / .18);
+  box-shadow: 0 10px 40px rgb(15 23 42 / .12);
+}
+[data-theme="light"] .glass-box::before {
+  background: linear-gradient(90deg, transparent, #a20fd8, transparent);
+}
+[data-theme="light"] .neon-glow { text-shadow: none; }
+[data-theme="light"] .input-cyber {
+  background: #ffffff;
+  border: 1px solid oklch(86.9% .022 252.894);
+  color: oklch(27.9% .041 260.031);
+}
+[data-theme="light"] .input-cyber:focus {
+  border-color: #a20fd8;
+  box-shadow: 0 0 0 3px rgb(162 15 216 / .14);
+}
+[data-theme="light"] .btn-cyber:hover { box-shadow: 0 4px 14px rgb(162 15 216 / .3); }
+
+/* ------------------------------------------------------- the toggle itself --- */
+
+/* Only one of the two icons is ever shown, swapped from CSS so the button needs
+   no per-theme class juggling in JS. */
+[data-theme="light"] .theme-icon-moon { display: none; }
+[data-theme="dark"] .theme-icon-sun { display: none; }

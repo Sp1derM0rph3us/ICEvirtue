@@ -1,6 +1,23 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Resolve the theme before any stylesheet is applied, so the page never
+         paints in one theme and then repaints in the other. This has to stay
+         inline and stay first in <head>; an external file would be a round trip
+         during which the wrong theme is already on screen. -->
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('icevirtue-theme');
+                var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+                document.documentElement.dataset.theme =
+                    saved === 'light' || saved === 'dark' ? saved : (prefersLight ? 'light' : 'dark');
+            } catch (e) {
+                // Private mode can make localStorage throw. Dark is the brand default.
+                document.documentElement.dataset.theme = 'dark';
+            }
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ICEvirtue Dashboard</title>
@@ -47,6 +64,10 @@
         ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 3px; }
         ::-webkit-scrollbar-thumb:hover { background: #bc13fe; }
     </style>
+    <!-- Last in <head>, and after the </style> above: that block is unlayered too,
+         so theme.css needs both the later source position and the
+         [data-theme="light"] prefix to outrank it. -->
+    <link rel="stylesheet" href="/static/css/theme.css">
 </head>
 <body class="min-h-screen flex flex-col font-sans">
     
@@ -64,6 +85,12 @@
                 <button id="nav-btn-targets" class="tab-active pb-1 transition-all hover:text-accent" onclick="switchView('targets')">Targets</button>
                 <button id="nav-btn-discoveries" class="tab-inactive pb-1 transition-all hover:text-accent" onclick="switchView('discoveries')">Discoveries</button>
                 <div class="h-4 w-px bg-slate-800 mx-2"></div>
+                <!-- Both icons ship in the markup and theme.css shows exactly one, so
+                     toggling the theme needs no class juggling in JS. -->
+                <button id="nav-btn-theme" class="flex items-center gap-2 text-slate-500 hover:text-accent transition-all border border-slate-800 rounded-sm px-3 py-2 bg-black" onclick="toggleTheme()" title="Toggle light / dark">
+                    <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                    <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+                </button>
                 <button id="nav-btn-logout" class="text-rose-500/80 hover:text-rose-400 transition-all font-black" onclick="logout()">[ TERMINATE SESSION ]</button>
             </div>
         </div>
@@ -1183,6 +1210,21 @@
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
                 setSubDashboardOpen(false);
+            }
+        }
+
+        // toggleTheme flips the attribute the whole palette hangs off and persists the
+        // choice. The inline <head> script reapplies it on the next load; without the
+        // stored value a reload would fall back to the OS preference and appear to
+        // forget what the operator picked.
+        function toggleTheme() {
+            const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+            document.documentElement.dataset.theme = next;
+            try {
+                localStorage.setItem('icevirtue-theme', next);
+            } catch (e) {
+                // Private mode: the theme still applies, it just will not survive a reload.
+                console.warn('Could not persist the theme preference:', e);
             }
         }
 

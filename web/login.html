@@ -1,34 +1,49 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+    <!-- Same no-flash resolution as the dashboard. Keep inline and keep first. -->
+    <script>
+        (function () {
+            try {
+                var saved = localStorage.getItem('icevirtue-theme');
+                var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+                document.documentElement.dataset.theme =
+                    saved === 'light' || saved === 'dark' ? saved : (prefersLight ? 'light' : 'dark');
+            } catch (e) {
+                document.documentElement.dataset.theme = 'dark';
+            }
+        })();
+    </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ICEVIRTUE // ACCESS-POINT</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            theme: {
-                extend: {
-                    colors: {
-                        accent: '#bc13fe',
-                        dark: '#000000',
-                        card: '#0a0a0a',
-                    },
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        mono: ['Space+Mono', 'monospace'],
-                    },
-                }
-            }
-        }
-    </script>
+    <!-- Was https://cdn.tailwindcss.com with a v3-shaped inline config. Replaced by
+         the same compiled stylesheet the dashboard uses: it already contains every
+         utility class this page needs (Tailwind's source detection scanned this file
+         when output.css was built), it removes a third-party CDN dependency from a
+         security tool, and it makes the login screen work with no network at all.
+         Two intentional consequences: the mono font is now really Space Mono -- the
+         old config declared 'Space+Mono', which is not a valid family name, so it had
+         been silently falling back to generic monospace -- and the slate shades shift
+         about one step, since v4's ramp is OKLCH-derived rather than sRGB. -->
+    <link rel="stylesheet" href="/static/css/output.css">
     <style>
+        /* output.css still carries the compiled CRT overlays in @layer base even
+           though they are gone from input.css, and this page had never inherited
+           them. Neutralise them here too, or migrating to the shared stylesheet
+           would hand the login screen a flickering scanline it never had. */
+        body::before, body::after { display: none !important; content: none !important; }
+
+        @media (prefers-reduced-motion: reduce) {
+            .glass-box::before, .animate-pulse-fast, .animate-ping, .animate-pulse { animation: none; }
+        }
+
         body {
             background-color: #000000;
-            background-image: 
+            background-image:
                 radial-gradient(circle at 50% 50%, rgba(188, 19, 254, 0.05) 0%, transparent 50%),
                 linear-gradient(rgba(18, 18, 18, 0.2) 1px, transparent 1px),
                 linear-gradient(90deg, rgba(18, 18, 18, 0.2) 1px, transparent 1px);
@@ -37,9 +52,9 @@
             display: flex;
             justify-content: center;
             align-items: center;
-            height: 100vh;
+            min-height: 100vh;
             margin: 0;
-            overflow: hidden;
+            overflow-y: auto;
         }
 
         .glass-box {
@@ -105,10 +120,17 @@
             animation: pulse-fast 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
         }
     </style>
+    <!-- After </style>: that block is unlayered too, so theme.css needs the later
+         source position as well as its [data-theme="light"] prefix. -->
+    <link rel="stylesheet" href="/static/css/theme.css">
 </head>
-<body class="font-sans">
+<!-- login-page is what theme.css hooks to override this page's hand-written body
+     rule, which is otherwise identical in specificity. -->
+<body class="font-sans login-page">
 
-<div class="glass-box w-full max-w-[420px] p-12 rounded-sm shadow-[0_0_100px_rgba(0,0,0,1)] border-l-[3px] border-l-accent animate-fade-in">
+<!-- animate-fade-in removed: it was never defined in this page and there are no
+     fadeIn keyframes in output.css either, so it has always been a no-op here. -->
+<div class="glass-box w-full max-w-[420px] p-12 rounded-sm shadow-[0_0_100px_rgba(0,0,0,1)] border-l-[3px] border-l-accent">
     <div class="mb-12">
         <div class="flex items-center justify-between mb-2">
             <span class="text-[10px] font-mono font-black text-accent tracking-[0.4em] uppercase opacity-80">System Auth</span>
