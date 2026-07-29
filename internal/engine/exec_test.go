@@ -21,6 +21,11 @@ func resetToolHome(t *testing.T) {
 	toolHomeOnce = sync.Once{}
 	resolvedToolHome = ""
 
+	// Clear systemd's directory variables so a test run that is itself under
+	// systemd does not leak them into the candidate chain.
+	t.Setenv("CACHE_DIRECTORY", "")
+	t.Setenv("STATE_DIRECTORY", "")
+
 	t.Cleanup(func() {
 		toolHomeOnce = sync.Once{}
 		resolvedToolHome = ""
@@ -307,5 +312,62 @@ func TestDescribeStreamMarksEmptyOutput(t *testing.T) {
 	}
 	if got := describeStream(" message \n"); got != "message" {
 		t.Errorf("describeStream() = %q, want %q", got, "message")
+	}
+}
+
+// Under a hardened unit (ProtectSystem=strict) systemd's CacheDirectory= and
+// StateDirectory= are the only writable candidates, so they must be consulted
+// before the paths that strict mode mounts read-only.
+func TestResolveToolHomePrefersSystemdCacheDirectory(t *testing.T) {
+	resetToolHome(t)
+
+	cache := t.TempDir()
+	ToolHome = ""
+	defaultToolHome = "/proc/definitely-not-writable/icevirtue"
+	t.Setenv("CACHE_DIRECTORY", cache)
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+
+	if got := resolveToolHome(); got != cache {
+		t.Errorf("resolveToolHome() = %q, want CacheDirectory %q", got, cache)
+	}
+}
+
+func TestResolveToolHomeFallsBackToStateDirectory(t *testing.T) {
+	resetToolHome(t)
+
+	state := t.TempDir()
+	ToolHome = ""
+	defaultToolHome = "/proc/definitely-not-writable/icevirtue"
+	t.Setenv("CACHE_DIRECTORY", "")
+	t.Setenv("STATE_DIRECTORY", state)
+
+	if got := resolveToolHome(); got != state {
+		t.Errorf("resolveToolHome() = %q, want StateDirectory %q", got, state)
+	}
+}
+
+// An explicit --tool-home must still win over what systemd provides.
+func TestResolveToolHomeExplicitFlagBeatsSystemdDirs(t *testing.T) {
+	resetToolHome(t)
+
+	explicit := t.TempDir()
+	ToolHome = explicit
+	t.Setenv("CACHE_DIRECTORY", t.TempDir())
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+
+	if got := resolveToolHome(); got != explicit {
+		t.Errorf("resolveToolHome() = %q, want the --tool-home value %q", got, explicit)
+	}
+}
+
+func TestSystemdDirsSplitsColonSeparatedList(t *testing.T) {
+	t.Setenv("CACHE_DIRECTORY", "/a/one:/a/two")
+	got := systemdDirs("CACHE_DIRECTORY")
+	if len(got) != 2 || got[0] != "/a/one" || got[1] != "/a/two" {
+		t.Errorf("systemdDirs() = %v, want [/a/one /a/two]", got)
+	}
+	t.Setenv("CACHE_DIRECTORY", "")
+	if got := systemdDirs("CACHE_DIRECTORY"); got != nil {
+		t.Errorf("systemdDirs() = %v, want nil for an unset value", got)
 	}
 }

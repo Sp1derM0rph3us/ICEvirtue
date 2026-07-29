@@ -59,13 +59,30 @@ var (
 // defaults to WorkingDirectory=/, so goflags resolves its config path relative
 // to the CWD, fails to create it, and the tool exits 1 within ~25ms after
 // printing "open subfinder/config.yaml: no such file or directory" to stdout.
+//
+// Candidates are tried in order: --tool-home, then systemd's CacheDirectory=
+// and StateDirectory=, then /opt/icevirtue, $HOME, the working directory and
+// finally the temp directory. The systemd entries come early on purpose, since
+// under ProtectSystem=strict they are the only writable candidates in the list.
 func resolveToolHome() string {
 	toolHomeOnce.Do(func() {
-		candidate := ToolHome
-		if candidate == "" {
-			candidate = defaultToolHome
+		var candidates []string
+
+		if ToolHome != "" {
+			candidates = append(candidates, ToolHome)
 		}
-		candidates := []string{candidate}
+
+		// systemd's CacheDirectory= and StateDirectory= are the only locations
+		// guaranteed writable under a hardened unit. ProtectSystem=strict mounts
+		// the whole hierarchy read-only, including /opt, $HOME, the working
+		// directory and /tmp, which would otherwise leave nothing usable here and
+		// silently reduce this whole mechanism to a no-op.
+		candidates = append(candidates, systemdDirs("CACHE_DIRECTORY")...)
+		candidates = append(candidates, systemdDirs("STATE_DIRECTORY")...)
+
+		if ToolHome == "" {
+			candidates = append(candidates, defaultToolHome)
+		}
 
 		if home, err := os.UserHomeDir(); err == nil && home != "" {
 			candidates = append(candidates, home)
@@ -99,6 +116,24 @@ func resolveToolHome() string {
 		log.Printf("[+] Tool config home: %s", resolvedToolHome)
 	})
 	return resolvedToolHome
+}
+
+// systemdDirs reads one of systemd's directory environment variables. systemd
+// documents these as colon-separated lists, one entry per name given in the
+// corresponding unit directive.
+func systemdDirs(name string) []string {
+	value := os.Getenv(name)
+	if value == "" {
+		return nil
+	}
+
+	var dirs []string
+	for _, part := range strings.Split(value, ":") {
+		if part = strings.TrimSpace(part); part != "" {
+			dirs = append(dirs, part)
+		}
+	}
+	return dirs
 }
 
 // checkToolHome verifies that dir/.config exists and is genuinely writable.
@@ -159,9 +194,9 @@ func toolEnv() []string {
 // stdout rather than stderr, so reporting stderr alone leaves the operator
 // staring at an empty message.
 func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (*bytes.Buffer, error) {
-	path, err := exec.LookPath(name)
+	path, err := resolveTool(name)
 	if err != nil {
-		return &bytes.Buffer{}, fmt.Errorf("%s not found: install it and make sure it is on PATH (searched: %s)", name, os.Getenv("PATH"))
+		return &bytes.Buffer{}, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -246,26 +281,43 @@ func PreflightTools() {
 		{"secretfinder.py", true},
 	}
 
-	var present, missing, skipped []string
+	var present, missing, skipped, doubtful []string
 	for _, t := range tools {
 		if !t.needed {
 			skipped = append(skipped, t.name)
 			continue
 		}
-		if _, err := exec.LookPath(t.name); err != nil {
+
+		// resolveTool logs its own warning for a doubtful match, and caches the
+		// result so no tool is probed again when the pipeline actually runs.
+		path, err := resolveTool(t.name)
+		if err != nil {
 			missing = append(missing, t.name)
 			continue
 		}
-		present = append(present, t.name)
+
+		if note := cachedToolNote(t.name); note != "" {
+			doubtful = append(doubtful, fmt.Sprintf("%s (%s)", t.name, path))
+			continue
+		}
+
+		present = append(present, fmt.Sprintf("%s (%s)", t.name, path))
 	}
 
-	log.Printf("[+] Preflight: %d/%d required tools found: %s", len(present), len(present)+len(missing), strings.Join(present, ", "))
+	log.Printf("[+] Preflight: %d/%d required tools resolved", len(present), len(present)+len(doubtful)+len(missing))
+	for _, p := range present {
+		log.Printf("      %s", p)
+	}
 	if len(skipped) > 0 {
 		log.Printf("[*] Preflight: not required with the current flags: %s", strings.Join(skipped, ", "))
 	}
+	if len(doubtful) > 0 {
+		log.Printf("[-] Preflight: resolved but NOT VERIFIED as the expected program: %s", strings.Join(doubtful, ", "))
+		log.Printf("[-] Preflight: see the warning above each; pin the right binary with --tool-paths name=/path")
+	}
 	if len(missing) > 0 {
-		log.Printf("[-] Preflight: MISSING from PATH: %s", strings.Join(missing, ", "))
-		log.Printf("[-] Preflight: the phases using those tools will fail. PATH=%s", os.Getenv("PATH"))
+		log.Printf("[-] Preflight: MISSING: %s", strings.Join(missing, ", "))
+		log.Printf("[-] Preflight: the stages using those tools will fail. PATH=%s", os.Getenv("PATH"))
 	}
 }
 

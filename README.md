@@ -65,6 +65,40 @@ Stage 03 needs no external tool at all, since the fuzzer is built in.
 
 Note that `secretfinder.py` has to be on `PATH` under exactly that name and be directly executable, which usually means giving it a shebang and a `chmod +x`.
 
+### When A Tool Name Belongs To Something Else
+
+On Debian and its derivatives, including Kali and Parrot, the name `httpx` is already taken. The `python3-httpx` package owns `/usr/bin/httpx`, which is the CLI of an unrelated Python HTTP client, so those distributions ship projectdiscovery's httpx as **`httpx-toolkit`** instead. Looking a tool up by name therefore finds the wrong program, and it fails on the first flag it is given:
+
+```
+stderr: Usage: httpx [OPTIONS] URL
+        Error: No such option: -s
+```
+
+ICEvirtue handles this without needing to know which distribution it is on. For every tool built on projectdiscovery's flag library (`subfinder`, `httpx`, `dnsx`, `nuclei`, `katana`) it tries the plain name first and then the known packaging alternatives, and it accepts a candidate only if that binary answers `-version` with exit status zero and a version number. A program that merely shares the name almost never does both, so the imposter is rejected and the search continues. The startup preflight prints the binary it settled on for each tool:
+
+```
+[+] Preflight: 2/8 required tools resolved
+      subfinder (/usr/bin/subfinder)
+      httpx (/usr/bin/httpx-toolkit)
+```
+
+If nothing passes the probe, ICEvirtue uses the first candidate it found rather than refusing to run, on the grounds that the probe might be wrong about a working binary, but it says so clearly and tells you how to override it. When that happens, or whenever you want to be explicit, pin the binary yourself:
+
+```Shell
+ICEvirtue --tool-paths httpx=/usr/bin/httpx-toolkit,nuclei=/opt/tools/nuclei
+```
+
+An explicit `--tool-paths` entry is used as given, with no discovery and no probing.
+
+Do not solve this by removing `python3-httpx`. On a typical Kali or Parrot install `python3-dnspython` depends on it, and removing it takes dnspython with it. If you would rather fix it at the system level than pass a flag, symlink the real binary somewhere that precedes `/usr/bin` on your `PATH`:
+
+```Shell
+sudo apt install httpx-toolkit
+sudo ln -s /usr/bin/httpx-toolkit /usr/local/bin/httpx
+```
+
+One more thing worth knowing: `katana`, `gau`, `subjs` and `mantra` are not packaged on Debian-family systems at all, so they come from `go install` and land in `$GOPATH/bin`, usually `~/go/bin`. That directory is not on a systemd service's `PATH`, so either add it to `Environment=PATH=` in the unit or copy those binaries into `/usr/local/bin`.
+
 ## Installation
 
 Build both binaries and drop them somewhere on the system `PATH`:
@@ -141,6 +175,7 @@ Two stages are opt-in rather than opt-out. Leaving out `--dnsx-list` skips activ
 | `--skip-amass` | `false` | Skip Amass during stage 01. Everything else in that stage still runs. |
 | `--skip-nuclei` | `false` | Skip stage 04 entirely. |
 | `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
+| `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
 | `--verbose` | `false` | Log every individual finding as it is diffed, marking each as new or already known, instead of only the per-stage totals. |
 | `--wide-targets` | `false` | Widen which hosts reach stages 03 to 05. See below. |
 

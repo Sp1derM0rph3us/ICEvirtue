@@ -18,11 +18,17 @@ import (
 
 // fakeTool writes an executable stand-in for a tool. The body is a shell script,
 // so it can emit output and then exit with any status.
+//
+// Every stub answers -version the way a goflags tool does, so it passes the
+// identity probe in resolveTool. A stub that then fails its real invocation is
+// therefore the right program failing, which is what these tests are about.
 func fakeTool(t *testing.T, dir, name, body string) {
 	t.Helper()
 
 	path := filepath.Join(dir, name)
-	script := "#!/bin/sh\n" + body + "\n"
+	script := "#!/bin/sh\n" +
+		"case \"$1\" in -version) echo '[INF] Current Version: v9.9.9'; exit 0;; esac\n" +
+		body + "\n"
 	if err := os.WriteFile(path, []byte(script), 0700); err != nil {
 		t.Fatalf("writing fake %s: %v", name, err)
 	}
@@ -60,6 +66,9 @@ func newPipelineEnv(t *testing.T, mode string) (*models.Profile, string) {
 	t.Setenv("PATH", binDir)
 
 	resetToolHome(t)
+	// The resolution cache is process-global on purpose, so each test has to
+	// clear it or it would reuse a binary path from a previous test's temp dir.
+	resetToolPaths(t)
 	ToolHome = t.TempDir()
 
 	// Restore every pipeline flag the tests move around.
