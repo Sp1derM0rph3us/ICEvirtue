@@ -253,6 +253,8 @@ The **tool config home** is where the spawned recon tools keep their own configu
 
 The web interface is straightforward. You add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
 
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
+
 Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
 
 Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
@@ -262,6 +264,8 @@ Once a scan starts, the "Discoveries" tab fills in as soon as the initial recon 
 You can also force a scan outside its schedule from the dashboard. A profile that is already scanning refuses a second concurrent run rather than doubling up, and the scan lock is released automatically when the run finishes, including when it fails.
 
 The "Last Run" column summarises how each profile's most recent run ended, so you do not have to read the service log to notice a problem. A healthy run reads `completed`. A run where some tool fell over reads `completed, amass failed in Stage 01 Discovery`, or `completed, 3 tools failed` when more than one did. A run that stopped early reads `halted:` followed by the reason, highlighted in red, and remember that a halted run still saved everything it collected before stopping.
+
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
 ## HTTP API
 
@@ -301,4 +305,4 @@ If the dashboard shows a `halted:` status, the reason is in the status itself an
 
 ICEvirtue is a work-in-progress and it is mainly created for my specific needs. Although I might add specific functionalities per request, you are much welcome to fork this project and use it as a baseline to start your own if you have specific needs or visions. This project is also created with the help of AI, so take much care when exposing it for access over the Net.
 
-That been said, it is being developed with ample focus on security, so you don't get ass whooped by another 'runner while you are asleep. I super appreciate bug reports and vulnerability disclosures, feel absolutely free to mess around with this project in your lab environment and report anything you might find. I will absolutely love to hear and fix such bugs.
+That being said, it is being developed with ample focus on security, so you don't get ass whooped by another 'runner while you are asleep. I super appreciate bug reports and vulnerability disclosures, feel absolutely free to mess around with this project in your lab environment and report anything you may find. I will absolutely love to hear and fix such bugs.
