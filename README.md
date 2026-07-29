@@ -1,5 +1,6 @@
 # ICEvirtue
 
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_login.png)
 ICEvirtue is the netrunner's most essential tool. It executes a standardized reconnaissance and enumeration pipeline and stores the results inside **target profiles**, allowing netrunners to focus on what really matters: cracking those defenses.
 
 You register a domain once, tell ICEvirtue how often to look at it, and it keeps looking. Every run is diffed against everything it has seen before for that profile, so the dashboard tells you what is *new* rather than dumping the same ten thousand subdomains on you every night. Findings are grouped per profile into subdomains, alive hosts, directories, vulnerabilities and secrets, and the dashboard updates itself live over Server-Sent Events while a scan is running.
