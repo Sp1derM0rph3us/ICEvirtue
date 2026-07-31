@@ -12,6 +12,7 @@ import (
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -380,7 +381,15 @@ func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Subdomain: %s", sub)
 			}
-			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+			// host is written here as well as by the BeforeSave hook, because hooks do
+			// not fire for an Update. This is the second of three mechanisms that keep
+			// the correlation key populated — insert hook, this repair on re-sighting,
+			// and the one-time backfill — so a row the backfill could not reach is
+			// fixed the next time the target is scanned.
+			database.DB.Model(&existing).Updates(map[string]interface{}{
+				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
+				"host":      hostkey.NormalizeOrNil(sub),
+			})
 		}
 	}
 	return newCount
@@ -402,14 +411,21 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Alive Host: %s", h.URL)
 			}
-			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
-
+			// One statement instead of up to three. Every column that can change on a
+			// re-sighting goes in the same update, which matters more than it looks:
+			// the whole process shares a single database connection, so each extra
+			// round trip here is serialised against every in-flight HTTP request.
+			updates := map[string]interface{}{
+				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
+				"host":      hostkey.NormalizeOrNil(h.URL),
+			}
 			if h.IP != "" && existing.IP != h.IP {
-				database.DB.Model(&existing).Update("IP", h.IP)
+				updates["ip"] = h.IP
 			}
 			if h.StatusCode != 0 && existing.StatusCode != h.StatusCode {
-				database.DB.Model(&existing).Update("StatusCode", h.StatusCode)
+				updates["status_code"] = h.StatusCode
 			}
+			database.DB.Model(&existing).Updates(updates)
 		}
 	}
 	return newCount
@@ -431,7 +447,10 @@ func diffVulns(profileID *uuid.UUID, vulns []models.Vulnerability) int {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Vulnerability: %s found on %s", v.TemplateID, v.URL)
 			}
-			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+			database.DB.Model(&existing).Updates(map[string]interface{}{
+				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
+				"host":      hostkey.NormalizeOrNil(v.URL),
+			})
 		}
 	}
 	return newCount
@@ -453,7 +472,15 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
-			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
+			// Note the existing-row lookup above keys on (secret_type, secret_value)
+			// and ignores SourceURL, so a secret found on a second host updates the
+			// first row rather than creating one. That predates this change and is not
+			// fixed here; it means the host recorded for a shared secret is whichever
+			// one the most recent scan saw.
+			database.DB.Model(&existing).Updates(map[string]interface{}{
+				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
+				"host":      hostkey.NormalizeOrNil(s.SourceURL),
+			})
 		}
 	}
 	return newCount
@@ -475,10 +502,14 @@ func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Directory: %s", d.DirURL)
 			}
-			database.DB.Model(&existing).Update("LastSeen", gorm.Expr("CURRENT_TIMESTAMP"))
-			if existing.StatusCode != d.StatusCode {
-				database.DB.Model(&existing).Update("StatusCode", d.StatusCode)
+			updates := map[string]interface{}{
+				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
+				"host":      hostkey.NormalizeOrNil(d.SubdomainURL),
 			}
+			if existing.StatusCode != d.StatusCode {
+				updates["status_code"] = d.StatusCode
+			}
+			database.DB.Model(&existing).Updates(updates)
 		}
 	}
 	return newCount

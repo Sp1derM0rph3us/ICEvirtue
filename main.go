@@ -44,6 +44,12 @@ func main() {
 		log.Fatalf("[-] Failed to initialize database: %v", err)
 	}
 
+	// Before the scheduler and the server start, so nothing competes for the single
+	// database connection and no request can observe a half-backfilled state.
+	if err := database.RunDataMigrations(); err != nil {
+		log.Fatalf("[-] Failed to migrate existing data: %v", err)
+	}
+
 	database.DB.Model(&models.Profile{}).Where("is_scanning = ?", true).Update("is_scanning", false)
 
 	sched := scheduler.NewScheduler()

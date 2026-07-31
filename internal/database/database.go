@@ -51,6 +51,7 @@ func InitDatabase(dbPath string) error {
 	sqlDB.SetMaxIdleConns(1)
 
 	err = db.AutoMigrate(
+		&models.SchemaMigration{},
 		&models.User{},
 		&models.Profile{},
 		&models.Subdomain{},
