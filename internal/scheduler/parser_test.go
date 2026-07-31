@@ -92,3 +92,47 @@ func TestParseSchedule(t *testing.T) {
 		})
 	}
 }
+
+// TestParseScheduleValidatesEveryForm covers the validation that ParseSchedule did not do.
+//
+// A raw expression used to be accepted on a field count alone — "whenever I feel like it"
+// is five words — and the human-readable forms were returned without being parsed at all,
+// so "every day at 99:99" produced "0 99 99 * * *". Both failures only surfaced later
+// inside Sync, where they are logged and the profile is skipped, so the API answered 200
+// for a schedule that would never fire.
+func TestParseScheduleValidatesEveryForm(t *testing.T) {
+	cases := []struct {
+		input string
+		valid bool
+		note  string
+	}{
+		{"every day at 14:30", true, ""},
+		{"every week at 00:00", true, ""},
+		{"every month at 03:15", true, ""},
+		{"every year at 12:00", true, ""},
+		{"@every 12h", true, "descriptor"},
+		{"@daily", true, "descriptor"},
+		{"0 30 14 * * *", true, "six fields, as cron.WithSeconds requires"},
+
+		{"whenever I feel like it", false, "five words is not a cron expression"},
+		{"every day at 99:99", false, "the regex matches but the hour does not exist"},
+		{"every day at 25:00", false, "hour out of range"},
+		{"30 14 * * *", false, "five fields: valid standard cron, but this scheduler wants six"},
+		{"@every banana", false, "not a duration"},
+		{"", false, ""},
+	}
+
+	for _, c := range cases {
+		_, err := ParseSchedule(c.input)
+		if c.valid && err != nil {
+			t.Errorf("ParseSchedule(%q) rejected a valid schedule: %v", c.input, err)
+		}
+		if !c.valid && err == nil {
+			detail := c.note
+			if detail == "" {
+				detail = "it is not a valid schedule"
+			}
+			t.Errorf("ParseSchedule(%q) was accepted; %s", c.input, detail)
+		}
+	}
+}

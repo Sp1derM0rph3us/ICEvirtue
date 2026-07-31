@@ -184,6 +184,22 @@
 </div>
 
 <script>
+    // The return position is read from sessionStorage, which is per-tab and same-origin, so
+    // a link from an attacker's page cannot seed it. The server never sees or reflects it,
+    // which is what keeps this from being an open redirect: the only thing appended to "/"
+    // is a value proved to be a query string.
+    const RETURN_KEY = 'icevirtue-return';
+    const SAFE_QUERY = /^\?[^/\\:#]*$/;
+
+    function returnTarget() {
+        let q = '';
+        try {
+            q = sessionStorage.getItem(RETURN_KEY) || '';
+            sessionStorage.removeItem(RETURN_KEY);
+        } catch (e) {}
+        return SAFE_QUERY.test(q) ? '/' + q : '/';
+    }
+
     document.getElementById('login-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const username = document.getElementById('username').value;
@@ -204,7 +220,7 @@
             });
 
             if (res.ok) {
-                window.location.replace('/'); 
+                window.location.replace(returnTarget()); 
             } else {
                 errorMsg.textContent = "AUTH FAILURE // INVALID CREDENTIALS"; 
                 errorMsg.classList.remove('hidden');

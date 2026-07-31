@@ -5,7 +5,10 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/api"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
@@ -14,6 +17,18 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
 )
+
+// originList collects a repeatable --trusted-origin flag.
+type originList []string
+
+func (o *originList) String() string { return strings.Join(*o, ",") }
+
+func (o *originList) Set(value string) error {
+	if value = strings.TrimSpace(value); value != "" {
+		*o = append(*o, value)
+	}
+	return nil
+}
 
 func main() {
 	flag.BoolVar(&engine.Verbose, "verbose", false, "Print detailed scan findings to the terminal")
@@ -28,9 +43,19 @@ func main() {
 	var apiPort int
 	var dbPath string
 	var jwtSecretPath string
+	var webDir string
+	var secureCookies bool
+	var sessionTTL time.Duration
+	var trustedOrigins originList
 	flag.IntVar(&apiPort, "api-port", 8888, "Port for the web dashboard to listen on")
 	flag.StringVar(&dbPath, "db-path", "icevirtue.db", "Path to the database file (must match the path used by ICEvirtue-admin)")
 	flag.StringVar(&jwtSecretPath, "jwt-secret", "", "Path to the JWT signing key (default /var/lib/icevirtue/jwt.secret, falling back to $XDG_STATE_HOME/icevirtue)")
+	flag.StringVar(&webDir, "web-dir", "web", "Directory holding the dashboard's templates/ and static/ folders")
+	flag.BoolVar(&secureCookies, "secure-cookies", false,
+		"Mark the session cookie Secure. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. Leaving it off over plain HTTP is required, because a browser accepts a Secure cookie and then never sends it back.")
+	flag.DurationVar(&sessionTTL, "session-ttl", auth.DefaultSessionTTL, "How long a dashboard session lasts before it has to be re-established")
+	flag.Var(&trustedOrigins, "trusted-origin",
+		"An Origin to accept on state-changing requests in addition to the request's own host. Repeatable. Needed when a reverse proxy rewrites Host, because otherwise every write is refused with 403.")
 	flag.Parse()
 
 	engine.PreflightTools()
@@ -57,12 +82,35 @@ func main() {
 		log.Fatalf("[-] Failed to start scheduler: %v", err)
 	}
 
-	go api.StartServer(apiPort, sched)
+	if !secureCookies {
+		log.Printf("[!] The session cookie is not marked Secure, so anything on the network path can read it. Pass --secure-cookies when the dashboard is served over HTTPS.")
+	}
+
+	cfg := api.Config{
+		// Templates live outside the tree served under /static. Serving the whole web
+		// folder meant GET /static/template.html handed the entire authenticated
+		// dashboard to anyone, and GET /static/ listed the directory.
+		Templates:      api.DirFS(filepath.Join(webDir, "templates")),
+		Static:         api.DirFS(filepath.Join(webDir, "static")),
+		SecureCookies:  secureCookies,
+		TrustedOrigins: trustedOrigins,
+		SessionTTL:     sessionTTL,
+	}
+
+	// Surface a bind failure or a broken template as a normal fatal, rather than as a
+	// log.Fatalf from inside a goroutine nobody is watching.
+	serverErr := make(chan error, 1)
+	go func() { serverErr <- api.StartServer(apiPort, sched, cfg) }()
 
 	log.Println("[+] ICEvirtue Engine is Online. Press Ctrl+C to exit.")
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, os.Interrupt, syscall.SIGTERM)
-	<-sigChan
+
+	select {
+	case err := <-serverErr:
+		log.Fatalf("[-] Web server failed: %v", err)
+	case <-sigChan:
+	}
 
 	log.Println("\n[*] Shutting down...")
 	sched.Stop()

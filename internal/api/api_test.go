@@ -69,7 +69,7 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 		}
 	}
 
-	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+id.String(), deleteProfile)
+	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+id.String(), (&API{}).deleteProfile)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("DELETE returned %d, want 204: %s", rec.Code, rec.Body.String())
 	}
@@ -106,12 +106,12 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 func TestDeleteProfileRejectsABadID(t *testing.T) {
 	newAPIEnv(t)
 
-	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/not-a-uuid", deleteProfile)
+	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/not-a-uuid", (&API{}).deleteProfile)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("DELETE with a malformed id returned %d, want 400", rec.Code)
 	}
 
-	rec = route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+uuid.NewString(), deleteProfile)
+	rec = route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+uuid.NewString(), (&API{}).deleteProfile)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("DELETE of an unknown profile returned %d, want 404", rec.Code)
 	}

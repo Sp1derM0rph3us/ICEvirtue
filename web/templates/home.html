@@ -625,6 +625,13 @@
                     signal: controller.signal,
                     ...options,
                 });
+                if (res.status === 401) {
+                    // Every caller's correct reaction to a dead session is the same, so it
+                    // is handled once here. Without this an expired session left the
+                    // dashboard looking alive while every button failed silently.
+                    goToLogin();
+                    throw new Error('session expired');
+                }
                 if (!res.ok) {
                     const detail = (await res.text().catch(() => '')).trim();
                     throw new Error(`${res.status} ${res.statusText}${detail ? ': ' + detail : ''}`);
@@ -638,6 +645,29 @@
             } finally {
                 clearTimeout(timer);
             }
+        }
+
+        // goToLogin leaves for the login page.
+        //
+        // The EventSource is closed first: per the spec an HTTP error status fails the
+        // connection permanently, so leaving it open would have it retry, take another 401
+        // and shut down for good while the page still looked connected.
+        //
+        // The return position is kept in sessionStorage and never sent to the server. A
+        // ?next= parameter would be an open redirect, and every hand-rolled validator for
+        // one is a step away from accepting //evil.com; here the only thing ever appended
+        // to "/" is something proved to be a query string.
+        const RETURN_KEY = 'icevirtue-return';
+        const SAFE_QUERY = /^\?[^/\\:#]*$/;
+
+        let leaving = false;
+
+        function goToLogin() {
+            if (leaving) return;
+            leaving = true;
+            try { if (typeof sse !== 'undefined' && sse) sse.close(); } catch (e) {}
+            try { sessionStorage.setItem(RETURN_KEY, location.search); } catch (e) {}
+            window.location.replace('/login');
         }
 
         async function apiJSON(path, options = {}) {
@@ -760,7 +790,7 @@
             if (ampm === "AM" && hour === 12) hour = 0;
             const schedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
             try {
-                const res = await fetch('/api/profiles', {
+                const res = await api('/api/profiles', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ domain, schedule })
@@ -909,7 +939,7 @@
         async function deleteTarget(id, domain) {
             if (!confirm(`Are you sure you want to delete ${domain}?`)) return;
             try {
-                const res = await fetch(`/api/profiles/${id}`, { method: 'DELETE' });
+                const res = await api(`/api/profiles/${id}`, { method: 'DELETE' });
                 if (!res.ok) throw new Error(await res.text());
                 document.getElementById(`row-profile-${id}`).remove();
                 const select = document.getElementById('select-profile');
@@ -973,7 +1003,7 @@
             if (ampm === "AM" && hour === 12) hour = 0;
             const newSchedule = `every ${freq} at ${hour.toString().padStart(2, '0')}:${min}`;
             try {
-                const res = await fetch(`/api/profiles/${id}/schedule`, {
+                const res = await api(`/api/profiles/${id}/schedule`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ schedule: newSchedule })
@@ -993,7 +1023,7 @@
 
         async function forceScan(id) {
             try {
-                const res = await fetch(`/api/profiles/${id}/scan`, { method: 'POST' });
+                const res = await api(`/api/profiles/${id}/scan`, { method: 'POST' });
                 if (!res.ok) throw new Error(await res.text());
                 alert("Scan initiated successfully in the background.");
             } catch(err) {
@@ -1286,6 +1316,10 @@
                 renderCurrentView();
             } catch (err) {
                 if (token.abort) return;
+                // Nothing to report while navigating away: api() has already decided the
+                // session is gone, and painting "session expired" into the table would be
+                // a confusing flash on the way to the login page.
+                if (leaving) return;
                 console.error(err);
                 showLoadError(err);
             } finally {
@@ -1479,8 +1513,9 @@
 
         async function logout() {
             try {
-                await fetch('/api/logout', { method: 'POST' });
-                window.location.reload();
+                await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
+                // /login directly, rather than reloading / and taking the redirect.
+                window.location.replace('/login');
             } catch (err) {
                 console.error("Logout failed:", err);
             }
@@ -1530,7 +1565,18 @@
             }
         };
 
-        sse.onerror = (error) => { console.error("SSE Error:", error); };
+        sse.onerror = async () => {
+            // onerror covers both a dead session and a transient blip, and the two want
+            // opposite reactions. readyState tells them apart: anything other than CLOSED
+            // means EventSource is still retrying on its own.
+            if (sse.readyState !== EventSource.CLOSED) return;
+            try {
+                const res = await fetch('/api/profiles/index', { credentials: 'same-origin' });
+                if (res.status === 401) goToLogin();
+            } catch (e) {
+                console.error("SSE Error:", e);
+            }
+        };
 
         document.addEventListener('DOMContentLoaded', () => {
             // The URL is the source of truth for what to show, so it is read before

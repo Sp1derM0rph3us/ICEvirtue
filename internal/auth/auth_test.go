@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/golang-jwt/jwt/v5"
 )
 
 // These tests mutate package globals and the process environment, so none of
@@ -287,5 +290,76 @@ func TestValidateRejectsTokenFromADifferentKey(t *testing.T) {
 
 	if _, err := ValidateToken(token); err == nil {
 		t.Error("a token signed with the previous key must not validate")
+	}
+}
+
+// TestValidateRejectsOtherHmacAlgorithms covers the algorithm pin. Accepting the whole
+// HMAC family is not exploitable with one symmetric key, but the pin is what closes the
+// door before anyone introduces an asymmetric one.
+func TestValidateRejectsOtherHmacAlgorithms(t *testing.T) {
+	isolate(t)
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	if err := Init(""); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	for _, method := range []*jwt.SigningMethodHMAC{jwt.SigningMethodHS384, jwt.SigningMethodHS512} {
+		claims := &Claims{
+			Username: "netrunner",
+			RegisteredClaims: jwt.RegisteredClaims{
+				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
+				IssuedAt:  jwt.NewNumericDate(time.Now()),
+			},
+		}
+		signed, err := jwt.NewWithClaims(method, claims).SignedString(jwtSecret)
+		if err != nil {
+			t.Fatalf("signing with %s: %v", method.Alg(), err)
+		}
+		if _, err := ValidateToken(signed); err == nil {
+			t.Errorf("a token signed with %s was accepted; only HS256 may be", method.Alg())
+		}
+	}
+}
+
+// TestValidateRequiresAnExpiry guards the WithExpirationRequired option. A token with no
+// exp would otherwise validate forever.
+func TestValidateRequiresAnExpiry(t *testing.T) {
+	isolate(t)
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	if err := Init(""); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	claims := &Claims{Username: "netrunner"} // no ExpiresAt
+	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
+	if err != nil {
+		t.Fatalf("signing: %v", err)
+	}
+	if _, err := ValidateToken(signed); err == nil {
+		t.Error("a token with no expiry was accepted; it would never expire")
+	}
+}
+
+func TestGenerateTokenWithTTL(t *testing.T) {
+	isolate(t)
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	if err := Init(""); err != nil {
+		t.Fatalf("Init: %v", err)
+	}
+
+	live, err := GenerateTokenWithTTL("netrunner", time.Hour)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithTTL: %v", err)
+	}
+	if _, err := ValidateToken(live); err != nil {
+		t.Errorf("a token with an hour left was rejected: %v", err)
+	}
+
+	expired, err := GenerateTokenWithTTL("netrunner", -time.Minute)
+	if err != nil {
+		t.Fatalf("GenerateTokenWithTTL: %v", err)
+	}
+	if _, err := ValidateToken(expired); err == nil {
+		t.Error("an expired token was accepted")
 	}
 }

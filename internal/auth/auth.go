@@ -153,17 +153,30 @@ type Claims struct {
 	jwt.RegisteredClaims
 }
 
+// DefaultSessionTTL is how long a session lasts unless the caller says otherwise.
+const DefaultSessionTTL = 24 * time.Hour
+
 func GenerateToken(username string) (string, error) {
+	return GenerateTokenWithTTL(username, DefaultSessionTTL)
+}
+
+// GenerateTokenWithTTL mints a token with an explicit lifetime.
+//
+// The explicit form exists so the session length can be configured, and so a test can
+// produce an already-expired token. Without it, "an expired session is redirected to
+// the login page" could only be tested with a malformed token, which exercises a
+// different branch of ValidateToken entirely.
+func GenerateTokenWithTTL(username string, ttl time.Duration) (string, error) {
 	if len(jwtSecret) < minSecretLen {
 		return "", errNoSecret
 	}
 
-	expirationTime := time.Now().Add(24 * time.Hour)
+	now := time.Now()
 	claims := &Claims{
 		Username: username,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(expirationTime),
-			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
+			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
 
@@ -177,12 +190,22 @@ func ValidateToken(tokenStr string) (*Claims, error) {
 	}
 
 	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(token *jwt.Token) (interface{}, error) {
-		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
-		}
-		return jwtSecret, nil
-	})
+	token, err := jwt.ParseWithClaims(tokenStr, claims,
+		func(token *jwt.Token) (interface{}, error) { return jwtSecret, nil },
+		// Pin the algorithm to the one GenerateToken uses, rather than accepting the
+		// whole HMAC family. With a single symmetric key this is not exploitable — an
+		// attacker who cannot sign HS256 cannot sign HS384 either — but it is the guard
+		// that matters the moment anyone reaches for an asymmetric algorithm, where the
+		// RS256-to-HS256 confusion attack signs a forged token with the public key.
+		//
+		// This also replaces the keyfunc's own method check, so there is one place that
+		// decides which algorithms are acceptable instead of two.
+		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
+		// jwt/v5 does not require exp by default, so a token minted without one would
+		// never expire. Nothing mints such a token today; this makes it impossible for
+		// anything to start.
+		jwt.WithExpirationRequired(),
+	)
 
 	if err != nil {
 		return nil, err

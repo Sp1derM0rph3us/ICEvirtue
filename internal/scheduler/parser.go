@@ -4,6 +4,15 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
+
+	"github.com/robfig/cron/v3"
+)
+
+// cronParser must accept exactly what the scheduler's cron instance accepts. NewScheduler
+// builds it with cron.WithSeconds, which is the six-field dialect plus descriptors like
+// @every.
+var cronParser = cron.NewParser(
+	cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor,
 )
 
 var (
@@ -26,49 +35,42 @@ var (
 func ParseSchedule(input string) (string, error) {
 	input = strings.TrimSpace(input)
 
-	// Direct pass-through for @every format
-	if strings.HasPrefix(input, "@every ") {
-		return input, nil
-	}
-
-	// Match "every day at HH:MM"
-	if matches := dailyRegex.FindStringSubmatch(input); matches != nil {
-		hour := matches[1]
-		minute := matches[2]
+	expr := input
+	switch {
+	case dailyRegex.MatchString(input):
+		m := dailyRegex.FindStringSubmatch(input)
 		// cron/v3 with WithSeconds expects: Seconds Minutes Hours DayOfMonth Month DayOfWeek
-		return fmt.Sprintf("0 %s %s * * *", minute, hour), nil
-	}
-
-	// Match "every week at HH:MM"
-	if matches := weeklyRegex.FindStringSubmatch(input); matches != nil {
-		hour := matches[1]
-		minute := matches[2]
+		expr = fmt.Sprintf("0 %s %s * * *", m[2], m[1])
+	case weeklyRegex.MatchString(input):
+		m := weeklyRegex.FindStringSubmatch(input)
 		// Defaults to Sunday (0) at HH:MM
-		return fmt.Sprintf("0 %s %s * * 0", minute, hour), nil
-	}
-
-	// Match "every month at HH:MM"
-	if matches := monthRegex.FindStringSubmatch(input); matches != nil {
-		hour := matches[1]
-		minute := matches[2]
-		// Defaults to 1st of the month at HH:MM
-		return fmt.Sprintf("0 %s %s 1 * *", minute, hour), nil
-	}
-
-	// Match "every year at HH:MM"
-	if matches := yearRegex.FindStringSubmatch(input); matches != nil {
-		hour := matches[1]
-		minute := matches[2]
+		expr = fmt.Sprintf("0 %s %s * * 0", m[2], m[1])
+	case monthRegex.MatchString(input):
+		m := monthRegex.FindStringSubmatch(input)
+		// Defaults to the 1st of the month at HH:MM
+		expr = fmt.Sprintf("0 %s %s 1 * *", m[2], m[1])
+	case yearRegex.MatchString(input):
+		m := yearRegex.FindStringSubmatch(input)
 		// Defaults to Jan 1st at HH:MM
-		return fmt.Sprintf("0 %s %s 1 1 *", minute, hour), nil
+		expr = fmt.Sprintf("0 %s %s 1 1 *", m[2], m[1])
 	}
 
-	// Assume it's a standard cron expression (or other @ format) if it doesn't match the human-readable ones.
-	// Basic validation (at least 5 fields or starts with @). cron/v3 parses it further.
-	parts := strings.Fields(input)
-	if len(parts) >= 5 || strings.HasPrefix(input, "@") {
-		return input, nil
+	// Everything goes through the parser, including the expressions built above.
+	//
+	// Two separate problems this closes. A raw expression used to be accepted on a field
+	// count alone, so "whenever I feel like it" — five words — was stored as a schedule.
+	// And the human-readable forms were returned unvalidated, so "every day at 99:99"
+	// matched the regex and produced "0 99 99 * * *". In both cases the failure surfaced
+	// later inside Sync, where it is logged and the profile is skipped, so the API answered
+	// 200 for a profile that would never fire and nothing on screen said so.
+	//
+	// Note the field count: because the scheduler is built with cron.WithSeconds, a valid
+	// raw expression needs six fields rather than the usual five. Delegating to the same
+	// parser is what makes that rule true here and not only at schedule time.
+	if _, err := cronParser.Parse(expr); err != nil {
+		return "", fmt.Errorf("invalid schedule %q: %w. Supported formats: '@every 12h', "+
+			"'every day at 14:30', 'every week at 00:00', or a six-field cron expression "+
+			"(seconds minutes hours day-of-month month day-of-week)", input, err)
 	}
-
-	return "", fmt.Errorf("invalid schedule format: %s. Supported formats: '@every 12h', 'every day at 14:30', 'every week at 00:00', or standard cron expression", input)
+	return expr, nil
 }

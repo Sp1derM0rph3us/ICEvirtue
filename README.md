@@ -119,14 +119,34 @@ If you installed any of the recon tools with `go install`, they landed in `$GOPA
 
 ## Setting Up
 
-ICEvirtue needs three things in place before it is useful: a working directory containing the `web` folder, a database, and at least one dashboard user.
+ICEvirtue needs three things in place before it is useful: the `web` folder, a database, and at least one dashboard user.
 
-The `web` folder holds the dashboard templates and static assets, and ICEvirtue loads them from a path relative to its working directory. When you run the engine from a checkout this already works. When you run it from anywhere else, copy the folder next to wherever the application will live:
+The `web` folder holds the dashboard, split into two directories that are treated very differently:
+
+```
+web/
+├── templates/      the HTML pages. Never served directly.
+│   ├── login.html
+│   └── home.html
+└── static/         served verbatim under /static/, so treat it as public.
+    └── css/
+        ├── output.css
+        └── theme.css
+```
+
+Only `web/static` is exposed over HTTP, and only its `css` subdirectory is reachable. That separation is the point: an earlier layout served the whole `web` folder, so `GET /static/template.html` handed the entire authenticated dashboard to anyone and `GET /static/` returned a directory listing. **Anything you put under `web/static` is public. Anything under `web/templates` is not.**
+
+ICEvirtue looks for `web` relative to its working directory. Running from a checkout already works; anywhere else, copy the folder next to wherever the application will live, or point `--web-dir` at it:
 
 ```Shell
 mkdir -p /opt/icevirtue
 cp -r ./ICEvirtue/web /opt/icevirtue
+
+# or leave it where it is and say so
+ICEvirtue --web-dir /srv/icevirtue/web
 ```
+
+**Upgrading from a build before this layout:** the old flat `web/` (with `login.html`, `template.html` and `css/` at the top level) will not be found. Replace the deployed folder with the new one rather than merging them — the engine looks for `web/templates/home.html` and `web/static/css/output.css` at exactly those paths.
 
 There is no default account, so create one with `ICEvirtue-admin`. The same command also creates and migrates the database file if it does not exist yet:
 
@@ -173,11 +193,15 @@ Two stages are opt-in rather than opt-out. Leaving out `--dnsx-list` skips activ
 | `--directory-list` | *(empty)* | Comma-separated absolute paths to wordlists for directory fuzzing. Multiple lists are merged and de-duplicated. Omit to skip stage 03. |
 | `--dnsx-list` | *(empty)* | Comma-separated absolute paths to wordlists for active `dnsx` bruteforcing, used in Full Mode only. `dnsx` runs once per list. Omit to skip DNS bruteforcing. |
 | `--jwt-secret` | *(auto)* | Path to the key that signs dashboard session cookies. See "Where State Lives" for how the default is chosen. |
+| `--secure-cookies` | `false` | Mark the session cookie `Secure`. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. It defaults off because a browser accepts a `Secure` cookie over plain HTTP and then never sends it back, so turning it on without TLS makes login silently impossible. |
+| `--session-ttl` | `24h` | How long a dashboard session lasts before it has to be re-established. |
+| `--trusted-origin` | *(empty)* | An `Origin` to accept on state-changing requests in addition to the request's own host. Repeatable. **Required behind a reverse proxy that rewrites `Host`**, otherwise every write is refused with 403. See "Behind A Reverse Proxy". |
 | `--skip-amass` | `false` | Skip Amass during stage 01. Everything else in that stage still runs. |
 | `--skip-nuclei` | `false` | Skip stage 04 entirely. |
 | `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
 | `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
 | `--verbose` | `false` | Log every individual finding as it is diffed, marking each as new or already known, instead of only the per-stage totals. |
+| `--web-dir` | `web` | Directory holding the dashboard's `templates/` and `static/` folders. |
 | `--wide-targets` | `false` | Widen which hosts reach stages 03 to 05. See below. |
 
 By default only hosts answering `200`, `301`, `302` or `307` are handed to fuzzing, Nuclei and secret hunting. `--wide-targets` replaces that with everything HTTPX reported except a plain `404`, which brings `401`, `403`, `405`, `500` and `503` hosts into scope. A `403` on `/` tells you nothing about what `/admin` returns, and finding exactly that is the point of directory fuzzing, so the wide filter is usually what you want on a target you are allowed to be thorough with. It costs scan time proportional to how many extra hosts it lets through, and the stage log tells you how many that was:
@@ -229,7 +253,37 @@ Restart=on-failure
 WantedBy=multi-user.target
 ```
 
-`WorkingDirectory` matters twice over, since it is where the `web` folder is looked up. `StateDirectory=icevirtue` makes systemd create `/var/lib/icevirtue` with the right ownership and hand its path to the process, which is where the session signing key ends up. If you add `User=` to run as a dedicated account, make sure that account can read the wordlists and write both the database directory and `/opt/icevirtue`.
+`WorkingDirectory` matters twice over, since it is where the `web` folder is looked up (or pass `--web-dir` and stop depending on it). `StateDirectory=icevirtue` makes systemd create `/var/lib/icevirtue` with the right ownership and hand its path to the process, which is where the session signing key ends up. If you add `User=` to run as a dedicated account, make sure that account can read the wordlists and write both the database directory and `/opt/icevirtue`.
+
+## Behind A Reverse Proxy
+
+State-changing requests are checked against the `Origin` header the browser sends. That is the CSRF defence, and it needs no token: a cross-site page can neither forge nor suppress `Origin`, so an `Origin` that disagrees with the host ICEvirtue was addressed as is by definition a cross-site request.
+
+The comparison is on the **host**, not the full origin, so terminating TLS in front of the binary is fine on its own — the browser sends `https://` while the process only ever sees `http`, and requiring a scheme match would refuse every write in the most common deployment.
+
+What is not fine is a proxy that rewrites `Host`. If the browser sends `Origin: https://recon.example.com` while your proxy passes `Host: 127.0.0.1:8888`, the two no longer match and **every create, delete and reschedule is refused with 403** while reads keep working — a failure that looks like a broken dashboard rather than a configuration problem. Two ways out, and you want one of them:
+
+```Shell
+# Tell ICEvirtue which external origin to trust
+ICEvirtue --trusted-origin https://recon.example.com
+
+# or have the proxy preserve the original Host (nginx)
+proxy_set_header Host $host;
+```
+
+The rejection is logged with both values, so the fix is readable from the log:
+
+```
+[-] Rejected a POST to /api/profiles: Origin "https://recon.example.com" does not
+    match the host "127.0.0.1:8888". If this dashboard is behind a reverse proxy,
+    pass --trusted-origin.
+```
+
+Two other things to set when a proxy is in front:
+
+**`--secure-cookies`**, once the dashboard is only reachable over HTTPS. Without it the session cookie can be read by anything on the network path. With it and *without* TLS, login silently stops working — the browser accepts the cookie and then never sends it back — which is why it is not the default.
+
+**Login rate limiting is keyed on the connecting address**, deliberately ignoring `X-Forwarded-For`: a caller who can choose the key both bypasses the limiter and can lock the real operator out. Behind a proxy on loopback that means every request looks like `127.0.0.1`, so a determined attacker can lock you out of your own dashboard for fifteen minutes. If that matters, rate-limit at the proxy instead.
 
 ## Where State Lives
 
@@ -273,9 +327,12 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 
 | Method and path | What it does |
 |---|---|
-| `POST /api/login` | Log in, sets the session cookie. |
+| `GET /login` | The login page. Redirects to `/` if you are already signed in. |
+| `GET /` | The dashboard. Redirects to `/login` if you are not. |
+| `POST /api/login` | Log in, sets the session cookie. Rate limited per client address. |
 | `POST /api/logout` | Clear the session cookie. |
-| `GET /api/profiles` | List all target profiles. |
+| `GET /api/profiles` | Target profiles, paginated. |
+| `GET /api/profiles/index` | Every profile as an id and a domain, unpaginated. This is what the dashboard's target picker reads, so it is not truncated to a page. |
 | `POST /api/profiles` | Create a profile from `domain`, `schedule` and optional `mode`. |
 | `DELETE /api/profiles/{id}` | Delete a profile and all of its findings. |
 | `PUT /api/profiles/{id}/schedule` | Change a profile's schedule. |
@@ -287,7 +344,28 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `GET /api/profiles/{id}/secrets` | Secrets found in JavaScript. |
 | `GET /api/events` | Server-Sent Events stream of `profile_update` and `discovery_update` events. |
 
-The five finding endpoints are paginated with `limit` and `offset` query parameters. `limit` defaults to 250 and is capped at 1000.
+Every list endpoint is paginated and answers with an envelope rather than a bare array:
+
+```json
+{
+  "data": [ ... ],
+  "page": { "page": 1, "size": 100, "total_rows": 4044, "total_pages": 41, "sort": "name-asc" }
+}
+```
+
+The `page` object reports what the server actually did, which matters because it clamps: ask for `size=5000` and you get `"size": 1000` back, so a downgraded request is visible instead of silent. An unknown `sort` or `filter` falls back to the default and the effective value is echoed, so a stale bookmark still renders.
+
+| Parameter | Meaning |
+|---|---|
+| `page` | 1-based. A page past the end is pulled back to the last one, and the corrected number is reported. |
+| `size` | Rows per page. Clamped to 1000. Per-endpoint defaults: 25 for profiles, 100 for subdomains, hosts and directories, 50 for vulnerabilities and secrets. |
+| `sort` | One of the endpoint's known orders. Every list has a deterministic total order, so paging cannot show a row twice or skip one. |
+| `filter` | Subdomains only. Mirrors the dashboard's filter pills. |
+| `host` | Vulnerabilities, directories, secrets and hosts. Scopes the response to one host, which is how the dashboard renders a single node. |
+
+`limit` and `offset` are still accepted as aliases for `size` and `page`.
+
+A subdomain row carries its own finding counts and a representative status code, so a client does not have to correlate anything itself. Those counts stop at 1000 — the badge only needs to distinguish "none" from "a few" from "a lot" — while the exact total for one host is what `total_rows` reports when you scope to it with `host=`.
 
 ## Troubleshooting
 
