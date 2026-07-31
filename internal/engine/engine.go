@@ -336,28 +336,36 @@ func splitList(value string) []string {
 // away what the run already collected.
 
 func persistSubdomains(profile *models.Profile, subdomains []string) int {
-	return broadcastIfNew(profile, diffSubdomains(&profile.ID, subdomains))
+	return broadcastIfNew(profile, "subdomains", diffSubdomains(&profile.ID, subdomains))
 }
 
 func persistHosts(profile *models.Profile, hosts []models.AliveHost) int {
-	return broadcastIfNew(profile, diffHosts(&profile.ID, hosts))
+	return broadcastIfNew(profile, "hosts", diffHosts(&profile.ID, hosts))
 }
 
 func persistDirectories(profile *models.Profile, dirs []models.DirectoryFinding) int {
-	return broadcastIfNew(profile, diffDirectories(&profile.ID, dirs))
+	return broadcastIfNew(profile, "directories", diffDirectories(&profile.ID, dirs))
 }
 
 func persistVulns(profile *models.Profile, vulns []models.Vulnerability) int {
-	return broadcastIfNew(profile, diffVulns(&profile.ID, vulns))
+	return broadcastIfNew(profile, "vulnerabilities", diffVulns(&profile.ID, vulns))
 }
 
 func persistSecrets(profile *models.Profile, secrets []models.SecretFinding) int {
-	return broadcastIfNew(profile, diffSecrets(&profile.ID, secrets))
+	return broadcastIfNew(profile, "secrets", diffSecrets(&profile.ID, secrets))
 }
 
-func broadcastIfNew(profile *models.Profile, newCount int) int {
+// broadcastIfNew tells the dashboard how many rows of which kind just appeared.
+//
+// The event used to carry no data, so the only thing a client could do with it was
+// refetch and find out — which is why the dashboard re-downloaded the entire profile
+// every eight seconds during a scan. With the counts on the event it can show "12 new
+// findings, refresh" and leave the page the operator is reading alone.
+//
+// The Event type already had a data field for this; it was always nil.
+func broadcastIfNew(profile *models.Profile, kind string, newCount int) int {
 	if newCount > 0 {
-		events.Broadcast("discovery_update", profile.ID.String(), nil)
+		events.Broadcast("discovery_update", profile.ID.String(), map[string]int{kind: newCount})
 	}
 	return newCount
 }

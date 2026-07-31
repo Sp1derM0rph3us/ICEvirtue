@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-chi/cors"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
@@ -51,6 +51,8 @@ func StartServer(port int, s *scheduler.Scheduler) {
 	r.Route("/api/profiles", func(r chi.Router) {
 		r.Use(authMiddleware)
 		r.Get("/", getProfiles)
+		// Registered before the /{id} subrouter so "index" is not read as a profile id.
+		r.Get("/index", getProfileIndex)
 		r.Post("/", createProfile)
 		r.Route("/{id}", func(r chi.Router) {
 			r.Delete("/", deleteProfile)
@@ -106,16 +108,11 @@ func handleDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var profiles []models.Profile
-	database.DB.Find(&profiles)
-
-	data := struct {
-		Profiles []models.Profile
-	}{
-		Profiles: profiles,
-	}
-
-	err = tmpl.Execute(w, data)
+	// Nothing is injected into either page: both templates contain zero actions, and
+	// the client reads its own state from the query string. The unbounded
+	// Find(&profiles) that used to run here fed a variable neither template ever
+	// referenced, on a route reachable without authentication.
+	err = tmpl.Execute(w, nil)
 	if err != nil {
 		http.Error(w, "Failed to execute template: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -187,16 +184,16 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	var user models.User
 	result := database.DB.Where("username = ?", req.Username).First(&user)
-	
+
 	dummyHash := "$2a$10$w1Dq7OaHxzB5vI/.wQ8/e.cIhA1JvE6cMwI8V/.1S/8gP.G/N./O2"
-	
+
 	hashToCompare := dummyHash
 	if result.Error == nil {
 		hashToCompare = user.PasswordHash
 	}
 
 	err := bcrypt.CompareHashAndPassword([]byte(hashToCompare), []byte(req.Password))
-	
+
 	if result.Error != nil || err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
@@ -213,7 +210,7 @@ func handleLogin(w http.ResponseWriter, r *http.Request) {
 		Value:    tokenString,
 		Expires:  time.Now().Add(24 * time.Hour),
 		HttpOnly: true,
-		Secure:   false, 
+		Secure:   false,
 		SameSite: http.SameSiteLaxMode,
 		Path:     "/",
 	})
@@ -233,10 +230,52 @@ func handleLogout(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
+var profileSorts = map[string]string{
+	"domain-asc":  "profiles.domain ASC, profiles.id ASC",
+	"domain-desc": "profiles.domain DESC, profiles.id DESC",
+	"scan-desc":   "profiles.last_scan DESC, profiles.domain ASC",
+	"scan-asc":    "profiles.last_scan ASC, profiles.domain ASC",
+}
+
+// getProfiles serves the targets table, paginated.
 func getProfiles(w http.ResponseWriter, r *http.Request) {
-	var profiles []models.Profile
-	database.DB.Find(&profiles)
-	respondJSON(w, http.StatusOK, profiles)
+	q := parseListQuery(r, defaultPageProfiles, profileSorts, "domain-asc")
+	listPage[models.Profile](w, q, &models.Profile{}, "",
+		func(db *gorm.DB) *gorm.DB { return db }, profileSorts[q.Sort])
+}
+
+// profileOption is the two-column shape the profile picker needs.
+type profileOption struct {
+	ID     uuid.UUID `json:"id"`
+	Domain string    `json:"domain"`
+}
+
+// getProfileIndex lists every profile as an id and a name, unpaginated.
+//
+// This exists because the dashboard fills both the targets table and the profile
+// picker from one request. Paginating that single endpoint at 25 would silently
+// truncate the dropdown, leaving the 26th target unreachable with nothing on screen to
+// explain why — so the picker gets its own endpoint instead.
+//
+// It is a deliberate exception to "everything is paginated", and a narrow one: two
+// columns for even a few thousand profiles is an index-only scan and a response
+// measured in tens of kilobytes, while the finding tables it sits next to are the ones
+// that reach tens of thousands of rows.
+func getProfileIndex(w http.ResponseWriter, r *http.Request) {
+	var options []profileOption
+	if err := database.DB.Model(&models.Profile{}).
+		Select("profiles.id, profiles.domain").
+		Order("profiles.domain ASC").
+		Scan(&options).Error; err != nil {
+		log.Printf("[-] Listing the profile index: %v", err)
+		http.Error(w, "failed to list profiles", http.StatusInternalServerError)
+		return
+	}
+
+	if options == nil {
+		options = []profileOption{}
+	}
+	respondJSON(w, http.StatusOK, options)
 }
 
 func createProfile(w http.ResponseWriter, r *http.Request) {
@@ -255,7 +294,7 @@ func createProfile(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "domain and schedule are required", http.StatusBadRequest)
 		return
 	}
-	
+
 	domainRegex := regexp.MustCompile(`^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	if !domainRegex.MatchString(req.Domain) {
 		http.Error(w, "Invalid domain format", http.StatusBadRequest)
@@ -408,131 +447,6 @@ func forceScanProfile(w http.ResponseWriter, r *http.Request) {
 	go engine.OrchestrateScan(&profile)
 
 	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan started in background"})
-}
-
-// maxPageSize caps how many rows one request may return, so a single call
-// cannot be made to load an entire profile into memory.
-const maxPageSize = 1000
-
-// defaultPageSize is used when no usable limit was supplied.
-const defaultPageSize = 250
-
-// parsePagination reads the limit and offset query parameters.
-//
-// An oversized limit is CLAMPED to maxPageSize rather than rejected. Rejecting
-// it silently fell back to defaultPageSize, so a caller asking for 5000 got 250
-// and had no way to tell that its request had been downgraded: the response is a
-// bare JSON array, so a truncated page is indistinguishable from a complete one.
-// Clamping keeps the ceiling while letting the caller page to the end.
-func parsePagination(r *http.Request) (int, int) {
-	limit := defaultPageSize
-	offset := 0
-	if l := r.URL.Query().Get("limit"); l != "" {
-		if v, err := strconv.Atoi(l); err == nil && v > 0 {
-			limit = min(v, maxPageSize)
-		}
-	}
-	if o := r.URL.Query().Get("offset"); o != "" {
-		if v, err := strconv.Atoi(o); err == nil && v >= 0 {
-			offset = v
-		}
-	}
-	return limit, offset
-}
-
-func getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if idParam == "" {
-		http.Error(w, "missing profile id", http.StatusBadRequest)
-		return
-	}
-
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		http.Error(w, "invalid UUID format", http.StatusBadRequest)
-		return
-	}
-
-	limit, offset := parsePagination(r)
-	var subdomains []models.Subdomain
-	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&subdomains)
-	respondJSON(w, http.StatusOK, subdomains)
-}
-
-func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if idParam == "" {
-		http.Error(w, "missing profile id", http.StatusBadRequest)
-		return
-	}
-
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		http.Error(w, "invalid UUID format", http.StatusBadRequest)
-		return
-	}
-
-	limit, offset := parsePagination(r)
-	var secrets []models.SecretFinding
-	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&secrets)
-	respondJSON(w, http.StatusOK, secrets)
-}
-
-func getProfileHosts(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if idParam == "" {
-		http.Error(w, "missing profile id", http.StatusBadRequest)
-		return
-	}
-
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		http.Error(w, "invalid UUID format", http.StatusBadRequest)
-		return
-	}
-
-	limit, offset := parsePagination(r)
-	var hosts []models.AliveHost
-	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&hosts)
-	respondJSON(w, http.StatusOK, hosts)
-}
-
-func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if idParam == "" {
-		http.Error(w, "missing profile id", http.StatusBadRequest)
-		return
-	}
-
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		http.Error(w, "invalid UUID format", http.StatusBadRequest)
-		return
-	}
-
-	limit, offset := parsePagination(r)
-	var vulns []models.Vulnerability
-	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&vulns)
-	respondJSON(w, http.StatusOK, vulns)
-}
-
-func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
-	idParam := chi.URLParam(r, "id")
-	if idParam == "" {
-		http.Error(w, "missing profile id", http.StatusBadRequest)
-		return
-	}
-
-	id, err := uuid.Parse(idParam)
-	if err != nil {
-		http.Error(w, "invalid UUID format", http.StatusBadRequest)
-		return
-	}
-
-	limit, offset := parsePagination(r)
-	var dirs []models.DirectoryFinding
-	database.DB.Where("profile_id = ?", id).Limit(limit).Offset(offset).Find(&dirs)
-	respondJSON(w, http.StatusOK, dirs)
 }
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {

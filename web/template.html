@@ -58,6 +58,12 @@
            lands after .flex, which is too fragile to rely on. */
         .hidden { display: none; }
 
+        /* A disabled pager button. Written by hand because disabled:opacity-30 is not in
+           the compiled stylesheet -- only disabled:cursor-not-allowed is -- and adding a
+           class needs a Tailwind rebuild that this environment cannot do. */
+        #pager button:disabled { opacity: 0.3; }
+        #pager button:disabled:hover { border-color: var(--color-slate-800); color: var(--color-slate-500); }
+
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #000000; }
@@ -194,7 +200,7 @@
                 <div class="flex-grow max-w-md">
                     <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mb-2">Target Data Stream</label>
                     <div class="relative group">
-                        <select id="select-profile" onchange="fetchDiscoveries()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer">
+                        <select id="select-profile" onchange="onProfileChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer">
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
                             <svg class="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -202,9 +208,19 @@
                     </div>
                 </div>
                 
-                <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5 self-end">
-                    <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all">Nodes</button>
-                    <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Credentials</button>
+                <div class="flex items-center gap-4 self-end">
+                    <!-- Filled by the SSE handler while a scan is running. It replaces the
+                         old behaviour of silently refetching the whole profile every eight
+                         seconds, which pulled the page out from under whoever was reading it. -->
+                    <button id="new-findings-badge" onclick="reloadCurrentPage()" class="hidden items-center gap-2 px-3 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/30 hover:border-accent transition-all">
+                        <span class="w-1.5 h-1.5 rounded-full bg-accent animate-pulse"></span>
+                        <span id="new-findings-text">New findings</span>
+                    </button>
+
+                    <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5">
+                        <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all">Nodes</button>
+                        <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Credentials</button>
+                    </div>
                 </div>
             </div>
 
@@ -217,7 +233,7 @@
                 <div class="flex items-center gap-3">
                     <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Sort Matrix:</span>
                     <div class="relative w-64 group">
-                        <select id="select-sort" onchange="renderVisibleDiscoveriesTable()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-sans text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
+                        <select id="select-sort" onchange="onSortChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-sans text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
                             <option value="name-asc">Alphabetical: A &rarr; Z</option>
                             <option value="name-desc">Alphabetical: Z &rarr; A</option>
                             <option value="findings-desc">Priority: High Volume First</option>
@@ -226,6 +242,24 @@
                             <option value="first-desc">Chronological: Newest First</option>
                             <option value="update-asc">Recent Sync: Oldest First</option>
                             <option value="update-desc">Recent Sync: Newest First</option>
+                        </select>
+                        <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
+                            <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="h-5 w-px bg-slate-800"></div>
+
+                <div class="flex items-center gap-3">
+                    <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Per Page:</span>
+                    <div class="relative w-24 group">
+                        <select id="select-size" onchange="onPageSizeChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
+                            <option value="25">25</option>
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="250">250</option>
+                            <option value="500">500</option>
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
                             <svg class="fill-current h-4 w-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -297,6 +331,8 @@
                         <tbody id="tbody-secs" class="divide-y divide-slate-900 text-slate-300">
                         </tbody>
                     </table>
+                </div>
+
                 </div>
 
                 <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full bg-black/60">
@@ -377,6 +413,19 @@
 
                     </div>
                 </div>
+
+                <!-- The pager. shrink-0 keeps it visible while the table above it scrolls,
+                     which is the whole reason the flex chain fix in 67a9575 had to land
+                     first: the panel has a definite height to divide between the two. -->
+                <div id="pager" class="hidden items-center justify-between gap-4 px-5 py-3 border-t border-slate-800 bg-black/40 shrink-0 flex-wrap">
+                    <span id="pager-summary" class="text-[11px] font-mono font-bold text-slate-500 uppercase tracking-widest tabular-nums whitespace-nowrap"></span>
+                    <div class="flex items-center gap-1.5">
+                        <button onclick="goToPage(1)" data-pager="first" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">&laquo; First</button>
+                        <button onclick="goToPage(viewState.page - 1)" data-pager="prev" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">&lsaquo; Prev</button>
+                        <span id="pager-position" class="px-3 text-[11px] font-mono font-bold text-accent uppercase tracking-widest tabular-nums whitespace-nowrap"></span>
+                        <button onclick="goToPage(viewState.page + 1)" data-pager="next" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">Next &rsaquo;</button>
+                        <button onclick="goToPage(pageMeta.total_pages)" data-pager="last" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">Last &raquo;</button>
+                    </div>
             </div>
         </section>
 
@@ -431,14 +480,34 @@
     </div>
 
     <script>
-        const CHUNK_SIZE = 100;
-        const IP_REGEX = /^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/;
-
-        // Must not exceed the server's maxPageSize, or fetchAll would mistake a
-        // clamped short page for the end of the data.
-        const PAGE_SIZE = 1000;
-
         const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
+
+        // The server clamps size to this. Offering more in the selector would show the
+        // operator a number the server silently refuses.
+        const MAX_PAGE_SIZE = 1000;
+        const PAGE_SIZES = [25, 50, 100, 250, 500];
+
+        // Per-tab defaults, matching the server's. They differ because the rows differ in
+        // width: a vulnerability carries a name and a severity, a directory is one line.
+        const DEFAULT_SIZE = { subs: 100, secs: 50, vulns: 50, dirs: 100, nodesecs: 50 };
+
+        // Allow-lists for everything that arrives in the query string. Values from a URL
+        // are exactly as untrusted as a subfinder result -- somebody sends you a link --
+        // and profile in particular is interpolated into a fetch path, so a crafted value
+        // would otherwise choose which endpoint gets called.
+        const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const TABS = ['subs', 'secs'];
+        const SUB_TABS = ['vulns', 'dirs', 'secs'];
+        const SORTS = ['name-asc', 'name-desc', 'findings-desc', 'findings-asc',
+                       'first-asc', 'first-desc', 'update-asc', 'update-desc'];
+        const FILTERS = ['ip', 'subdomain', 'vuln-critical', 'vuln-info', 'secrets',
+                         'status-2xx-3xx', 'status-403', 'status-other', 'updated'];
+
+        // A request that has not answered in this long has stopped being useful. There was
+        // no timeout at all before -- not in the browser and not on the server, where
+        // ListenAndServe leaves every deadline at zero -- so a stalled request simply hung
+        // with the fixed string "Failed to fetch discoveries." as the only feedback.
+        const REQUEST_TIMEOUT_MS = 60000;
 
         // The filter pills' class strings live here because two different functions
         // used to write them from memory and had drifted apart in eleven places:
@@ -454,11 +523,40 @@
         const NAV_TAB_ACTIVE = 'tab-active pb-1 transition-all hover:text-accent';
         const NAV_TAB_INACTIVE = 'tab-inactive pb-1 transition-all hover:text-accent';
 
-        let currentDiscTab = 'subs';
-        let currentProfileId = null;
-        let currentSubDashboardDomain = null;
-        let currentFilter = null;
-        let scrollSentinelObserver = null;
+        // viewState is the single description of what the operator is looking at, and it
+        // round-trips through the query string so a refresh, a bookmark or a shared link
+        // lands on the same page. Everything in it has been validated by readViewState.
+        let viewState = {
+            profile: null,
+            tab: 'subs',      // which top-level Discoveries tab
+            node: null,       // the sub-dashboard's host, or null
+            nodeTab: 'vulns', // which sub-dashboard tab
+            page: 1,
+            size: DEFAULT_SIZE.subs,
+            sort: 'name-asc',
+            filter: null,
+        };
+
+        // pageMeta is the envelope the server last returned. The server is the authority
+        // on the page that was actually served -- it clamps size and pulls an out-of-range
+        // page back into the set -- so the pager renders from this, not from viewState.
+        let pageMeta = { page: 1, size: DEFAULT_SIZE.subs, total_rows: 0, total_pages: 1 };
+
+        // The rows currently on screen, and nothing else. This replaces window.cachedData,
+        // which held every subdomain, host, vulnerability, directory and secret in the
+        // profile so the browser could correlate them itself.
+        let currentRows = [];
+
+        // Counts accumulated from SSE while a scan runs, shown as a badge rather than
+        // acted on. The old handler refetched the whole profile eight seconds after each
+        // event, which is what made reading a table during a scan impossible.
+        let pendingNewFindings = {};
+
+        // One in-flight list request at a time. There was no guard before, so the
+        // eight-second SSE refresh could start a second full run of dozens of requests
+        // while the first was still going, and five parallel chains plus the EventSource
+        // is exactly the six-socket per-origin limit browsers impose.
+        let inFlight = null;
 
         // esc renders untrusted text into an HTML context.
         //
@@ -493,10 +591,10 @@
         // without restoring it: opening a node and then clicking the Credentials tab
         // made the Sort and Filter bars disappear for the rest of the session, with
         // nothing in the UI to bring them back. Those paths also left
-        // currentSubDashboardDomain set, which sent the next fetchDiscoveries down
+        // the node still set, which sent the next load down
         // the sub-dashboard branch for a node that was no longer on screen.
         function setSubDashboardOpen(open, domain = null) {
-            currentSubDashboardDomain = open ? domain : null;
+            viewState.node = open ? domain : null;
 
             const sub = document.getElementById('sub-dashboard');
             sub.classList.toggle('hidden', !open);
@@ -505,33 +603,108 @@
             syncControlsBar();
         }
 
-        // The controls bar only drives the Nodes table: applySort and applyFilter are
-        // never consulted when rendering Credentials. Leaving it visible there offered
-        // controls that lit up on click and changed nothing, so it is hidden for that
-        // tab as well as while a sub-dashboard is open.
+        // The sort and filter controls only drive the Nodes table, so they are hidden on
+        // the Credentials tab and inside a node's sub-dashboard. Leaving them visible
+        // there offered controls that lit up on click and changed nothing.
         function syncControlsBar() {
-            const relevant = !currentSubDashboardDomain && currentDiscTab === 'subs';
+            const relevant = !viewState.node && viewState.tab === 'subs';
             document.getElementById('controls-bar').classList.toggle('hidden', !relevant);
         }
 
-        // fetchAll pages an endpoint to the end.
+        // api is the only way this page talks to the server.
         //
-        // The five finding endpoints are paginated and cap a single response at
-        // PAGE_SIZE rows. A lone request therefore returns a prefix of the data,
-        // and because the response is a bare JSON array there is nothing in it to
-        // distinguish a truncated page from a complete one — which is how the
-        // dashboard used to display the first slice of a 4000-subdomain profile as
-        // though that were everything, and compute its per-node finding counts
-        // from that slice.
-        async function fetchAll(path) {
-            const rows = [];
-            for (let offset = 0; ; offset += PAGE_SIZE) {
-                const res = await fetch(`${path}?limit=${PAGE_SIZE}&offset=${offset}`);
-                if (!res.ok) throw new Error(`${path} responded ${res.status}`);
-                const page = await res.json() || [];
-                rows.push(...page);
-                if (page.length < PAGE_SIZE) return rows;
+        // It carries the timeout that did not exist before, and it names what failed. The
+        // previous code surfaced every failure as the same fixed string, with the actual
+        // status only reaching console.error.
+        async function api(path, options = {}) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+            try {
+                const res = await fetch(path, {
+                    credentials: 'same-origin',
+                    signal: controller.signal,
+                    ...options,
+                });
+                if (!res.ok) {
+                    const detail = (await res.text().catch(() => '')).trim();
+                    throw new Error(`${res.status} ${res.statusText}${detail ? ': ' + detail : ''}`);
+                }
+                return res;
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    throw new Error(`timed out after ${REQUEST_TIMEOUT_MS / 1000}s`);
+                }
+                throw err;
+            } finally {
+                clearTimeout(timer);
             }
+        }
+
+        async function apiJSON(path, options = {}) {
+            return (await api(path, options)).json();
+        }
+
+        // readViewState validates every parameter it reads.
+        //
+        // These values come from whoever composed the link. profile is interpolated into a
+        // fetch path, so a non-UUID has to be dropped rather than passed through; size has
+        // to be clamped or a hand-edited URL could ask the server for more than it will
+        // give and leave the pager describing a page that was never served.
+        function readViewState() {
+            const q = new URLSearchParams(location.search);
+            const profile = q.get('profile');
+            const tab = q.get('tab');
+            const nodeTab = q.get('nodetab');
+            const sort = q.get('sort');
+            const filter = q.get('filter');
+            const node = q.get('node');
+
+            const clampInt = (raw, fallback, lo, hi) => {
+                const n = parseInt(raw, 10);
+                return Number.isFinite(n) ? Math.min(Math.max(n, lo), hi) : fallback;
+            };
+
+            viewState.profile = UUID_RE.test(profile || '') ? profile : null;
+            viewState.tab = TABS.includes(tab) ? tab : 'subs';
+            viewState.nodeTab = SUB_TABS.includes(nodeTab) ? nodeTab : 'vulns';
+            viewState.sort = SORTS.includes(sort) ? sort : 'name-asc';
+            viewState.filter = FILTERS.includes(filter) ? filter : null;
+            // A node name is only ever compared and displayed, never used to build a path,
+            // but it still reaches the DOM, so it goes through esc() at every use site.
+            viewState.node = node && node.length <= 253 ? node : null;
+            viewState.page = clampInt(q.get('page'), 1, 1, 1000000);
+            viewState.size = clampInt(q.get('size'), defaultSizeForView(), 1, MAX_PAGE_SIZE);
+        }
+
+        // writeViewState uses replaceState, not pushState: a filter click or a page step is
+        // not a navigation, and pushing would make the back button walk backwards through
+        // every pill the operator tried instead of leaving the app.
+        function writeViewState() {
+            const q = new URLSearchParams();
+            if (viewState.profile) q.set('profile', viewState.profile);
+            if (viewState.tab !== 'subs') q.set('tab', viewState.tab);
+            if (viewState.node) {
+                q.set('node', viewState.node);
+                if (viewState.nodeTab !== 'vulns') q.set('nodetab', viewState.nodeTab);
+            }
+            if (viewState.page > 1) q.set('page', String(viewState.page));
+            if (viewState.size !== defaultSizeForView()) q.set('size', String(viewState.size));
+            if (viewState.sort !== 'name-asc') q.set('sort', viewState.sort);
+            if (viewState.filter) q.set('filter', viewState.filter);
+
+            const search = q.toString();
+            history.replaceState(null, '', search ? `?${search}` : location.pathname);
+        }
+
+        // Which list is on screen, and therefore which endpoint and default size apply.
+        function activeView() {
+            if (viewState.node) return viewState.nodeTab === 'dirs' ? 'dirs'
+                : viewState.nodeTab === 'secs' ? 'nodesecs' : 'vulns';
+            return viewState.tab === 'secs' ? 'secs' : 'subs';
+        }
+
+        function defaultSizeForView() {
+            return DEFAULT_SIZE[activeView()] ?? 100;
         }
 
         function populateMinutes() {
@@ -563,11 +736,11 @@
                 btnD.className = NAV_TAB_ACTIVE;
                 btnT.className = NAV_TAB_INACTIVE;
                 const select = document.getElementById('select-profile');
-                if (!select.value && select.options.length > 0) {
+                if (!viewState.profile && select.options.length > 0) {
                     select.value = select.options[0].value;
-                }
-                if (select.value && !currentProfileId) {
-                    fetchDiscoveries();
+                    onProfileChanged();
+                } else if (viewState.profile && !currentRows.length) {
+                    loadCurrentView();
                 }
             }
         }
@@ -594,10 +767,10 @@
                 });
                 if (!res.ok) throw new Error(await res.text());
                 const newProfile = await res.json();
-                renderTargetRow(newProfile);
-                document.getElementById('targets-empty').classList.add('hidden');
-                updateProfileSelect(newProfile);
                 e.target.reset();
+                // One refresh rather than three hand-maintained insertions: the table, the
+                // picker and the count all come from the server, so they cannot drift.
+                await refreshProfiles();
             } catch (err) {
                 alert("Failed to add target: " + err.message);
             } finally {
@@ -672,43 +845,65 @@
             return tr;
         }
 
-        function renderTargetRow(p) {
-            document.getElementById('targets-tbody').appendChild(buildTargetRow(p, true));
-        }
-
+        // refreshProfiles fills the targets table from the paginated endpoint, and the
+        // picker from its own unpaginated one.
+        //
+        // They are two requests on purpose. Both used to come from a single unpaginated
+        // /api/profiles, and paginating that one endpoint at 25 would have silently
+        // truncated the dropdown, leaving the 26th target unreachable with nothing on
+        // screen to explain why. The picker needs two columns for every profile; the table
+        // needs every column for one page.
         async function refreshProfiles() {
             try {
-                const res = await fetch('/api/profiles');
-                if (!res.ok) throw new Error("Failed to fetch profiles");
-                const profiles = await res.json();
+                const [table, options] = await Promise.all([
+                    apiJSON('/api/profiles?size=250'),
+                    apiJSON('/api/profiles/index'),
+                ]);
+
                 const tbody = document.getElementById('targets-tbody');
-                const select = document.getElementById('select-profile');
-                const previousSelection = select.value;
-
                 tbody.innerHTML = '';
-                select.innerHTML = '';
 
-                if (!profiles || profiles.length === 0) {
-                    document.getElementById('targets-empty').classList.remove('hidden');
-                } else {
-                    document.getElementById('targets-empty').classList.add('hidden');
+                const rows = table.data || [];
+                document.getElementById('targets-empty').classList.toggle('hidden', rows.length > 0);
+                if (rows.length) {
                     const frag = document.createDocumentFragment();
-                    profiles.forEach(p => {
-                        frag.appendChild(buildTargetRow(p, false));
-                        const opt = document.createElement('option');
-                        opt.value = p.ID;
-                        opt.innerText = p.Domain;
-                        select.appendChild(opt);
-                    });
+                    rows.forEach(p => frag.appendChild(buildTargetRow(p, false)));
                     tbody.appendChild(frag);
-                    if (previousSelection) select.value = previousSelection;
                 }
 
+                const select = document.getElementById('select-profile');
+                select.innerHTML = '';
+                (options || []).forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.id;
+                    // textContent, not innerText assignment through a string: the domain is
+                    // validated on create but this keeps the escaping story uniform.
+                    opt.textContent = o.domain;
+                    select.appendChild(opt);
+                });
+                if (viewState.profile) select.value = viewState.profile;
+
                 const countBadge = document.getElementById('target-count');
-                if (countBadge) countBadge.innerText = `${profiles ? profiles.length : 0} Active Nodes`;
+                if (countBadge) {
+                    countBadge.innerText = `${table.page ? table.page.total_rows : rows.length} Active Nodes`;
+                }
             } catch (err) {
                 console.error("Error refreshing profiles:", err);
             }
+        }
+
+        function onProfileChanged() {
+            const select = document.getElementById('select-profile');
+            viewState.profile = UUID_RE.test(select.value) ? select.value : null;
+            // A different target means a different set of rows, so the page, the node and
+            // the filter all stop meaning anything.
+            viewState.node = null;
+            viewState.page = 1;
+            viewState.filter = null;
+            resetFilterPills();
+            pendingNewFindings = {};
+            renderNewFindingsBadge();
+            loadCurrentView();
         }
 
         async function deleteTarget(id, domain) {
@@ -718,11 +913,11 @@
                 if (!res.ok) throw new Error(await res.text());
                 document.getElementById(`row-profile-${id}`).remove();
                 const select = document.getElementById('select-profile');
-                const wasSelected = (select.value == id);
+                const wasSelected = (viewState.profile === id);
                 Array.from(select.options).forEach(opt => { if (opt.value == id) opt.remove(); });
                 if (wasSelected) {
                     select.value = select.options.length > 0 ? select.options[0].value : "";
-                    fetchDiscoveries();
+                    onProfileChanged();
                 }
                 if (document.getElementById('targets-tbody').children.length === 0) {
                     document.getElementById('targets-empty').classList.remove('hidden');
@@ -806,14 +1001,6 @@
             }
         }
 
-        function updateProfileSelect(p) {
-            const select = document.getElementById('select-profile');
-            const opt = document.createElement('option');
-            opt.value = p.ID;
-            opt.innerText = p.Domain;
-            select.appendChild(opt);
-        }
-
         // resetFilterPills paints every pill inactive, then highlights the active one.
         // Both this and the filter reset elsewhere go through PILL_* so the two can
         // never drift apart again.
@@ -828,128 +1015,109 @@
         }
 
         function toggleFilter(filter) {
-            currentFilter = currentFilter === filter ? null : filter;
-            resetFilterPills(currentFilter);
-
-            if (currentProfileId && !currentSubDashboardDomain) renderVisibleDiscoveriesTable();
+            viewState.filter = viewState.filter === filter ? null : filter;
+            resetFilterPills(viewState.filter);
+            // A filter changes which rows exist, so the page number it was on is
+            // meaningless against the new set.
+            viewState.page = 1;
+            loadCurrentView();
         }
 
-        function buildFindingsMap(subs) {
-            const map = new Map();
-            if (!window.cachedData) return map;
-            const { vulns, dirs, secs } = window.cachedData;
-            subs.forEach(s => {
-                const d = s.Domain;
-                const count = vulns.filter(v => v.URL.includes(d)).length
-                    + dirs.filter(dir => dir.SubdomainURL && dir.SubdomainURL.includes(d)).length
-                    + secs.filter(sec => sec.SourceURL.includes(d)).length;
-                map.set(d, count);
-            });
-            return map;
+        function onSortChanged() {
+            const sort = document.getElementById('select-sort').value;
+            viewState.sort = SORTS.includes(sort) ? sort : 'name-asc';
+            viewState.page = 1;
+            loadCurrentView();
         }
 
-        function applySort(subs) {
-            const sortEl = document.getElementById('select-sort');
-            const sortKey = sortEl ? sortEl.value : 'name-asc';
-            if (sortKey === 'findings-desc' || sortKey === 'findings-asc') {
-                const countMap = buildFindingsMap(subs);
-                return [...subs].sort((a, b) => sortKey === 'findings-desc'
-                    ? countMap.get(b.Domain) - countMap.get(a.Domain)
-                    : countMap.get(a.Domain) - countMap.get(b.Domain));
-            }
-            return [...subs].sort((a, b) => {
-                switch (sortKey) {
-                    case 'name-asc':    return a.Domain.localeCompare(b.Domain);
-                    case 'name-desc':   return b.Domain.localeCompare(a.Domain);
-                    case 'first-asc':   return new Date(a.FirstSeen) - new Date(b.FirstSeen);
-                    case 'first-desc':  return new Date(b.FirstSeen) - new Date(a.FirstSeen);
-                    case 'update-asc':  return new Date(a.LastSeen) - new Date(b.LastSeen);
-                    case 'update-desc': return new Date(b.LastSeen) - new Date(a.LastSeen);
-                    default: return 0;
-                }
-            });
+        function onPageSizeChanged() {
+            const size = parseInt(document.getElementById('select-size').value, 10);
+            viewState.size = PAGE_SIZES.includes(size) ? size : defaultSizeForView();
+            // Keep the first row of the current page visible rather than jumping to the
+            // top: growing the page from 25 to 250 should widen the window, not move it.
+            const firstRow = (viewState.page - 1) * pageMeta.size;
+            viewState.page = Math.floor(firstRow / viewState.size) + 1;
+            loadCurrentView();
         }
 
-        function applyFilter(subs) {
-            if (!currentFilter || !window.cachedData) return subs;
-            return subs.filter(s => {
-                const isIP = IP_REGEX.test(s.Domain);
-                switch (currentFilter) {
-                    case 'ip': return isIP;
-                    case 'subdomain': return !isIP;
-                    case 'vuln-critical': {
-                        const sevLevels = ['critical', 'high', 'medium', 'low'];
-                        return window.cachedData.vulns.some(v => v.URL.includes(s.Domain) && sevLevels.includes(v.Severity.toLowerCase()));
-                    }
-                    case 'vuln-info': {
-                        const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain));
-                        return subVulns.length === 0 || subVulns.every(v => v.Severity.toLowerCase() === 'info');
-                    }
-                    case 'secrets': return window.cachedData.secs.some(sec => sec.SourceURL.includes(s.Domain));
-                    case 'status-2xx-3xx': {
-                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
-                        return host && (host.StatusCode >= 200 && host.StatusCode < 400);
-                    }
-                    case 'status-403': {
-                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
-                        return host && host.StatusCode === 403;
-                    }
-                    case 'status-other': {
-                        const host = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
-                        return host && (host.StatusCode < 200 || (host.StatusCode >= 400 && host.StatusCode !== 403));
-                    }
-                    case 'updated': {
-                        const first = new Date(s.FirstSeen).getTime();
-                        const last = new Date(s.LastSeen).getTime();
-                        return Math.abs(last - first) > 1000;
-                    }
-                    default: return true;
-                }
-            });
+        function goToPage(page) {
+            const target = Math.min(Math.max(page, 1), Math.max(pageMeta.total_pages, 1));
+            if (target === viewState.page) return;
+            viewState.page = target;
+            loadCurrentView();
         }
 
-        function buildSubRow(s, isFirstChunk) {
-            const firstSeen = new Date(s.FirstSeen).toLocaleDateString();
-            const lastUpdate = new Date(s.LastSeen).toLocaleDateString();
-            const hostMatch = window.cachedData.hosts.find(h => h.URL.includes(s.Domain));
-            let statusHtml = '';
-            if (hostMatch) {
-                const code = hostMatch.StatusCode;
+        function reloadCurrentPage() {
+            pendingNewFindings = {};
+            renderNewFindingsBadge();
+            loadCurrentView();
+        }
+
+        // ---------------------------------------------------------------- row builders
+
+        // The server stops counting a node's findings at COUNT_CAP, because the count is
+        // O(matching rows) and one host with tens of thousands of directories made its own
+        // page an order of magnitude slower than its neighbours. The badge only has to say
+        // "a lot"; the exact total is on the node's own tab, where it is still exact.
+        //
+        // This must match countCap in internal/api/subdomains.go.
+        const COUNT_CAP = 1000;
+
+        function countLabel(n) {
+            return n >= COUNT_CAP ? `${COUNT_CAP}+` : String(n);
+        }
+
+
+        // buildSubRow reads the counts and the status straight off the row.
+        //
+        // It used to derive all four by scanning the profile's entire vulnerability,
+        // directory, secret and host arrays, once per rendered row. That is the ~227
+        // million string comparisons per render this endpoint was rebuilt to remove.
+        function buildSubRow(s) {
+            const domain = esc(s.domain);
+            const firstSeen = new Date(s.first_seen).toLocaleDateString();
+            const lastSeen = new Date(s.last_seen).toLocaleDateString();
+
+            let statusHtml;
+            if (s.status_code == null) {
+                statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
+            } else {
+                const code = s.status_code;
                 let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
                 if (code === 200) statusClass = 'bg-emerald-950/30 text-emerald-500 border-emerald-900/50';
                 else if (code === 301 || code === 302 || code === 307) statusClass = 'bg-blue-950/30 text-blue-400 border-blue-900/50';
                 else if (code === 403 || code === 401) statusClass = 'bg-orange-950/30 text-orange-400 border-orange-900/50';
                 else if (code >= 500) statusClass = 'bg-rose-950/30 text-rose-500 border-rose-900/50';
                 statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${code}</span>`;
-            } else {
-                statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
             }
-            const vulnCount = window.cachedData.vulns.filter(v => v.URL.includes(s.Domain)).length;
-            const dirCount = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(s.Domain)).length;
-            const secCount = window.cachedData.secs.filter(sec => sec.SourceURL.includes(s.Domain)).length;
+
             let findingsHtml = '';
-            if (vulnCount === 0 && dirCount === 0 && secCount === 0) {
+            if (!s.vuln_count && !s.dir_count && !s.secret_count) {
                 findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
             } else {
-                if (vulnCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${vulnCount} Vuln</span> `;
-                if (dirCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20">${dirCount} Dir</span> `;
-                if (secCount > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30">${secCount} Cred</span>`;
+                if (s.vuln_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${countLabel(s.vuln_count)} Vuln</span> `;
+                if (s.dir_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20">${countLabel(s.dir_count)} Dir</span> `;
+                if (s.secret_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30">${countLabel(s.secret_count)} Cred</span>`;
             }
-            const domain = esc(s.Domain);
+
+            // A node can only be opened when it has a correlation key. Without one there
+            // are no findings to scope to it, so the link would open an empty view.
+            const nameCell = s.host
+                ? `<button data-action="open-node" data-domain="${esc(s.host)}" data-label="${domain}" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${domain}</button>`
+                : `<span class="uppercase tracking-tighter opacity-40" title="No usable host, so no findings can be attributed to it">${domain}</span>`;
+
             const tr = document.createElement('tr');
-            tr.className = `hover:bg-accent/[0.04] transition-colors group${isFirstChunk ? ' animate-fade-in' : ''}`;
+            tr.className = 'hover:bg-accent/[0.04] transition-colors group';
             tr.innerHTML = `
-                <td class="p-5 text-slate-700 font-mono font-bold text-xs">#${esc(s.ID)}</td>
-                <td class="p-5 font-mono font-bold text-accent text-sm">
-                    <button data-action="open-node" data-domain="${domain}" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${domain}</button>
-                </td>
+                <td class="p-5 text-slate-700 font-mono font-bold text-xs">#${esc(s.id)}</td>
+                <td class="p-5 font-mono font-bold text-accent text-sm">${nameCell}</td>
                 <td class="p-5 text-center">${statusHtml}</td>
                 <td class="p-5 text-center"><div class="flex items-center justify-center gap-1.5 flex-wrap">${findingsHtml}</div></td>
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter"><span>${esc(firstSeen)}</span></td>
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter">
                     <div class="flex justify-end items-center gap-3">
-                        <span>${esc(lastUpdate)}</span>
-                        <a href="${esc(safeURL('http://' + s.Domain))}" target="_blank" rel="noopener noreferrer" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm">
+                        <span>${esc(lastSeen)}</span>
+                        <a href="${esc(safeURL('http://' + s.domain))}" target="_blank" rel="noopener noreferrer" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                         </a>
                     </div>
@@ -958,240 +1126,323 @@
             return tr;
         }
 
-        function renderSubsChunk(tbody, chunks, chunkIndex) {
-            if (chunkIndex >= chunks.length) return;
-            // No per-row fade. renderVisibleDiscoveriesTable is reached from five call
-            // sites -- including the SSE refresh that fires every 8 seconds during a
-            // scan -- so animating the first chunk meant the table flashed on every
-            // sort, every filter click and every tab switch. The section already
-            // carries animate-fade-in for the transition that genuinely is one.
+        function buildSecretRow(s, pad = 'p-5', urlWidth = '') {
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-accent/[0.04] transition-colors group';
+            tr.innerHTML = `
+                <td class="${pad} font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${esc(s.SecretType)}</span></td>
+                <td class="${pad} font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${esc(s.SecretValue)}</td>
+                <td class="${pad} text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors uppercase tracking-tighter ${urlWidth}" title="${esc(s.SourceURL)}">Trace Source &rarr;</a></td>
+            `;
+            return tr;
+        }
+
+        function buildVulnRow(v) {
+            const severity = String(v.Severity || '').toLowerCase();
+            let sevClass = 'bg-slate-900 text-slate-600 border-slate-800';
+            if (severity === 'critical') sevClass = 'bg-rose-950/40 text-rose-500 border-rose-900/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]';
+            else if (severity === 'high') sevClass = 'bg-orange-950/40 text-orange-400 border-orange-900/50';
+            else if (severity === 'medium') sevClass = 'bg-amber-950/40 text-amber-500 border-amber-900/50';
+            else if (severity === 'low') sevClass = 'bg-emerald-950/40 text-emerald-500 border-emerald-900/50';
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-accent/[0.04] transition-colors group';
+            tr.innerHTML = `
+                <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[10px] font-sans font-black uppercase tracking-widest ${sevClass}">${esc(v.Severity)}</span></td>
+                <td class="p-4 font-sans font-bold text-slate-200 tracking-tight text-sm">${esc(v.Name)}</td>
+                <td class="p-4 font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors uppercase font-bold">${esc(v.TemplateID)}</td>
+            `;
+            return tr;
+        }
+
+        function buildDirRow(d) {
+            let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
+            if (d.StatusCode === 200) statusClass = 'bg-emerald-950/40 text-emerald-500 border-emerald-900/50';
+            else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = 'bg-blue-950/40 text-blue-400 border-blue-900/50';
+            else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = 'bg-orange-950/40 text-orange-400 border-orange-900/50';
+
+            const tr = document.createElement('tr');
+            tr.className = 'hover:bg-accent/[0.04] transition-colors group';
+            tr.innerHTML = `
+                <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${esc(d.StatusCode)}</span></td>
+                <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors break-all">${esc(d.DirURL)}</a></td>
+            `;
+            return tr;
+        }
+
+        function fillTable(tbodyId, rows, build, colspan, emptyMessage) {
+            const tbody = document.getElementById(tbodyId);
+            tbody.innerHTML = '';
+            if (!rows.length) {
+                tbody.innerHTML = `<tr><td colspan="${colspan}" class="p-12 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">${esc(emptyMessage)}</td></tr>`;
+                return;
+            }
             const frag = document.createDocumentFragment();
-            chunks[chunkIndex].forEach(s => frag.appendChild(buildSubRow(s, false)));
+            rows.forEach(r => frag.appendChild(build(r)));
             tbody.appendChild(frag);
-            if (chunkIndex + 1 < chunks.length) {
-                const sentinel = document.createElement('tr');
-                sentinel.id = 'scroll-sentinel';
-                sentinel.innerHTML = '<td colspan="6"></td>';
-                tbody.appendChild(sentinel);
-                if (scrollSentinelObserver) scrollSentinelObserver.disconnect();
-                scrollSentinelObserver = new IntersectionObserver(entries => {
-                    if (entries[0].isIntersecting) {
-                        scrollSentinelObserver.disconnect();
-                        sentinel.remove();
-                        renderSubsChunk(tbody, chunks, chunkIndex + 1);
-                    }
-                }, { threshold: 0.1 });
-                scrollSentinelObserver.observe(sentinel);
+        }
+
+        // ------------------------------------------------------------------- the pager
+
+        function renderPager() {
+            const pager = document.getElementById('pager');
+            const showing = pageMeta.total_rows > 0;
+            pager.classList.toggle('hidden', !showing);
+            pager.classList.toggle('flex', showing);
+            if (!showing) return;
+
+            const from = (pageMeta.page - 1) * pageMeta.size + 1;
+            const to = Math.min(pageMeta.page * pageMeta.size, pageMeta.total_rows);
+            document.getElementById('pager-summary').textContent =
+                `${from}–${to} of ${pageMeta.total_rows}`;
+            document.getElementById('pager-position').textContent =
+                `Page ${pageMeta.page} / ${pageMeta.total_pages}`;
+
+            const atFirst = pageMeta.page <= 1;
+            const atLast = pageMeta.page >= pageMeta.total_pages;
+            const set = (which, disabled) => {
+                document.querySelector(`#pager [data-pager="${which}"]`).disabled = disabled;
+            };
+            set('first', atFirst);
+            set('prev', atFirst);
+            set('next', atLast);
+            set('last', atLast);
+        }
+
+        function renderNewFindingsBadge() {
+            const badge = document.getElementById('new-findings-badge');
+            const total = Object.values(pendingNewFindings).reduce((a, b) => a + b, 0);
+            badge.classList.toggle('hidden', total === 0);
+            badge.classList.toggle('flex', total > 0);
+            if (total === 0) return;
+
+            const parts = Object.entries(pendingNewFindings)
+                .map(([kind, n]) => `${n} ${kind}`)
+                .join(', ');
+            document.getElementById('new-findings-text').textContent = `${parts} — refresh`;
+        }
+
+        // ------------------------------------------------------------------ loading
+
+        // loadCurrentView fetches exactly one page of whatever is on screen.
+        //
+        // One request, for one page, for one tab. The dashboard used to issue five
+        // parallel chains that paged the entire profile -- around 55 requests -- on every
+        // profile switch and every eight seconds during a scan.
+        async function loadCurrentView() {
+            if (!viewState.profile) {
+                showEmptyState(true);
+                return;
+            }
+
+            // Serialise. Without this the SSE refresh could stack a second full load onto
+            // an unfinished one, and the two would race to write the same table.
+            if (inFlight) {
+                inFlight.abort = true;
+            }
+            const token = { abort: false };
+            inFlight = token;
+
+            writeViewState();
+            showLoader(true);
+
+            const base = `/api/profiles/${encodeURIComponent(viewState.profile)}`;
+            const params = new URLSearchParams({
+                page: String(viewState.page),
+                size: String(viewState.size),
+            });
+
+            let path;
+            const view = activeView();
+            if (view === 'subs') {
+                params.set('sort', viewState.sort);
+                if (viewState.filter) params.set('filter', viewState.filter);
+                path = `${base}/subdomains`;
+            } else if (view === 'secs') {
+                path = `${base}/secrets`;
+            } else {
+                // A node's tab. host scopes it server-side, replacing three client-side
+                // filter passes over the whole dataset.
+                params.set('host', viewState.node);
+                path = view === 'dirs' ? `${base}/directories`
+                    : view === 'nodesecs' ? `${base}/secrets`
+                    : `${base}/vulnerabilities`;
+            }
+
+            try {
+                const body = await apiJSON(`${path}?${params}`);
+                if (token.abort) return;
+
+                currentRows = body.data || [];
+                pageMeta = body.page || pageMeta;
+
+                // The server is the authority on what it served: it clamps size and pulls
+                // an out-of-range page back into the set. Adopting its answer is what keeps
+                // the pager from describing a page that does not exist.
+                viewState.page = pageMeta.page;
+                viewState.size = pageMeta.size;
+                writeViewState();
+
+                renderCurrentView();
+            } catch (err) {
+                if (token.abort) return;
+                console.error(err);
+                showLoadError(err);
+            } finally {
+                if (inFlight === token) inFlight = null;
+                showLoader(false);
             }
         }
 
+        function showLoadError(err) {
+            const message = `Could not load ${activeView()}: ${err.message}`;
+            const target = viewState.node
+                ? `tbody-sub-${viewState.nodeTab}`
+                : (viewState.tab === 'secs' ? 'tbody-secs' : 'tbody-subs');
+            const colspan = target === 'tbody-sub-dirs' ? 2 : 3;
+            fillTable(target, [], () => null, target === 'tbody-subs' ? 6 : colspan, message);
+            document.getElementById('pager').classList.add('hidden');
+        }
+
+        function renderCurrentView() {
+            showEmptyState(false);
+
+            const tSubs = document.getElementById('table-subs');
+            const tSecs = document.getElementById('table-secs');
+            const view = activeView();
+
+            if (view === 'subs' || view === 'secs') {
+                setSubDashboardOpen(false);
+                tSubs.classList.toggle('hidden', view !== 'subs');
+                tSecs.classList.toggle('hidden', view !== 'secs');
+
+                if (view === 'subs') {
+                    const message = viewState.filter
+                        ? 'No nodes match the active filter matrix.'
+                        : 'No nodes detected in stream.';
+                    fillTable('tbody-subs', currentRows, buildSubRow, 6, message);
+                } else {
+                    fillTable('tbody-secs', currentRows, s => buildSecretRow(s), 3, 'No secrets found yet.');
+                }
+            } else {
+                tSubs.classList.add('hidden');
+                tSecs.classList.add('hidden');
+                renderNodeView();
+            }
+
+            renderPager();
+            syncControlsBar();
+        }
+
+        function renderNodeView() {
+            const sub = document.getElementById('sub-dashboard');
+            sub.classList.remove('hidden');
+            sub.classList.add('flex');
+
+            document.getElementById('sub-dash-title').innerHTML =
+                `<span class="bg-accent/20 text-accent border border-accent/40 px-3 py-1 rounded-sm text-[11px] font-sans font-black uppercase tracking-[0.2em] mr-3 shadow-[0_0_10px_rgba(188,19,254,0.3)]">NODE</span> ${esc(viewState.node)}`;
+
+            switchSubDashboardTab(viewState.nodeTab, false);
+
+            if (viewState.nodeTab === 'vulns') {
+                fillTable('tbody-sub-vulns', currentRows, buildVulnRow, 3, 'No vulnerabilities detected in this node.');
+            } else if (viewState.nodeTab === 'dirs') {
+                fillTable('tbody-sub-dirs', currentRows, buildDirRow, 2, 'Node isolation... No route fragments discovered.');
+            } else {
+                fillTable('tbody-sub-secs', currentRows, s => buildSecretRow(s, 'p-4'), 3, 'Extraction void... No credentials located.');
+            }
+        }
+
+        // The node's IP is one extra request and only ever a row or two, so it is fetched
+        // separately rather than widening the index that serves the status badge.
+        async function loadNodeAddresses() {
+            const ipEl = document.getElementById('sub-dash-ip');
+            ipEl.innerText = 'IP ADDR: RESOLVING';
+            try {
+                const body = await apiJSON(
+                    `/api/profiles/${encodeURIComponent(viewState.profile)}/hosts` +
+                    `?host=${encodeURIComponent(viewState.node)}&size=25`);
+                const ips = [...new Set((body.data || []).map(h => h.IP).filter(Boolean))];
+                ipEl.innerText = ips.length ? `IP ADDR: ${ips.join(', ')}` : 'IP ADDR: UNKNOWN NODE';
+            } catch (err) {
+                console.error(err);
+                ipEl.innerText = 'IP ADDR: UNAVAILABLE';
+            }
+        }
+
+        // ---------------------------------------------------------------- navigation
+
         function switchDiscTab(tab) {
-            currentDiscTab = tab;
-            setSubDashboardOpen(false);
+            viewState.tab = TABS.includes(tab) ? tab : 'subs';
+            viewState.node = null;
+            viewState.page = 1;
+            viewState.size = defaultSizeForView();
 
             const btnS = document.getElementById('disc-tab-subs');
             const btnC = document.getElementById('disc-tab-secs');
             const activeClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all";
             const inactiveClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
-            if (tab === 'subs') { btnS.className = activeClass; btnC.className = inactiveClass; }
+            if (viewState.tab === 'subs') { btnS.className = activeClass; btnC.className = inactiveClass; }
             else { btnC.className = activeClass; btnS.className = inactiveClass; }
-            if (currentProfileId) renderVisibleDiscoveriesTable();
+
+            syncSizeSelect();
+            loadCurrentView();
         }
 
-        async function fetchDiscoveries() {
-            const select = document.getElementById('select-profile');
-            currentProfileId = select.value;
-            if (!currentProfileId) { showEmptyState(true); return; }
+        function openSubDashboard(host, label) {
+            viewState.node = host;
+            viewState.nodeTab = 'vulns';
+            viewState.page = 1;
+            viewState.size = defaultSizeForView();
 
-            // Remember which node was open before showLoader tears the view down, so an
-            // SSE-driven refresh puts the operator back where they were instead of
-            // bouncing them to the node list.
-            const reopen = currentSubDashboardDomain;
-            const keepScroll = document.getElementById('table-subs').scrollTop;
-
-            showLoader(true);
-            try {
-                const base = `/api/profiles/${currentProfileId}`;
-                const [subs, secs, hosts, vulns, dirs] = await Promise.all([
-                    fetchAll(`${base}/subdomains`),
-                    fetchAll(`${base}/secrets`),
-                    fetchAll(`${base}/hosts`),
-                    fetchAll(`${base}/vulnerabilities`),
-                    fetchAll(`${base}/directories`)
-                ]);
-                window.cachedData = { subs, secs, hosts, vulns, dirs };
-                if (reopen) {
-                    openSubDashboard(reopen);
-                } else {
-                    renderVisibleDiscoveriesTable();
-                    // Restore the scroll offset the teardown discarded. During a scan the
-                    // SSE handler refreshes every 8 seconds, which used to snap a reader
-                    // back to the top of the table each time.
-                    document.getElementById('table-subs').scrollTop = keepScroll;
-                }
-            } catch(err) {
-                console.error(err);
-                alert("Failed to fetch discoveries.");
-            } finally {
-                showLoader(false);
-            }
-        }
-
-        function renderVisibleDiscoveriesTable() {
-            showEmptyState(false);
-            if (scrollSentinelObserver) { scrollSentinelObserver.disconnect(); scrollSentinelObserver = null; }
-
-            // This function owns which of the panel's children is visible, so it has to
-            // close the sub-dashboard too. The sort select's onchange reaches here with
-            // no guard of its own, and leaving both visible put two flex-grow siblings
-            // in the panel, splitting its height between a table and a sub-dashboard.
-            setSubDashboardOpen(false);
-
-            const tSubs = document.getElementById('table-subs');
-            const tSecs = document.getElementById('table-secs');
-            if (currentDiscTab === 'subs') {
-                tSecs.classList.add('hidden');
-                tSubs.classList.remove('hidden');
-                const tbody = document.getElementById('tbody-subs');
-                tbody.innerHTML = '';
-                const filteredSubs = applySort(applyFilter(window.cachedData.subs));
-                if (filteredSubs.length === 0) {
-                    const msg = currentFilter ? 'No nodes match the active filter matrix.' : 'No nodes detected in stream.';
-                    tbody.innerHTML = `<tr><td colspan="6" class="p-12 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">${msg}</td></tr>`;
-                    return;
-                }
-                const chunks = [];
-                for (let i = 0; i < filteredSubs.length; i += CHUNK_SIZE) chunks.push(filteredSubs.slice(i, i + CHUNK_SIZE));
-                renderSubsChunk(tbody, chunks, 0);
-            } else {
-                tSubs.classList.add('hidden');
-                tSecs.classList.remove('hidden');
-                const tbody = document.getElementById('tbody-secs');
-                tbody.innerHTML = '';
-                if (window.cachedData.secs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-500 bg-slate-800/10">No secrets found yet.</td></tr>';
-                    return;
-                }
-                const frag = document.createDocumentFragment();
-                window.cachedData.secs.forEach(s => {
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
-                    tr.innerHTML = `
-                        <td class="p-5 font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${esc(s.SecretType)}</span></td>
-                        <td class="p-5 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${esc(s.SecretValue)}</td>
-                        <td class="p-5 text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors uppercase tracking-tighter" title="${esc(s.SourceURL)}">Trace Source &rarr;</a></td>
-                    `;
-                    frag.appendChild(tr);
-                });
-                tbody.appendChild(frag);
-            }
-        }
-
-        function openSubDashboard(domain) {
-            document.getElementById('table-subs').classList.add('hidden');
-            document.getElementById('table-secs').classList.add('hidden');
-            setSubDashboardOpen(true, domain);
-
-            currentFilter = null;
+            viewState.filter = null;
             resetFilterPills();
 
-            const titleEl = document.getElementById('sub-dash-title');
-            titleEl.innerHTML = `<span class="bg-accent/20 text-accent border border-accent/40 px-3 py-1 rounded-sm text-[11px] font-sans font-black uppercase tracking-[0.2em] mr-3 shadow-[0_0_10px_rgba(188,19,254,0.3)]">NODE</span> ${esc(domain)}`;
-            const ipEl = document.getElementById('sub-dash-ip');
-            const hostMatches = window.cachedData.hosts.filter(h => h.URL.includes(domain));
-            if (hostMatches.length > 0 && hostMatches[0].IP) {
-                const uniqueIPs = [...new Set(hostMatches.map(h => h.IP).filter(ip => ip))];
-                ipEl.innerText = `IP ADDR: ${uniqueIPs.join(', ')}`;
-            } else {
-                ipEl.innerText = `IP ADDR: UNKNOWN NODE / RESOLVING`;
-            }
-
-            const tbodyVulns = document.getElementById('tbody-sub-vulns');
-            tbodyVulns.innerHTML = '';
-            const subVulns = window.cachedData.vulns.filter(v => v.URL.includes(domain));
-            if (subVulns.length === 0) {
-                tbodyVulns.innerHTML = '<tr><td colspan="3" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">No vulnerabilities detected in this node.</td></tr>';
-            } else {
-                const frag = document.createDocumentFragment();
-                subVulns.forEach(v => {
-                    let sevClass = "bg-slate-900 text-slate-600 border-slate-800";
-                    if (v.Severity.toLowerCase() === 'critical') sevClass = "bg-rose-950/40 text-rose-500 border-rose-900/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]";
-                    else if (v.Severity.toLowerCase() === 'high') sevClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
-                    else if (v.Severity.toLowerCase() === 'medium') sevClass = "bg-amber-950/40 text-amber-500 border-amber-900/50";
-                    else if (v.Severity.toLowerCase() === 'low') sevClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
-                    tr.innerHTML = `
-                        <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[10px] font-sans font-black uppercase tracking-widest ${sevClass}">${esc(v.Severity)}</span></td>
-                        <td class="p-4 font-sans font-bold text-slate-200 tracking-tight text-sm">${esc(v.Name)}</td>
-                        <td class="p-4 font-mono text-xs text-slate-600 group-hover:text-slate-400 transition-colors uppercase font-bold">${esc(v.TemplateID)}</td>
-                    `;
-                    frag.appendChild(tr);
-                });
-                tbodyVulns.appendChild(frag);
-            }
-
-            const tbodyDirs = document.getElementById('tbody-sub-dirs');
-            tbodyDirs.innerHTML = '';
-            const subDirs = window.cachedData.dirs.filter(d => d.SubdomainURL && d.SubdomainURL.includes(domain));
-            if (subDirs.length === 0) {
-                tbodyDirs.innerHTML = '<tr><td colspan="2" class="p-6 text-center text-slate-700 font-mono text-[10px] tracking-widest uppercase italic bg-black/20">Node isolation... No route fragments discovered.</td></tr>';
-            } else {
-                const frag = document.createDocumentFragment();
-                subDirs.forEach(d => {
-                    let statusClass = "bg-slate-900 text-slate-600 border-slate-800";
-                    if (d.StatusCode === 200) statusClass = "bg-emerald-950/40 text-emerald-500 border-emerald-900/50";
-                    else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = "bg-blue-950/40 text-blue-400 border-blue-900/50";
-                    else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = "bg-orange-950/40 text-orange-400 border-orange-900/50";
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
-                    tr.innerHTML = `
-                        <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${d.StatusCode}</span></td>
-                        <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors break-all">${esc(d.DirURL)}</a></td>
-                    `;
-                    frag.appendChild(tr);
-                });
-                tbodyDirs.appendChild(frag);
-            }
-
-            const tbodySecs = document.getElementById('tbody-sub-secs');
-            tbodySecs.innerHTML = '';
-            const subSecs = window.cachedData.secs.filter(s => s.SourceURL.includes(domain));
-            if (subSecs.length === 0) {
-                tbodySecs.innerHTML = '<tr><td colspan="3" class="p-8 text-center text-slate-700 font-sans font-black tracking-[0.2em] uppercase italic bg-black/40 text-xs">Extraction void... No credentials located.</td></tr>';
-            } else {
-                const frag = document.createDocumentFragment();
-                subSecs.forEach(s => {
-                    const tr = document.createElement('tr');
-                    tr.className = "hover:bg-accent/[0.04] transition-colors group";
-                    tr.innerHTML = `
-                        <td class="p-4"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${esc(s.SecretType)}</span></td>
-                        <td class="p-4 font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${esc(s.SecretValue)}</td>
-                        <td class="p-4 text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors uppercase tracking-tighter" title="${esc(s.SourceURL)}">Trace Source &rarr;</a></td>
-                    `;
-                    frag.appendChild(tr);
-                });
-                tbodySecs.appendChild(frag);
-            }
-
-            switchSubDashboardTab('vulns');
+            syncSizeSelect();
+            loadNodeAddresses();
+            loadCurrentView();
         }
 
         function closeSubDashboard() {
-            // renderVisibleDiscoveriesTable closes it and restores the controls bar.
-            renderVisibleDiscoveriesTable();
+            viewState.node = null;
+            viewState.page = 1;
+            viewState.size = defaultSizeForView();
+            setSubDashboardOpen(false);
+            syncSizeSelect();
+            loadCurrentView();
         }
 
-        function switchSubDashboardTab(tab) {
-            const tabs = ['vulns', 'dirs', 'secs'];
+        // switchSubDashboardTab paints the tab strip, and by default also loads the tab.
+        // Each tab is its own paginated request, so a node with 40000 directories costs the
+        // same as one with three until that tab is actually opened.
+        function switchSubDashboardTab(tab, load = true) {
+            viewState.nodeTab = SUB_TABS.includes(tab) ? tab : 'vulns';
+
             const activeClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all";
             const inactiveClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
-            tabs.forEach(t => {
-                document.getElementById(`sub-tab-${t}`).className = t === tab ? activeClass : inactiveClass;
+            SUB_TABS.forEach(t => {
+                document.getElementById(`sub-tab-${t}`).className = t === viewState.nodeTab ? activeClass : inactiveClass;
                 const content = document.getElementById(`sub-content-${t}`);
-                content.classList.toggle('hidden', t !== tab);
-                content.classList.toggle('block', t === tab);
+                content.classList.toggle('hidden', t !== viewState.nodeTab);
+                content.classList.toggle('block', t === viewState.nodeTab);
             });
+
+            if (load) {
+                viewState.page = 1;
+                viewState.size = defaultSizeForView();
+                syncSizeSelect();
+                loadCurrentView();
+            }
+        }
+
+        function syncSizeSelect() {
+            const select = document.getElementById('select-size');
+            const size = viewState.size;
+            // A size that came from a hand-edited URL may not be one of the offered
+            // options; show the nearest rather than silently resetting the view.
+            const nearest = PAGE_SIZES.reduce((best, v) =>
+                Math.abs(v - size) < Math.abs(best - size) ? v : best, PAGE_SIZES[0]);
+            select.value = String(PAGE_SIZES.includes(size) ? size : nearest);
         }
 
         function showEmptyState(show) {
@@ -1199,6 +1450,7 @@
             if (show) {
                 document.getElementById('table-subs').classList.add('hidden');
                 document.getElementById('table-secs').classList.add('hidden');
+                document.getElementById('pager').classList.add('hidden');
                 setSubDashboardOpen(false);
             }
         }
@@ -1206,10 +1458,7 @@
         function showLoader(show) {
             document.getElementById('loader').classList.toggle('hidden', !show);
             if (show) {
-                showEmptyState(false);
-                document.getElementById('table-subs').classList.add('hidden');
-                document.getElementById('table-secs').classList.add('hidden');
-                setSubDashboardOpen(false);
+                document.getElementById('empty-state').classList.add('hidden');
             }
         }
 
@@ -1251,23 +1500,31 @@
 
         document.getElementById('tbody-subs').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action="open-node"]');
-            if (btn) openSubDashboard(btn.dataset.domain);
+            if (btn) openSubDashboard(btn.dataset.domain, btn.dataset.label);
         });
 
         const sse = new EventSource('/api/events');
-        let discoveryTimeout = null;
 
         sse.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'profile_update') {
                     refreshProfiles();
-                } else if (data.type === 'discovery_update') {
-                    if (currentProfileId == data.profile_id) {
-                        clearTimeout(discoveryTimeout);
-                        discoveryTimeout = setTimeout(() => { fetchDiscoveries(); }, 8000);
+                    return;
+                }
+                if (data.type !== 'discovery_update' || data.profile_id !== viewState.profile) return;
+
+                // Count them and say so. This used to schedule a refetch of the entire
+                // profile eight seconds after the last event, which meant that during a
+                // scan the table was torn down and rebuilt every eight seconds underneath
+                // whoever was reading it -- and, with no in-flight guard, could stack a
+                // second full run of requests onto an unfinished one.
+                for (const [kind, count] of Object.entries(data.data || {})) {
+                    if (typeof count === 'number' && count > 0) {
+                        pendingNewFindings[kind] = (pendingNewFindings[kind] || 0) + count;
                     }
                 }
+                renderNewFindingsBadge();
             } catch (e) {
                 console.error("Failed to parse SSE event", e);
             }
@@ -1275,7 +1532,22 @@
 
         sse.onerror = (error) => { console.error("SSE Error:", error); };
 
-        document.addEventListener('DOMContentLoaded', () => { refreshProfiles(); });
+        document.addEventListener('DOMContentLoaded', () => {
+            // The URL is the source of truth for what to show, so it is read before
+            // anything is fetched: a refresh or a shared link lands on the same page.
+            readViewState();
+            resetFilterPills(viewState.filter);
+            document.getElementById('select-sort').value = viewState.sort;
+            syncSizeSelect();
+
+            refreshProfiles().then(() => {
+                if (viewState.profile) {
+                    switchView('discoveries');
+                    if (viewState.node) loadNodeAddresses();
+                    loadCurrentView();
+                }
+            });
+        });
     </script>
 
 </body>
