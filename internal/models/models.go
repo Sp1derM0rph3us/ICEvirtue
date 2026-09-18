@@ -120,12 +120,16 @@ type Subdomain struct {
 	// migration. Domain is left exactly as discovered — it is the displayed value
 	// and it sits inside the unique index — so Host is added alongside it rather
 	// than normalizing in place.
-	ProfileID uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_subdomain;index:idx_sub_host,priority:1,where:deleted_at IS NULL;not null"`
-	Domain    string         `gorm:"uniqueIndex:idx_profile_subdomain;not null"`
-	Host      *string        `gorm:"index:idx_sub_host,priority:2"`
-	FirstSeen time.Time      `gorm:"autoCreateTime"`
-	LastSeen  time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt gorm.DeletedAt `gorm:"index"`
+	ProfileID uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_subdomain;index:idx_sub_host,priority:1,where:deleted_at IS NULL;index:idx_sub_changed,priority:1,where:deleted_at IS NULL;not null"`
+	Domain    string    `gorm:"uniqueIndex:idx_profile_subdomain;not null"`
+	Host      *string   `gorm:"index:idx_sub_host,priority:2"`
+	FirstSeen time.Time `gorm:"autoCreateTime"`
+	// LastChanged is the operator-facing change timestamp. Unlike LastSeen, it
+	// advances only when a scan finds new or changed reconnaissance data for this
+	// asset; re-sighting identical data must not make an asset look newly changed.
+	LastChanged time.Time      `gorm:"autoCreateTime;index:idx_sub_changed,priority:2"`
+	LastSeen    time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt   gorm.DeletedAt `gorm:"index"`
 }
 
 type AliveHost struct {

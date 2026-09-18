@@ -64,6 +64,22 @@
         #pager button:disabled { opacity: 0.3; }
         #pager button:disabled:hover { border-color: var(--color-slate-800); color: var(--color-slate-500); }
 
+        /* This is a single, viewport-positioned tooltip shared by every Findings
+           badge. Keeping it outside the scrolling table prevents clipping. */
+        #severity-tooltip {
+            position: fixed;
+            z-index: 60;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            min-width: 11rem;
+            max-width: min(20rem, calc(100vw - 2rem));
+        }
+        .findings-summary-badge:hover, .findings-summary-badge:focus {
+            border-color: #fb7185;
+            outline: 1px solid rgba(251, 113, 133, 0.7);
+            outline-offset: 2px;
+        }
+
         /* Scrollbar */
         ::-webkit-scrollbar { width: 6px; }
         ::-webkit-scrollbar-track { background: #000000; }
@@ -431,6 +447,11 @@
 
     </main>
 
+    <div id="severity-tooltip" role="tooltip" class="hidden rounded-sm border border-slate-700 bg-black px-3 py-2 text-left shadow-lg shadow-black/60">
+        <div class="text-[10px] font-sans font-black uppercase tracking-widest text-slate-500">Nuclei findings</div>
+        <div id="severity-tooltip-content" class="mt-2 text-xs text-slate-300"></div>
+    </div>
+
     <!-- Edit Schedule Modal -->
     <div id="modal-edit-schedule" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-[100] animate-fade-in px-4">
         <!-- Tightened from p-10/mb-10/space-y-10/mt-16. The button row's mt-16 collapsed
@@ -551,6 +572,14 @@
         // acted on. The old handler refetched the whole profile eight seconds after each
         // event, which is what made reading a table during a scan impossible.
         let pendingNewFindings = {};
+
+        // Severity summaries are fetched only after intentful hover and cached for
+        // the current profile. A list page remains one lightweight request.
+        const SEVERITY_TOOLTIP_DELAY = 200;
+        let severitySummaryCache = new Map();
+        let severityTooltipTimer = null;
+        let severityTooltipBadge = null;
+        let severityTooltipRequest = 0;
 
         // One in-flight list request at a time. There was no guard before, so the
         // eight-second SSE refresh could start a second full run of dozens of requests
@@ -932,6 +961,8 @@
             viewState.filter = null;
             resetFilterPills();
             pendingNewFindings = {};
+            severitySummaryCache = new Map();
+            hideSeverityTooltip();
             renderNewFindingsBadge();
             loadCurrentView();
         }
@@ -1079,6 +1110,8 @@
 
         function reloadCurrentPage() {
             pendingNewFindings = {};
+            severitySummaryCache = new Map();
+            hideSeverityTooltip();
             renderNewFindingsBadge();
             loadCurrentView();
         }
@@ -1097,6 +1130,85 @@
             return n >= COUNT_CAP ? `${COUNT_CAP}+` : String(n);
         }
 
+        function hideSeverityTooltip() {
+            clearTimeout(severityTooltipTimer);
+            severityTooltipTimer = null;
+            if (severityTooltipBadge) severityTooltipBadge.setAttribute('aria-expanded', 'false');
+            severityTooltipBadge = null;
+            severityTooltipRequest++;
+            document.getElementById('severity-tooltip').classList.add('hidden');
+        }
+
+        function placeSeverityTooltip(badge) {
+            const tooltip = document.getElementById('severity-tooltip');
+            const rect = badge.getBoundingClientRect();
+            tooltip.style.left = `${Math.max(16, Math.min(window.innerWidth - 16, rect.left + rect.width / 2))}px`;
+            tooltip.style.top = `${Math.max(8, rect.top - 8)}px`;
+        }
+
+        function severityClass(severity) {
+            switch (severity) {
+                case 'critical': return 'text-rose-500';
+                case 'high': return 'text-orange-400';
+                case 'medium': return 'text-amber-500';
+                case 'low': return 'text-emerald-500';
+                default: return 'text-slate-400';
+            }
+        }
+
+        function renderSeverityTooltip(rows) {
+            const content = document.getElementById('severity-tooltip-content');
+            content.innerHTML = rows.map(row => `
+                <div class="flex items-center justify-between gap-5 py-0.5 font-mono uppercase">
+                    <span class="${severityClass(String(row.severity || '').toLowerCase())}">${esc(row.severity)}</span>
+                    <span class="font-bold text-slate-100">${esc(row.count)}</span>
+                </div>`).join('');
+        }
+
+        function openSeverityTooltip(badge) {
+            if (!badge || !viewState.profile) return;
+            clearTimeout(severityTooltipTimer);
+            severityTooltipTimer = null;
+            if (severityTooltipBadge && severityTooltipBadge !== badge) severityTooltipBadge.setAttribute('aria-expanded', 'false');
+            severityTooltipBadge = badge;
+            badge.setAttribute('aria-expanded', 'true');
+
+            const tooltip = document.getElementById('severity-tooltip');
+            const content = document.getElementById('severity-tooltip-content');
+            const host = badge.dataset.host;
+            const cacheKey = `${viewState.profile}:${host}`;
+            const request = ++severityTooltipRequest;
+
+            placeSeverityTooltip(badge);
+            tooltip.classList.remove('hidden');
+
+            const cached = severitySummaryCache.get(cacheKey);
+            if (cached) {
+                renderSeverityTooltip(cached);
+                return;
+            }
+
+            content.textContent = 'Loading…';
+            apiJSON(`/api/profiles/${encodeURIComponent(viewState.profile)}/vulnerabilities/severity-summary?host=${encodeURIComponent(host)}`)
+                .then(rows => {
+                    if (request !== severityTooltipRequest || severityTooltipBadge !== badge) return;
+                    const summary = Array.isArray(rows) ? rows : [];
+                    severitySummaryCache.set(cacheKey, summary);
+                    renderSeverityTooltip(summary);
+                    placeSeverityTooltip(badge);
+                })
+                .catch(() => {
+                    if (request === severityTooltipRequest && severityTooltipBadge === badge) {
+                        content.textContent = 'Unable to load breakdown';
+                    }
+                });
+        }
+
+        function scheduleSeverityTooltip(badge) {
+            clearTimeout(severityTooltipTimer);
+            severityTooltipTimer = setTimeout(() => openSeverityTooltip(badge), SEVERITY_TOOLTIP_DELAY);
+        }
+
 
         // buildSubRow reads the counts and the status straight off the row.
         //
@@ -1106,7 +1218,7 @@
         function buildSubRow(s) {
             const domain = esc(s.domain);
             const firstSeen = new Date(s.first_seen).toLocaleDateString();
-            const lastSeen = new Date(s.last_seen).toLocaleDateString();
+            const lastChanged = new Date(s.last_changed).toLocaleDateString();
 
             let statusHtml;
             if (s.status_code == null) {
@@ -1125,7 +1237,7 @@
             if (!s.vuln_count && !s.dir_count && !s.secret_count) {
                 findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
             } else {
-                if (s.vuln_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${countLabel(s.vuln_count)} Vuln</span> `;
+                if (s.vuln_count > 0) findingsHtml += `<button type="button" data-action="show-severity-summary" data-host="${esc(s.host)}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${countLabel(s.vuln_count)} Findings</button> `;
                 if (s.dir_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20">${countLabel(s.dir_count)} Dir</span> `;
                 if (s.secret_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30">${countLabel(s.secret_count)} Cred</span>`;
             }
@@ -1146,7 +1258,7 @@
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter"><span>${esc(firstSeen)}</span></td>
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter">
                     <div class="flex justify-end items-center gap-3">
-                        <span>${esc(lastSeen)}</span>
+                        <span>${esc(lastChanged)}</span>
                         <a href="${esc(safeURL('http://' + s.domain))}" target="_blank" rel="noopener noreferrer" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                         </a>
@@ -1538,6 +1650,31 @@
             if (btn) openSubDashboard(btn.dataset.domain, btn.dataset.label);
         });
 
+        // Delegation survives table redraws. pointerover/out are used because their
+        // mouseenter/leave counterparts do not bubble from generated badges.
+        document.getElementById('tbody-subs').addEventListener('pointerover', (e) => {
+            const badge = e.target.closest('[data-action="show-severity-summary"]');
+            if (!badge || (e.relatedTarget && badge.contains(e.relatedTarget))) return;
+            scheduleSeverityTooltip(badge);
+        });
+        document.getElementById('tbody-subs').addEventListener('pointerout', (e) => {
+            const badge = e.target.closest('[data-action="show-severity-summary"]');
+            if (!badge || (e.relatedTarget && badge.contains(e.relatedTarget))) return;
+            hideSeverityTooltip();
+        });
+        document.getElementById('tbody-subs').addEventListener('focusin', (e) => {
+            const badge = e.target.closest('[data-action="show-severity-summary"]');
+            if (badge) openSeverityTooltip(badge);
+        });
+        document.getElementById('tbody-subs').addEventListener('focusout', (e) => {
+            if (e.target.closest('[data-action="show-severity-summary"]')) hideSeverityTooltip();
+        });
+        document.getElementById('table-subs').addEventListener('scroll', hideSeverityTooltip, { passive: true });
+        window.addEventListener('resize', hideSeverityTooltip, { passive: true });
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') hideSeverityTooltip();
+        });
+
         const sse = new EventSource('/api/events');
 
         sse.onmessage = (event) => {
@@ -1557,6 +1694,7 @@
                 for (const [kind, count] of Object.entries(data.data || {})) {
                     if (typeof count === 'number' && count > 0) {
                         pendingNewFindings[kind] = (pendingNewFindings[kind] || 0) + count;
+                        if (kind === 'vulnerabilities') severitySummaryCache = new Map();
                     }
                 }
                 renderNewFindingsBadge();

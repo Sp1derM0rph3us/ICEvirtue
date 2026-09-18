@@ -341,6 +341,7 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `GET /api/profiles/{id}/hosts` | Alive hosts, with status code, title, web server and IPs. |
 | `GET /api/profiles/{id}/directories` | Directory and file findings. |
 | `GET /api/profiles/{id}/vulnerabilities` | Nuclei findings. |
+| `GET /api/profiles/{id}/vulnerabilities/severity-summary?host=...` | Exact nonzero Nuclei finding counts grouped by severity for one asset. |
 | `GET /api/profiles/{id}/secrets` | Secrets found in JavaScript. |
 | `GET /api/events` | Server-Sent Events stream of `profile_update` and `discovery_update` events. |
 
@@ -365,7 +366,20 @@ The `page` object reports what the server actually did, which matters because it
 
 `limit` and `offset` are still accepted as aliases for `size` and `page`.
 
-A subdomain row carries its own finding counts and a representative status code, so a client does not have to correlate anything itself. Those counts stop at 1000 — the badge only needs to distinguish "none" from "a few" from "a lot" — while the exact total for one host is what `total_rows` reports when you scope to it with `host=`.
+A subdomain row carries its own finding counts, a representative status code, and a `last_changed` timestamp, so a client does not have to correlate anything itself. `last_changed` advances only for a meaningful recon diff (a new or changed related observation), while `last_seen` remains the raw observation timestamp. Those counts stop at 1000 — the badge only needs to distinguish "none" from "a few" from "a lot" — while the exact total for one host is what `total_rows` reports when you scope to it with `host=`.
+
+## Dashboard fixture data
+
+Create a disposable database with two sample targets, changed and unchanged assets,
+Nuclei findings at several severity levels, directories, secrets, and a demo login:
+
+```sh
+go run ./cmd/mockdata
+go run . --db-path mock-dashboard.db
+```
+
+Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and
+its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it.
 
 ## Troubleshooting
 

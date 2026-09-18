@@ -18,6 +18,11 @@ import (
 // entire dataset.
 const hostCorrelationV1 = "2026_07_host_correlation_v1"
 
+// subdomainLastChangedV1 gives existing assets a conservative initial change
+// timestamp. Their historical diffs cannot be reconstructed, so the best truthful
+// baseline is the last time the previous version observed them.
+const subdomainLastChangedV1 = "2026_09_subdomain_last_changed_v1"
+
 // backfillBatch is how many rows one transaction converts.
 //
 // It is also the crash-loss unit, which is why it is not much larger: a batch is
@@ -48,6 +53,13 @@ var hostSources = []struct{ table, source string }{
 // in which every per-node finding count reads zero, which is a wrong answer served
 // confidently — the exact failure this whole change exists to remove.
 func RunDataMigrations() error {
+	if err := runHostCorrelationMigration(); err != nil {
+		return err
+	}
+	return runSubdomainLastChangedMigration()
+}
+
+func runHostCorrelationMigration() error {
 	applied, err := migrationApplied(hostCorrelationV1)
 	if err != nil {
 		return err
@@ -83,6 +95,28 @@ func RunDataMigrations() error {
 	}
 
 	return markMigrationApplied(hostCorrelationV1)
+}
+
+func runSubdomainLastChangedMigration() error {
+	applied, err := migrationApplied(subdomainLastChangedV1)
+	if err != nil {
+		return err
+	}
+	if applied {
+		return nil
+	}
+
+	// AutoMigrate adds the new nullable column before this migration runs. A newly
+	// created row already has autoCreateTime populated, while legacy rows are NULL.
+	// Updating only NULL values makes a restart safe even if it stops before the
+	// migration ledger marker is recorded.
+	if err := DB.Model(&models.Subdomain{}).
+		Where("last_changed IS NULL").
+		Update("last_changed", gorm.Expr("last_seen")).Error; err != nil {
+		return fmt.Errorf("backfilling subdomains.last_changed: %w", err)
+	}
+
+	return markMigrationApplied(subdomainLastChangedV1)
 }
 
 func migrationApplied(version string) (bool, error) {

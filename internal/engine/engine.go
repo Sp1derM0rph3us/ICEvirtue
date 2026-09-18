@@ -370,6 +370,21 @@ func broadcastIfNew(profile *models.Profile, kind string, newCount int) int {
 	return newCount
 }
 
+// touchAsset records that correlated reconnaissance data changed for one asset.
+//
+// LastSeen remains an observation timestamp on the individual tables. LastChanged
+// belongs to the subdomain shown in the Nodes table and is deliberately touched only
+// after a real diff, never merely because a scanner saw the same value again. A NULL
+// host cannot be correlated safely, so it must not update an arbitrary asset.
+func touchAsset(profileID *uuid.UUID, host *string) {
+	if host == nil {
+		return
+	}
+	database.DB.Model(&models.Subdomain{}).
+		Where("profile_id = ? AND host = ?", *profileID, *host).
+		Update("last_changed", gorm.Expr("CURRENT_TIMESTAMP"))
+}
+
 func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
 	newCount := 0
 	for _, sub := range subdomains {
@@ -384,6 +399,7 @@ func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
 				ProfileID: *profileID,
 				Domain:    sub,
 			})
+			// A newly created subdomain receives LastChanged from autoCreateTime.
 			newCount++
 		} else {
 			if Verbose {
@@ -414,6 +430,7 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 				log.Printf("[VERBOSE] [+] NEW Alive Host: %s (IP: %s | Title: %s)", h.URL, h.IP, h.Title)
 			}
 			database.DB.Create(&h)
+			touchAsset(profileID, hostkey.NormalizeOrNil(h.URL))
 			newCount++
 		} else {
 			if Verbose {
@@ -423,17 +440,30 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 			// re-sighting goes in the same update, which matters more than it looks:
 			// the whole process shares a single database connection, so each extra
 			// round trip here is serialised against every in-flight HTTP request.
+			changed := existing.IP != h.IP ||
+				existing.Title != h.Title ||
+				existing.WebServer != h.WebServer ||
+				existing.StatusCode != h.StatusCode
 			updates := map[string]interface{}{
 				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
 				"host":      hostkey.NormalizeOrNil(h.URL),
 			}
-			if h.IP != "" && existing.IP != h.IP {
+			if existing.IP != h.IP {
 				updates["ip"] = h.IP
 			}
-			if h.StatusCode != 0 && existing.StatusCode != h.StatusCode {
+			if existing.Title != h.Title {
+				updates["title"] = h.Title
+			}
+			if existing.WebServer != h.WebServer {
+				updates["web_server"] = h.WebServer
+			}
+			if existing.StatusCode != h.StatusCode {
 				updates["status_code"] = h.StatusCode
 			}
 			database.DB.Model(&existing).Updates(updates)
+			if changed {
+				touchAsset(profileID, hostkey.NormalizeOrNil(h.URL))
+			}
 		}
 	}
 	return newCount
@@ -450,15 +480,31 @@ func diffVulns(profileID *uuid.UUID, vulns []models.Vulnerability) int {
 				log.Printf("[VERBOSE] [!] NEW Vulnerability: %s found on %s (%s)", v.TemplateID, v.URL, v.Severity)
 			}
 			database.DB.Create(&v)
+			touchAsset(profileID, hostkey.NormalizeOrNil(v.URL))
 			newCount++
 		} else {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Vulnerability: %s found on %s", v.TemplateID, v.URL)
 			}
-			database.DB.Model(&existing).Updates(map[string]interface{}{
+			changed := existing.Severity != v.Severity ||
+				existing.Name != v.Name || existing.Description != v.Description
+			updates := map[string]interface{}{
 				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
 				"host":      hostkey.NormalizeOrNil(v.URL),
-			})
+			}
+			if existing.Severity != v.Severity {
+				updates["severity"] = v.Severity
+			}
+			if existing.Name != v.Name {
+				updates["name"] = v.Name
+			}
+			if existing.Description != v.Description {
+				updates["description"] = v.Description
+			}
+			database.DB.Model(&existing).Updates(updates)
+			if changed {
+				touchAsset(profileID, hostkey.NormalizeOrNil(v.URL))
+			}
 		}
 	}
 	return newCount
@@ -475,6 +521,7 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 				log.Printf("[VERBOSE] [!] NEW Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
 			database.DB.Create(&s)
+			touchAsset(profileID, hostkey.NormalizeOrNil(s.SourceURL))
 			newCount++
 		} else {
 			if Verbose {
@@ -505,11 +552,13 @@ func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
 				log.Printf("[VERBOSE] [+] NEW Directory: %s (%d)", d.DirURL, d.StatusCode)
 			}
 			database.DB.Create(&d)
+			touchAsset(profileID, hostkey.NormalizeOrNil(d.SubdomainURL))
 			newCount++
 		} else {
 			if Verbose {
 				log.Printf("[VERBOSE] [*] Old Directory: %s", d.DirURL)
 			}
+			changed := existing.StatusCode != d.StatusCode
 			updates := map[string]interface{}{
 				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
 				"host":      hostkey.NormalizeOrNil(d.SubdomainURL),
@@ -518,6 +567,9 @@ func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
 				updates["status_code"] = d.StatusCode
 			}
 			database.DB.Model(&existing).Updates(updates)
+			if changed {
+				touchAsset(profileID, hostkey.NormalizeOrNil(d.SubdomainURL))
+			}
 		}
 	}
 	return newCount

@@ -4,12 +4,33 @@ import (
 	"database/sql"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
+
+var oldChangeTime = time.Date(2001, time.February, 3, 4, 5, 6, 0, time.UTC)
+
+func setAssetChangeTime(t *testing.T, id uuid.UUID, domain string) {
+	t.Helper()
+	if err := database.DB.Model(&models.Subdomain{}).
+		Where("profile_id = ? AND domain = ?", id, domain).
+		Update("last_changed", oldChangeTime).Error; err != nil {
+		t.Fatalf("setting %s last_changed: %v", domain, err)
+	}
+}
+
+func assetChangeTime(t *testing.T, id uuid.UUID, domain string) time.Time {
+	t.Helper()
+	var row models.Subdomain
+	if err := database.DB.Where("profile_id = ? AND domain = ?", id, domain).First(&row).Error; err != nil {
+		t.Fatalf("loading %s: %v", domain, err)
+	}
+	return row.LastChanged.UTC()
+}
 
 // These tests cover the correlation key on the write path. Three mechanisms keep it
 // populated and each is checked here: the BeforeSave hook on insert, the explicit
@@ -175,5 +196,86 @@ func TestUncorrelatableFindingIsStoredAsNull(t *testing.T) {
 	database.DB.Raw("SELECT COUNT(*) FROM secret_findings WHERE profile_id = ?", id).Scan(&n)
 	if n != 2 {
 		t.Errorf("secret_findings holds %d row(s), want 2: a finding must be kept even when it cannot be attributed", n)
+	}
+}
+
+func TestAssetLastChangedMovesOnlyForMeaningfulDiffs(t *testing.T) {
+	id := newDiffEnv(t)
+	const domain = "a.example.com"
+	diffSubdomains(&id, []string{domain})
+
+	host := models.AliveHost{ProfileID: id, URL: "https://" + domain, IP: "1.2.3.4", Title: "old", WebServer: "nginx", StatusCode: 200}
+	diffHosts(&id, []models.AliveHost{host})
+	setAssetChangeTime(t, id, domain)
+
+	// A byte-for-byte repeat remains an observation, not a user-facing asset change.
+	diffSubdomains(&id, []string{domain})
+	diffHosts(&id, []models.AliveHost{host})
+	if got := assetChangeTime(t, id, domain); !got.Equal(oldChangeTime) {
+		t.Errorf("identical re-sighting changed LastChanged to %s, want %s", got, oldChangeTime)
+	}
+
+	// Every stored HTTP observation field participates in the diff.
+	changedHost := host
+	changedHost.Title = "new"
+	diffHosts(&id, []models.AliveHost{changedHost})
+	if got := assetChangeTime(t, id, domain); !got.After(oldChangeTime) {
+		t.Errorf("changed HTTP title left LastChanged at %s, want after %s", got, oldChangeTime)
+	}
+
+	setAssetChangeTime(t, id, domain)
+	vuln := models.Vulnerability{ProfileID: id, TemplateID: "tls", URL: "https://" + domain, Severity: "low", Name: "TLS", Description: "old"}
+	diffVulns(&id, []models.Vulnerability{vuln})
+	if got := assetChangeTime(t, id, domain); !got.After(oldChangeTime) {
+		t.Errorf("new vulnerability left LastChanged at %s", got)
+	}
+
+	setAssetChangeTime(t, id, domain)
+	diffVulns(&id, []models.Vulnerability{vuln})
+	if got := assetChangeTime(t, id, domain); !got.Equal(oldChangeTime) {
+		t.Errorf("identical vulnerability changed LastChanged to %s", got)
+	}
+	vuln.Severity = "high"
+	diffVulns(&id, []models.Vulnerability{vuln})
+	if got := assetChangeTime(t, id, domain); !got.After(oldChangeTime) {
+		t.Errorf("changed vulnerability severity left LastChanged at %s", got)
+	}
+
+	setAssetChangeTime(t, id, domain)
+	dir := models.DirectoryFinding{ProfileID: id, SubdomainURL: "https://" + domain, DirURL: "https://" + domain + "/admin", StatusCode: 200}
+	diffDirectories(&id, []models.DirectoryFinding{dir})
+	setAssetChangeTime(t, id, domain)
+	dir.StatusCode = 403
+	diffDirectories(&id, []models.DirectoryFinding{dir})
+	if got := assetChangeTime(t, id, domain); !got.After(oldChangeTime) {
+		t.Errorf("changed directory status left LastChanged at %s", got)
+	}
+}
+
+func TestAssetLastChangedNeverAttributesOrphansToAnotherNode(t *testing.T) {
+	id := newDiffEnv(t)
+	diffSubdomains(&id, []string{"a.example.com", "sub.a.example.com"})
+	setAssetChangeTime(t, id, "a.example.com")
+	setAssetChangeTime(t, id, "sub.a.example.com")
+
+	diffVulns(&id, []models.Vulnerability{{
+		ProfileID: id, TemplateID: "child", URL: "https://sub.a.example.com/x", Severity: "critical",
+	}})
+	if got := assetChangeTime(t, id, "a.example.com"); !got.Equal(oldChangeTime) {
+		t.Errorf("child finding changed parent LastChanged to %s", got)
+	}
+	if got := assetChangeTime(t, id, "sub.a.example.com"); !got.After(oldChangeTime) {
+		t.Errorf("child finding did not change child LastChanged: %s", got)
+	}
+
+	setAssetChangeTime(t, id, "a.example.com")
+	setAssetChangeTime(t, id, "sub.a.example.com")
+	diffSecrets(&id, []models.SecretFinding{{
+		ProfileID: id, SourceURL: "mantra-discovery", SecretType: "aws", SecretValue: "AKIA-orphan",
+	}})
+	for _, domain := range []string{"a.example.com", "sub.a.example.com"} {
+		if got := assetChangeTime(t, id, domain); !got.Equal(oldChangeTime) {
+			t.Errorf("orphan secret changed %s LastChanged to %s", domain, got)
+		}
 	}
 }

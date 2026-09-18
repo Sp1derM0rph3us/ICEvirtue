@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -218,5 +219,47 @@ func TestRunDataMigrationsIsANoOpOnAnEmptyDatabase(t *testing.T) {
 	DB.Model(&models.SchemaMigration{}).Where("version = ?", hostCorrelationV1).Count(&markers)
 	if markers != 1 {
 		t.Errorf("the migration ledger holds %d row(s), want 1 even with nothing to convert", markers)
+	}
+}
+
+func TestRunDataMigrationsBackfillsSubdomainLastChangedOnce(t *testing.T) {
+	id := newMigrateEnv(t)
+	seen := time.Date(2024, time.January, 2, 3, 4, 5, 0, time.UTC)
+	if err := DB.Exec(`INSERT INTO subdomains (profile_id, domain, first_seen, last_seen, last_changed)
+		VALUES (?, ?, ?, ?, NULL)`, id, "a.example.com", seen, seen).Error; err != nil {
+		t.Fatalf("seeding legacy timestamp: %v", err)
+	}
+
+	if err := RunDataMigrations(); err != nil {
+		t.Fatalf("migrating timestamp: %v", err)
+	}
+
+	var row models.Subdomain
+	if err := DB.Where("profile_id = ? AND domain = ?", id, "a.example.com").First(&row).Error; err != nil {
+		t.Fatalf("reading migrated subdomain: %v", err)
+	}
+	if !row.LastChanged.Equal(seen) {
+		t.Errorf("LastChanged = %s, want legacy LastSeen %s", row.LastChanged, seen)
+	}
+
+	// The marker protects the baseline if a later run updates LastSeen normally.
+	later := seen.Add(24 * time.Hour)
+	if err := DB.Model(&row).Update("last_seen", later).Error; err != nil {
+		t.Fatalf("updating last_seen: %v", err)
+	}
+	if err := RunDataMigrations(); err != nil {
+		t.Fatalf("rerunning timestamp migration: %v", err)
+	}
+	if err := DB.First(&row, row.ID).Error; err != nil {
+		t.Fatalf("reloading migrated subdomain: %v", err)
+	}
+	if !row.LastChanged.Equal(seen) {
+		t.Errorf("idempotent migration changed LastChanged to %s, want %s", row.LastChanged, seen)
+	}
+
+	var markers int64
+	DB.Model(&models.SchemaMigration{}).Where("version = ?", subdomainLastChangedV1).Count(&markers)
+	if markers != 1 {
+		t.Errorf("migration ledger holds %d row(s) for %s, want 1", markers, subdomainLastChangedV1)
 	}
 }

@@ -144,6 +144,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 				r.Get("/subdomains", getProfileSubdomains)
 				r.Get("/secrets", getProfileSecrets)
 				r.Get("/hosts", getProfileHosts)
+				r.Get("/vulnerabilities/severity-summary", getVulnerabilitySeveritySummary)
 				r.Get("/vulnerabilities", getProfileVulnerabilities)
 				r.Get("/directories", getProfileDirectories)
 			})

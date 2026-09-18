@@ -32,6 +32,9 @@ go.work.sum
 # .vscode/
 
 *.db*
+# Locally generated dashboard fixture; the broader pattern above covers it too,
+# but keeping this explicit makes the disposable validation data discoverable.
+mock-dashboard.db*
 jwt*
 test_*
 tmp_*

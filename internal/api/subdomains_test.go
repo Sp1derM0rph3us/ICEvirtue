@@ -1,8 +1,11 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
+	"net/http"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 
@@ -322,5 +325,89 @@ func TestCountsBelowTheCapAreExact(t *testing.T) {
 	row := rowsByDomain(getSubdomainPage(t, id, "?size=500"))["a.example.com"]
 	if row.DirCount != 3 || row.VulnCount != 2 || row.SecretCount != 1 {
 		t.Errorf("counts below the cap must be exact, got %dv/%dd/%dc", row.VulnCount, row.DirCount, row.SecretCount)
+	}
+}
+
+func TestLastChangedDrivesNodeSyncSortAndFilter(t *testing.T) {
+	profile := newAPIEnv(t)
+	first := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
+	for _, domain := range []string{"unchanged.example.com", "changed.example.com"} {
+		if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: domain}).Error; err != nil {
+			t.Fatalf("creating %s: %v", domain, err)
+		}
+	}
+	if err := database.DB.Model(&models.Subdomain{}).Where("profile_id = ?", profile.ID).
+		Updates(map[string]interface{}{"first_seen": first, "last_changed": first, "last_seen": first.Add(48 * time.Hour)}).Error; err != nil {
+		t.Fatalf("setting baseline timestamps: %v", err)
+	}
+	if err := database.DB.Model(&models.Subdomain{}).
+		Where("profile_id = ? AND domain = ?", profile.ID, "changed.example.com").
+		Update("last_changed", first.Add(2*time.Second)).Error; err != nil {
+		t.Fatalf("setting changed timestamp: %v", err)
+	}
+
+	updated := getSubdomainPage(t, profile.ID, "?filter=updated&size=10")
+	if updated.Page.TotalRows != 1 || updated.Data[0].Domain != "changed.example.com" {
+		t.Fatalf("updated filter = %#v, want only changed.example.com", updated.Data)
+	}
+
+	sorted := getSubdomainPage(t, profile.ID, "?sort=update-desc&size=10")
+	if sorted.Data[0].Domain != "changed.example.com" {
+		t.Errorf("recent-sync order starts with %s, want changed.example.com", sorted.Data[0].Domain)
+	}
+	if !sorted.Data[0].LastChanged.Equal(first.Add(2 * time.Second)) {
+		t.Errorf("response LastChanged = %s, want %s", sorted.Data[0].LastChanged, first.Add(2*time.Second))
+	}
+}
+
+func TestVulnerabilitySeveritySummaryIsScopedAndOrdered(t *testing.T) {
+	id := seedCorrelated(t)
+	// a.example.com already has critical and info; add a padded high value to cover
+	// normalization and an unknown value to ensure it appears after standard levels.
+	for i, severity := range []string{" high ", "custom"} {
+		if err := database.DB.Create(&models.Vulnerability{
+			ProfileID: id, TemplateID: fmt.Sprintf("summary-%d", i),
+			URL: fmt.Sprintf("https://a.example.com/summary/%d", i), Severity: severity,
+		}).Error; err != nil {
+			t.Fatalf("creating severity %q: %v", severity, err)
+		}
+	}
+
+	rec := route(t, http.MethodGet, "/api/profiles/{id}/vulnerabilities/severity-summary",
+		"/api/profiles/"+id.String()+"/vulnerabilities/severity-summary?host=a.example.com",
+		getVulnerabilitySeveritySummary)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("summary = %d: %s", rec.Code, rec.Body.String())
+	}
+	var got []severitySummary
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decoding summary: %v", err)
+	}
+	want := []severitySummary{{"critical", 1}, {"high", 1}, {"info", 1}, {"custom", 1}}
+	if len(got) != len(want) {
+		t.Fatalf("summary = %#v, want %#v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("summary[%d] = %#v, want %#v", i, got[i], want[i])
+		}
+	}
+
+	// The child has its own info finding; it must not leak into the parent's summary.
+	for _, row := range got {
+		if row.Severity == "info" && row.Count != 1 {
+			t.Errorf("parent info count = %d, want 1", row.Count)
+		}
+	}
+
+	empty := route(t, http.MethodGet, "/api/profiles/{id}/vulnerabilities/severity-summary",
+		"/api/profiles/"+id.String()+"/vulnerabilities/severity-summary?host=mantra-discovery",
+		getVulnerabilitySeveritySummary)
+	var none []severitySummary
+	if err := json.Unmarshal(empty.Body.Bytes(), &none); err != nil {
+		t.Fatalf("decoding empty summary: %v", err)
+	}
+	if len(none) != 0 {
+		t.Errorf("unresolvable host summary = %#v, want empty", none)
 	}
 }

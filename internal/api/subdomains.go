@@ -39,6 +39,7 @@ type subdomainRow struct {
 	DirCount    int       `json:"dir_count"`
 	SecretCount int       `json:"secret_count"`
 	FirstSeen   time.Time `json:"first_seen"`
+	LastChanged time.Time `json:"last_changed"`
 	LastSeen    time.Time `json:"last_seen"`
 }
 
@@ -79,7 +80,7 @@ const statusExpr = `(SELECT MIN(a.status_code) FROM alive_hosts a
 	  AND a.deleted_at IS NULL)`
 
 var subdomainSelect = `subdomains.id, subdomains.domain, subdomains.host,
-	subdomains.first_seen, subdomains.last_seen,
+	subdomains.first_seen, subdomains.last_changed, subdomains.last_seen,
 	` + countFor("vulnerabilities", "v") + ` AS vuln_count,
 	` + countFor("directory_findings", "d") + ` AS dir_count,
 	` + countFor("secret_findings", "c") + ` AS secret_count,
@@ -132,10 +133,10 @@ var subdomainFilters = map[string]string{
 	"status-other": statusExpr + ` IS NOT NULL AND (` + statusExpr + ` < 200
 		OR (` + statusExpr + ` >= 400 AND ` + statusExpr + ` <> 403))`,
 
-	// Seen again on a later scan than the one that discovered it. julianday parses the
+	// Changed on a later scan than the one that discovered it. julianday parses the
 	// stored TEXT timestamp including its UTC offset; the threshold is one second
 	// expressed in days, matching the original 1000ms comparison.
-	"updated": `julianday(subdomains.last_seen) - julianday(subdomains.first_seen) > 1.0/86400.0`,
+	"updated": `julianday(subdomains.last_changed) - julianday(subdomains.first_seen) > 1.0/86400.0`,
 }
 
 // subdomainSorts maps the dashboard's sort options to a total order.
@@ -147,8 +148,8 @@ var subdomainSorts = map[string]string{
 	"name-desc":     "subdomains.domain DESC, subdomains.id DESC",
 	"first-asc":     "subdomains.id ASC",
 	"first-desc":    "subdomains.id DESC",
-	"update-asc":    "subdomains.last_seen ASC, subdomains.id ASC",
-	"update-desc":   "subdomains.last_seen DESC, subdomains.id DESC",
+	"update-asc":    "subdomains.last_changed ASC, subdomains.id ASC",
+	"update-desc":   "subdomains.last_changed DESC, subdomains.id DESC",
 	"findings-desc": "",
 	"findings-asc":  "",
 }

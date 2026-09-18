@@ -9,6 +9,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -121,6 +122,15 @@ const severityRank = `CASE lower(vulnerabilities.severity)
 	WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
 	WHEN 'low' THEN 3 WHEN 'info' THEN 4 ELSE 5 END`
 
+// severityBucket gives blank Nuclei severities a stable, user-visible name rather
+// than returning an ambiguous empty string in the summary endpoint.
+const severityBucket = `CASE WHEN trim(lower(vulnerabilities.severity)) = '' THEN 'unknown'
+	ELSE trim(lower(vulnerabilities.severity)) END`
+
+const severitySummaryRank = `CASE ` + severityBucket + `
+	WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'medium' THEN 2
+	WHEN 'low' THEN 3 WHEN 'info' THEN 4 ELSE 5 END`
+
 // Every ORDER BY ends with a unique column. Without that tiebreaker the order of rows
 // sharing a sort key is unspecified, and LIMIT/OFFSET paging over an unstable order is
 // free to show the same row twice and never show another.
@@ -174,6 +184,46 @@ func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
 
 	listPage[models.Vulnerability](w, q, &models.Vulnerability{}, "",
 		profileScope(id, "vulnerabilities", hostScope(q, "vulnerabilities")), vulnSorts[q.Sort])
+}
+
+// severitySummary is intentionally a small non-paginated shape. The dashboard asks
+// for it after an operator hovers one asset badge, so an aggregate is both cheaper
+// and more accurate than downloading one page of vulnerabilities in JavaScript.
+type severitySummary struct {
+	Severity string `json:"severity"`
+	Count    int64  `json:"count"`
+}
+
+func getVulnerabilitySeveritySummary(w http.ResponseWriter, r *http.Request) {
+	id, ok := profileID(w, r)
+	if !ok {
+		return
+	}
+
+	// This endpoint is scoped by definition. Invalid and absent hosts return an
+	// empty collection, matching the safe behaviour of the finding list endpoints.
+	host := hostkey.Normalize(r.URL.Query().Get("host"))
+	if host == "" {
+		respondJSON(w, http.StatusOK, []severitySummary{})
+		return
+	}
+
+	var rows []severitySummary
+	if err := database.DB.Model(&models.Vulnerability{}).
+		Select(severityBucket+" AS severity, COUNT(*) AS count").
+		Where("vulnerabilities.profile_id = ? AND vulnerabilities.host = ?", id, host).
+		Group(severityBucket).
+		Order(severitySummaryRank + " ASC, severity ASC").
+		Scan(&rows).Error; err != nil {
+		log.Printf("[-] Summarizing vulnerabilities for %s/%s: %v", id, host, err)
+		http.Error(w, "failed to summarize vulnerabilities", http.StatusInternalServerError)
+		return
+	}
+
+	if rows == nil {
+		rows = []severitySummary{}
+	}
+	respondJSON(w, http.StatusOK, rows)
 }
 
 func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
