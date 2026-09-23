@@ -58,6 +58,7 @@ var toolSpecs = map[string]toolSpec{
 	"subjs":       {names: []string{"subjs"}},
 	"mantra":      {names: []string{"mantra"}},
 	"secrethound": {names: []string{"secrethound"}},
+	"wafw00f":     {names: []string{"wafw00f"}},
 }
 
 // resolution is the cached outcome of locating one tool.

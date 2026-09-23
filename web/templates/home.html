@@ -120,9 +120,14 @@
                             <div id="home-severity-legend" class="overview-legend mt-4 text-xs chroma-muted"></div>
                         </div>
                         <div class="chroma-surface chroma-panel">
-                            <div class="chroma-panel-heading"><h2>WAF detection</h2><small>Future capability</small></div>
-                            <p class="text-sm font-bold chroma-accent">In progress</p>
-                            <p class="text-xs chroma-muted mt-2">Detected WAF technologies will appear here once scanning supports them.</p>
+                            <div class="chroma-panel-heading">
+                                <div>
+                                    <h2>WAF detection</h2>
+                                    <small class="chroma-waf-note">Latest successful observations.</small>
+                                </div>
+                            </div>
+                            <ul id="home-waf-list" class="chroma-waf-list list-none" aria-label="Detected WAF technologies"></ul>
+                            <p id="home-waf-empty" class="text-sm chroma-muted">No WAF detections recorded.</p>
                         </div>
                     </div>
                 </div>
@@ -390,7 +395,7 @@
                                 <h3 id="sub-dash-title" class="text-lg font-sans font-bold text-white flex items-center gap-3">
                                     Node
                                 </h3>
-                                <div id="sub-dash-ip" class="text-xs text-accent font-mono font-bold mt-1 tracking-tighter uppercase opacity-90">IP: Unknown Node</div>
+                                <div id="sub-dash-ip" class="text-xs text-accent font-mono font-bold mt-1 tracking-tighter opacity-90" role="status">IP: Unknown Node</div>
                             </div>
                         </div>
                         <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5">
@@ -624,6 +629,7 @@
         // is exactly the six-socket per-origin limit browsers impose.
         let inFlight = null;
         let homeOverviewRequest = 0;
+        let nodeInfoRequest = 0;
         let profileIndexReady = false;
 
         const HOME_SEVERITY_COLORS = {
@@ -675,6 +681,17 @@
             document.getElementById('home-last-change').textContent =
                 overviewUTC(data.last_identified_change_utc);
             document.getElementById('home-scan-badge').classList.toggle('hidden', !data.profile.is_scanning);
+
+            const wafList = document.getElementById('home-waf-list');
+            wafList.replaceChildren();
+            const wafs = data.detected_wafs || [];
+            document.getElementById('home-waf-empty').classList.toggle('hidden', wafs.length > 0);
+            for (const name of wafs) {
+                const item = document.createElement('li');
+                item.className = 'chroma-waf-item';
+                item.textContent = name;
+                wafList.appendChild(item);
+            }
 
             const observed = data.assets.http_observed;
             const total = data.assets.total;
@@ -2003,18 +2020,34 @@
         // The node's IP is one extra request and only ever a row or two, so it is fetched
         // separately rather than widening the index that serves the status badge.
         async function loadNodeAddresses() {
+            const request = ++nodeInfoRequest;
             const ipEl = document.getElementById('sub-dash-ip');
-            ipEl.innerText = 'IP ADDR: RESOLVING';
-            try {
-                const body = await apiJSON(
-                    `/api/profiles/${encodeURIComponent(viewState.profile)}/hosts` +
-                    `?host=${encodeURIComponent(viewState.node)}&size=25`);
-                const ips = [...new Set((body.data || []).map(h => h.IP).filter(Boolean))];
-                ipEl.innerText = ips.length ? `IP ADDR: ${ips.join(', ')}` : 'IP ADDR: UNKNOWN NODE';
-            } catch (err) {
-                console.error(err);
-                ipEl.innerText = 'IP ADDR: UNAVAILABLE';
+            const profileID = viewState.profile;
+            const node = viewState.node;
+            ipEl.textContent = 'IP: Resolving… | Checking WAF…';
+            const [hostResult, wafResult] = await Promise.allSettled([apiJSON(
+                    `/api/profiles/${encodeURIComponent(profileID)}/hosts` +
+                    `?host=${encodeURIComponent(node)}&size=25`),
+                    apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/wafs?host=${encodeURIComponent(node)}`)]);
+            if (request !== nodeInfoRequest || profileID !== viewState.profile || node !== viewState.node) return;
+
+            let ipText = 'IP unavailable';
+            if (hostResult.status === 'fulfilled') {
+                const ips = [...new Set((hostResult.value.data || []).map(h => h.IP).filter(Boolean))];
+                ipText = ips.length ? `IP: ${ips.join(', ')}` : 'IP: Unknown';
+            } else {
+                console.error(hostResult.reason);
             }
+
+            let wafText = 'WAF scan unavailable';
+            if (wafResult.status === 'fulfilled') {
+                const wafs = wafResult.value;
+                wafText = wafs.names.length ? `${wafs.names.join(', ')} detected`
+                    : 'No WAF detected';
+            } else {
+                console.error(wafResult.reason);
+            }
+            ipEl.textContent = `${ipText}  |  ${wafText}`;
         }
 
         // ---------------------------------------------------------------- navigation

@@ -14,7 +14,7 @@ The application follows a continuous reconnaissance workflow separated into five
 
 **Stage 01, Basic Recon.** ICEvirtue runs [Subfinder](https://github.com/projectdiscovery/subfinder) for passive subdomain discovery. In Full Mode it also passes `-all` to Subfinder and runs [Amass](https://github.com/owasp-amass/amass), unless you started the engine with `--skip-amass`. If you supplied `--dnsx-list`, it additionally runs [DNSX](https://github.com/projectdiscovery/dnsx) once per wordlist for active DNS bruteforcing. Results from all three sources are merged and de-duplicated before anything else happens.
 
-**Stage 02, Web Validation.** Every discovered name is probed with [HTTPX](https://github.com/projectdiscovery/httpx) to collect status code, page title, web server and resolved IPs. All subdomains are saved to the profile whether they are alive or not, but only hosts answering `200`, `301`, `302` or `307` are carried forward, which keeps the expensive later stages off dead or inaccessible assets.
+**Stage 02, Web Validation.** Every discovered name is probed with [HTTPX](https://github.com/projectdiscovery/httpx) to collect status code, page title, web server, resolved IPs and Web Application Firewall brand. Every HTTP-responsive endpoint then undergoes active [WAFW00F](https://github.com/EnableSecurity/wafw00f) detection, regardless of status code. The first prioritized product match is saved; a generic-only match is shown as **Unknown WAF**, and a successful probe with no match as **No WAF detected**. Failed WAF probes preserve the last successful observation. WAFW00F probes do not follow redirects, to avoid scanning a different host. All subdomains are saved to the profile whether they are alive or not, but only hosts answering `200`, `301`, `302` or `307` are carried forward to later stages.
 
 **Stage 03, Directory and File Fuzzing.** If you supplied `--directory-list`, a built-in concurrent fuzzer walks the carried-forward hosts. You can pass several wordlists and the engine merges and de-duplicates them, so overlapping lists cost you nothing. Requests do not follow redirects, and a path is recorded when it answers `200`, `301`, `302`, `403` or `405`. Without `--directory-list` the stage is skipped.
 
@@ -28,7 +28,7 @@ Start in **Profiles** to add a target domain, for instance `hackerone.com`, and 
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
-**Home** gives the selected profile an overview: total identified assets, the share that have ever answered HTTP, the last scan and last identified asset change in UTC, severity counts, and the highest-priority Nuclei findings.
+**Home** gives the selected profile an overview: total identified assets, the share that have ever answered HTTP, the last scan and last identified asset change in UTC, severity counts, the highest-priority Nuclei findings, and a de-duplicated list of detected WAF technologies.
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
 
@@ -36,7 +36,7 @@ Scheduling follows the **system clock of the machine ICEvirtue runs on**, and th
 
 Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
 
-**Findings** holds the assets identified for each profile. Choose a profile and use the **Nodes** tab to see each asset's HTTP status, counts of observations, first-seen time and last sync. You can sort, filter and page through the nodes. Click a node to inspect its IP address and its Findings, Directories and Credentials tabs, or use the icon at the far right of its row to open the asset in your browser. A node marked **No response** has no recorded HTTP response; this is not a live availability check. Findings appear as the scan stages complete.
+**Findings** holds the assets identified for each profile. Choose a profile and use the **Nodes** tab to see each asset's HTTP status, counts of observations, first-seen time and last sync. You can sort, filter and page through the nodes. Click a node to inspect its IP address, WAF detection, and its Findings, Directories and Credentials tabs, or use the icon at the far right of its row to open the asset in your browser. A node marked **No response** has no recorded HTTP response; this is not a live availability check. Findings appear as the scan stages complete.
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_3.png)
 
@@ -82,6 +82,7 @@ Not every tool is needed in every configuration. Which ones ICEvirtue actually r
 | `amass` | 01 | unless `--skip-amass` |
 | `dnsx` | 01 | only if `--dnsx-list` is given |
 | `httpx` | 02, 05 | always |
+| `wafw00f` | 02 | attempted for every HTTPX-responsive endpoint; active probes are sent |
 | `nuclei` | 04 | unless `--skip-nuclei` |
 | `gau`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | always attempted, failures are non-fatal |
 
@@ -344,9 +345,10 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `DELETE /api/profiles/{id}` | Delete a profile and all of its findings. |
 | `PUT /api/profiles/{id}/schedule` | Change a profile's schedule. |
 | `POST /api/profiles/{id}/scan` | Force a scan now, returns immediately and runs in the background. |
-| `GET /api/profiles/{id}/overview` | Profile-scoped Home summary: UTC scan/change times, exact asset and severity counts, and eight Critical/High findings. |
+| `GET /api/profiles/{id}/overview` | Profile-scoped Home summary: UTC scan/change times, exact asset and severity counts, eight Critical/High findings, and unique detected WAF names. |
 | `GET /api/profiles/{id}/subdomains` | Subdomains found for the profile. |
 | `GET /api/profiles/{id}/hosts` | Alive hosts, with status code, title, web server and IPs. |
+| `GET /api/profiles/{id}/wafs?host=...` | Exact WAF names and successful-probe state for one node. |
 | `GET /api/profiles/{id}/directories` | Directory and file findings. |
 | `GET /api/profiles/{id}/vulnerabilities` | Nuclei findings. |
 | `GET /api/profiles/{id}/vulnerabilities/severity-summary?host=...` | Exact nonzero Nuclei finding counts grouped by severity for one asset. |

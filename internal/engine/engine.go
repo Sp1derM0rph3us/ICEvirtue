@@ -139,9 +139,17 @@ func OrchestrateScan(profile *models.Profile) {
 	// Stage 02. Halting here means nothing answered, so no later stage has a
 	// host to work with. The subdomains above are already saved.
 	hosts, validation := stageValidation(profile, subdomains)
+	newHosts := persistHosts(profile, hosts)
+	changedWAFs := 0
+	if len(hosts) == 0 {
+		validation.skip("wafw00f", "no HTTP-responsive endpoints")
+	} else {
+		wafs, wafErr := RunWAFDetection(hosts)
+		validation.record("wafw00f", len(wafs), wafErr)
+		changedWAFs = persistWAFs(profile, wafs)
+	}
 	validation.Log()
 	status.noteFailures(validation)
-	newHosts := persistHosts(profile, hosts)
 
 	if len(hosts) == 0 {
 		status.halt("no host answered HTTP")
@@ -173,6 +181,7 @@ func OrchestrateScan(profile *models.Profile) {
 	log.Printf("[+] PIPELINE COMPLETE for %s", profile.Domain)
 	log.Printf("[+] New Subdomains: %d", newSubdomains)
 	log.Printf("[+] New Alive Hosts: %d", newHosts)
+	log.Printf("[+] Changed WAF Observations: %d", changedWAFs)
 	log.Printf("[+] New Directories: %d", newDirs)
 	log.Printf("[+] New Vulnerabilities: %d", newVulns)
 	log.Printf("[+] New Secrets Found: %d", newSecrets)
@@ -345,6 +354,10 @@ func persistHosts(profile *models.Profile, hosts []models.AliveHost) int {
 	return broadcastIfNew(profile, "hosts", diffHosts(&profile.ID, hosts))
 }
 
+func persistWAFs(profile *models.Profile, observations []wafObservation) int {
+	return broadcastIfNew(profile, "wafs", diffWAFs(&profile.ID, observations))
+}
+
 func persistDirectories(profile *models.Profile, dirs []models.DirectoryFinding) int {
 	return broadcastIfNew(profile, "directories", diffDirectories(&profile.ID, dirs))
 }
@@ -469,6 +482,37 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 		}
 	}
 	return newCount
+}
+
+func diffWAFs(profileID *uuid.UUID, observations []wafObservation) int {
+	changedCount := 0
+	for _, observation := range observations {
+		var existing models.AliveHost
+		if err := database.DB.Where("profile_id = ? AND url = ?", *profileID, observation.URL).
+			First(&existing).Error; err != nil {
+			log.Printf("[-] Loading HTTP endpoint for WAF observation: %v", err)
+			continue
+		}
+		if existing.WAFName != nil && *existing.WAFName == observation.Name {
+			continue
+		}
+		previous := ""
+		if existing.WAFName != nil {
+			previous = *existing.WAFName
+		}
+		if err := database.DB.Model(&existing).UpdateColumn("waf_name", observation.Name).Error; err != nil {
+			log.Printf("[-] Storing WAF observation: %v", err)
+			continue
+		}
+		// An initial clean result is useful state, but is not a new finding.
+		// A detected product, its replacement, or a previously detected WAF
+		// disappearing is a meaningful change to this asset.
+		if observation.Name != "none" || (previous != "" && previous != "none") {
+			touchAsset(profileID, hostkey.NormalizeOrNil(observation.URL))
+			changedCount++
+		}
+	}
+	return changedCount
 }
 
 func diffVulns(profileID *uuid.UUID, vulns []models.Vulnerability) int {

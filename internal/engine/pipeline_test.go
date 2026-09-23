@@ -65,6 +65,7 @@ func newPipelineEnv(t *testing.T, mode string) (*models.Profile, string) {
 
 	binDir := t.TempDir()
 	t.Setenv("PATH", binDir)
+	fakeTool(t, binDir, "wafw00f", `printf '%s\n' '[{"url":"https://a.example.com","detected":false,"firewall":"None"}]'`)
 
 	resetToolHome(t)
 	// The resolution cache is process-global on purpose, so each test has to
@@ -391,5 +392,34 @@ func TestCleanRunRecordsCompleted(t *testing.T) {
 	}
 	if p.IsScanning {
 		t.Error("IsScanning must be cleared after the run")
+	}
+}
+
+func TestStage2WAFScansEveryHTTPXEndpoint(t *testing.T) {
+	profile, binDir := newPipelineEnv(t, "passive")
+	fakeTool(t, binDir, "subfinder", jsonlEmitter(0, subfinderHosts("a.example.com", "b.example.com")...))
+	fakeTool(t, binDir, "httpx", jsonlEmitter(0,
+		httpxHost("https://a.example.com", 200), httpxHost("https://b.example.com", 403)))
+	fakeTool(t, binDir, "wafw00f", `case "$*" in
+  *a.example.com*) printf '%s\n' '[{"url":"https://a.example.com","detected":true,"firewall":"Cloudflare"}]';;
+  *b.example.com*) printf '%s\n' '[{"url":"https://b.example.com","detected":false,"firewall":"None"}]';;
+esac`)
+	fakeTool(t, binDir, "gau", jsonlEmitter(0))
+	fakeTool(t, binDir, "katana", jsonlEmitter(0))
+	fakeTool(t, binDir, "subjs", jsonlEmitter(0))
+
+	OrchestrateScan(profile)
+
+	for _, expected := range []struct{ url, waf string }{
+		{"https://a.example.com", "Cloudflare"},
+		{"https://b.example.com", "none"},
+	} {
+		var host models.AliveHost
+		if err := database.DB.Where("profile_id = ? AND url = ?", profile.ID, expected.url).First(&host).Error; err != nil {
+			t.Fatal(err)
+		}
+		if host.WAFName == nil || *host.WAFName != expected.waf {
+			t.Errorf("%s WAF = %v, want %s", expected.url, host.WAFName, expected.waf)
+		}
 	}
 }

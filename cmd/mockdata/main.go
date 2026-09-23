@@ -85,10 +85,13 @@ func seedPrimaryProfile(now time.Time) {
 	createAsset(profile, "quiet.acme.example.com", now.AddDate(0, 0, -10), now.AddDate(0, 0, -10), now)
 	createAsset(profile, "203.0.113.42", now.AddDate(0, 0, -12), now.AddDate(0, 0, -2), now)
 
-	createHost(profile, "https://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 200)
-	createHost(profile, "https://api.acme.example.com", "203.0.113.11", "Acme API", "nginx", 403)
-	createHost(profile, "https://admin.acme.example.com", "203.0.113.12", "Admin console", "nginx", 200)
-	createHost(profile, "http://203.0.113.42", "203.0.113.42", "Legacy endpoint", "Apache", 301)
+	createHost(profile, "https://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 200, "Cloudflare")
+	// Same product on a second endpoint exercises Home's one-entry-per-WAF list
+	// and the node detail's aggregation across HTTP and HTTPS.
+	createHost(profile, "http://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 301, "Cloudflare")
+	createHost(profile, "https://api.acme.example.com", "203.0.113.11", "Acme API", "nginx", 403, "Unknown WAF")
+	createHost(profile, "https://admin.acme.example.com", "203.0.113.12", "Admin console", "nginx", 200, "none")
+	createHost(profile, "http://203.0.113.42", "203.0.113.42", "Legacy endpoint", "Apache", 301, "none")
 
 	createVulnerability(profile, app, "missing-hsts", "https://app.acme.example.com", "critical", "HSTS header missing", "The application does not set a Strict-Transport-Security header.")
 	createVulnerability(profile, app, "exposed-git-config", "https://app.acme.example.com/.git/config", "high", "Exposed Git configuration", "A Git configuration file is publicly accessible.")
@@ -143,7 +146,7 @@ func seedSecondaryProfile(now time.Time) {
 	profile := createProfile("globex.example.net", "passive", "every week at 10:00")
 	portal := createAsset(profile, "portal.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -3), now)
 	createAsset(profile, "assets.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -15), now)
-	createHost(profile, "https://portal.globex.example.net", "198.51.100.20", "Globex partner portal", "Caddy", 200)
+	createHost(profile, "https://portal.globex.example.net", "198.51.100.20", "Globex partner portal", "Caddy", 200, "Akamai")
 	createVulnerability(profile, portal, "cors-misconfig", "https://portal.globex.example.net/api", "medium", "Permissive CORS policy", "The API accepts an untrusted origin.")
 	createDirectory(profile, portal, "https://portal.globex.example.net", "https://portal.globex.example.net/health", 200)
 }
@@ -164,8 +167,8 @@ func createAsset(profile models.Profile, domain string, firstSeen, lastChanged, 
 	return domain
 }
 
-func createHost(profile models.Profile, url, ip, title, webServer string, status int) {
-	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: url, IP: ip, Title: title, WebServer: webServer, StatusCode: status}).Error; err != nil {
+func createHost(profile models.Profile, url, ip, title, webServer string, status int, waf string) {
+	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: url, IP: ip, Title: title, WebServer: webServer, StatusCode: status, WAFName: &waf}).Error; err != nil {
 		log.Fatalf("creating host %s: %v", url, err)
 	}
 }

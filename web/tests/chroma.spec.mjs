@@ -99,6 +99,21 @@ test('Home, Profiles, Findings and node details retain their actions', async ({ 
   await expect(page.locator('#table-subs')).toBeVisible();
 });
 
+test('WAF technologies are unique on Home and explicit in node details', async ({ page }) => {
+  await signIn(page);
+  await expect(page.locator('#home-waf-list .chroma-waf-chip')).toHaveCount(2);
+  await expect(page.locator('#home-waf-list')).toContainText('Cloudflare');
+  await expect(page.locator('#home-waf-list')).toContainText('Unknown WAF');
+  await page.getByRole('button', { name: 'Findings', exact: true }).click();
+  await page.locator('#tbody-subs tr').filter({ hasText: /app\.acme\.example\.com/i })
+    .locator('[data-action="open-node"]').click();
+  await expect(page.locator('#sub-dash-ip')).toHaveText('IP: 203.0.113.10  |  Cloudflare detected');
+  await page.getByRole('button', { name: 'Back to nodes' }).click();
+  await page.locator('#tbody-subs tr').filter({ hasText: /admin\.acme\.example\.com/i })
+    .locator('[data-action="open-node"]').click();
+  await expect(page.locator('#sub-dash-ip')).toHaveText('IP: 203.0.113.12  |  No WAF detected');
+});
+
 test('credential views show engine and limit SecretHound details to a node', async ({ page }) => {
   await signIn(page);
   const rendered = await page.evaluate(() => {

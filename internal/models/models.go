@@ -143,10 +143,14 @@ type AliveHost struct {
 	IP         string
 	Title      string
 	WebServer  string
-	StatusCode int            `gorm:"index:idx_host_status,priority:3"`
-	FirstSeen  time.Time      `gorm:"autoCreateTime"`
-	LastSeen   time.Time      `gorm:"autoUpdateTime"`
-	DeletedAt  gorm.DeletedAt `gorm:"index"`
+	StatusCode int `gorm:"index:idx_host_status,priority:3"`
+	// NULL means WAF detection has not completed successfully for this endpoint.
+	// "none" is a successful scan with no detection; a product name or
+	// "Unknown WAF" is a positive detection.
+	WAFName   *string
+	FirstSeen time.Time      `gorm:"autoCreateTime"`
+	LastSeen  time.Time      `gorm:"autoUpdateTime"`
+	DeletedAt gorm.DeletedAt `gorm:"index"`
 }
 
 type Vulnerability struct {

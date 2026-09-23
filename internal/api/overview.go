@@ -4,6 +4,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -44,6 +45,7 @@ type profileOverview struct {
 	Assets                  overviewAssets    `json:"assets"`
 	FindingSeverities       []severitySummary `json:"finding_severities"`
 	PriorityFindings        []priorityFinding `json:"priority_findings"`
+	DetectedWAFs            []string          `json:"detected_wafs"`
 }
 
 const overviewSeverityBucket = `CASE trim(lower(vulnerabilities.severity))
@@ -92,6 +94,26 @@ func getProfileOverview(w http.ResponseWriter, r *http.Request) {
 			Count(&result.Assets.HTTPObserved).Error; err != nil {
 			return err
 		}
+		var wafNames []string
+		if err := tx.Model(&models.AliveHost{}).
+			Distinct("waf_name").
+			Where("profile_id = ? AND waf_name IS NOT NULL AND lower(waf_name) <> ?", id, "none").
+			Pluck("waf_name", &wafNames).Error; err != nil {
+			return err
+		}
+		result.DetectedWAFs = make([]string, 0, len(wafNames))
+		seenWAFs := make(map[string]bool, len(wafNames))
+		for _, name := range wafNames {
+			name = strings.TrimSpace(name)
+			key := strings.ToLower(name)
+			if name != "" && !seenWAFs[key] {
+				result.DetectedWAFs = append(result.DetectedWAFs, name)
+				seenWAFs[key] = true
+			}
+		}
+		sort.Slice(result.DetectedWAFs, func(i, j int) bool {
+			return strings.ToLower(result.DetectedWAFs[i]) < strings.ToLower(result.DetectedWAFs[j])
+		})
 
 		var latest models.Subdomain
 		err := tx.Model(&models.Subdomain{}).Select("last_changed").

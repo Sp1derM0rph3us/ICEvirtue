@@ -34,6 +34,7 @@ const (
 	timeoutAmass       = 60 * time.Minute
 	timeoutDnsx        = 30 * time.Minute
 	timeoutHttpx       = 30 * time.Minute
+	timeoutWAFW00F     = 90 * time.Second
 	timeoutNuclei      = 120 * time.Minute
 	timeoutGau         = 30 * time.Minute
 	timeoutKatana      = 45 * time.Minute
@@ -271,6 +272,7 @@ func PreflightTools() {
 	}{
 		{"subfinder", true},
 		{"httpx", true},
+		{"wafw00f", true},
 		{"amass", !SkipAmass},
 		{"dnsx", DnsxList != ""},
 		{"nuclei", !SkipNuclei},

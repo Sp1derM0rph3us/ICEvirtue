@@ -203,6 +203,10 @@ button:not(:disabled), summary { cursor: pointer; }
 .overview-key::before { content: ''; width: .5rem; height: .5rem; border-radius: 2px; flex: none; background: var(--key-color); }
 .overview-priority-item + .overview-priority-item { border-top: 1px solid var(--ui-line); }
 .overview-priority-item { column-gap: 1rem; row-gap: .5rem; }
+.chroma-waf-note { display: block; margin-top: .2rem; }
+.chroma-waf-list { display: grid; list-style: none; gap: 0; margin: 0; padding: 0; }
+.chroma-waf-item { color: var(--ui-ink); font-size: .8rem; line-height: 1.4; padding: .45rem 0; overflow-wrap: anywhere; }
+.chroma-waf-item + .chroma-waf-item { border-top: 1px solid var(--ui-line); }
 .chroma-priority-badge { display: inline-block; width: fit-content; border-radius: 5px; padding: .25rem .4rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
 .chroma-priority-badge--critical { background: color-mix(in srgb, var(--ui-coral) 13%, var(--ui-surface)); color: var(--ui-coral); }
 .chroma-priority-badge--high { background: color-mix(in srgb, var(--ui-amber) 14%, var(--ui-surface)); color: var(--ui-amber); }
