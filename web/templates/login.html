@@ -32,24 +32,24 @@
         <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
         <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
     </button>
-    <div class="mb-9">
+    <header class="chroma-login-header">
         <span class="chroma-eyebrow">Operator access</span>
-        <div class="flex items-center gap-3 mt-2"><span class="chroma-brand-mark" aria-hidden="true"></span><h1 class="chroma-brand text-2xl">ICEVIRTUE</h1></div>
-        <p class="chroma-subtitle mt-3">Sign in to your reconnaissance workspace.</p>
-    </div>
+        <div class="chroma-login-brand"><span class="chroma-brand-mark" aria-hidden="true"></span><h1 class="chroma-brand">ICEVIRTUE</h1></div>
+        <p class="chroma-subtitle">Sign in to your reconnaissance workspace.</p>
+    </header>
 
     <div id="error-msg" class="chroma-status chroma-status--error hidden mb-5 p-3 w-full" role="alert">
         Sign in failed. Check your credentials.
     </div>
 
-    <form id="login-form" class="space-y-5">
-        <div>
+    <form id="login-form" class="chroma-login-form">
+        <div class="chroma-login-field">
             <label for="username" class="chroma-field-label">Username</label>
             <input type="text" id="username" placeholder="Username" required autocomplete="username"
                    class="input-cyber chroma-login-input text-sm">
         </div>
         
-        <div>
+        <div class="chroma-login-field">
             <label for="password" class="chroma-field-label">Password</label>
             <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"
                    class="input-cyber chroma-login-input text-sm">

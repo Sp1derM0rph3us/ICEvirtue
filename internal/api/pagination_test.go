@@ -108,6 +108,39 @@ func TestResolveClampsThePageAgainstTheTotal(t *testing.T) {
 	}
 }
 
+func TestProfilesPageBeyond250KeepsTheFullPickerIndex(t *testing.T) {
+	newAPIEnv(t)
+
+	profiles := make([]models.Profile, 250)
+	for i := range profiles {
+		profiles[i] = models.Profile{Domain: fmt.Sprintf("host-%03d.example.com", i+1)}
+	}
+	if err := database.DB.Create(&profiles).Error; err != nil {
+		t.Fatalf("seeding profiles: %v", err)
+	}
+
+	rec := route(t, http.MethodGet, "/api/profiles", "/api/profiles?page=11&size=25", getProfiles)
+	got := decodePage[models.Profile](t, rec, "profiles?page=11&size=25")
+	if got.Page.Page != 11 || got.Page.Size != 25 || got.Page.TotalRows != 251 || got.Page.TotalPages != 11 {
+		t.Errorf("page metadata = %+v, want page 11 of 11, size 25, total 251", got.Page)
+	}
+	if len(got.Data) != 1 || got.Data[0].Domain != "host-250.example.com" {
+		t.Errorf("last profile page = %+v, want only host-250.example.com", got.Data)
+	}
+
+	index := route(t, http.MethodGet, "/api/profiles/index", "/api/profiles/index", getProfileIndex)
+	if index.Code != http.StatusOK {
+		t.Fatalf("profile index = %d, want 200: %s", index.Code, index.Body.String())
+	}
+	var options []profileOption
+	if err := json.Unmarshal(index.Body.Bytes(), &options); err != nil {
+		t.Fatalf("decoding profile index: %v", err)
+	}
+	if len(options) != 251 {
+		t.Errorf("profile index contains %d rows, want 251", len(options))
+	}
+}
+
 // TestSubdomainPagesPartitionEveryRow is the guard for the missing ORDER BY. Without a
 // total order, two LIMIT/OFFSET requests against an unchanged table are free to return
 // the same row twice and never return another — which is silent, and which the old

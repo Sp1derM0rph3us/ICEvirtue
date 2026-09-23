@@ -28,11 +28,11 @@ Start in **Profiles** to add a target domain, for instance `hackerone.com`, and 
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
-**Home** gives the selected profile an overview: total identified assets, the share that have ever answered HTTP, the last scan and last identified asset chang
+**Home** gives the selected profile an overview: total identified assets, the share that have ever answered HTTP, the last scan and last identified asset change in UTC, severity counts, and the highest-priority Nuclei findings.
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
 
-Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you
+Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
 
 Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
 

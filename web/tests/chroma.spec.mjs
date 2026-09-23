@@ -9,6 +9,38 @@ async function signIn(page) {
   await expect(page.locator('#home-content')).toBeVisible();
 }
 
+async function mockProfiles(page, initialCount, { mockIndex = true } = {}) {
+  const state = {
+    rows: Array.from({ length: initialCount }, (_, i) => ({
+      ID: `00000000-0000-4000-8000-${String(i + 1).padStart(12, '0')}`,
+      Domain: `host-${String(i + 1).padStart(3, '0')}.example.test`,
+      Schedule: 'every day at 09:00', IsScanning: false, LastScanStatus: '',
+    })),
+    pageRequests: 0,
+    indexRequests: 0,
+    delayPage: null,
+  };
+  await page.route('**/api/profiles/index', route => {
+    state.indexRequests++;
+    if (!mockIndex) return route.fallback();
+    return route.fulfill({ json: state.rows.map(row => ({ id: row.ID, domain: row.Domain })) });
+  });
+  await page.route('**/api/profiles?**', async route => {
+    state.pageRequests++;
+    const q = new URL(route.request().url()).searchParams;
+    const size = Number(q.get('size') || 25);
+    const totalPages = Math.max(1, Math.ceil(state.rows.length / size));
+    const pageNumber = Math.min(Number(q.get('page') || 1), totalPages);
+    const sorted = [...state.rows].sort((a, b) => a.Domain.localeCompare(b.Domain));
+    if (state.delayPage === pageNumber) await new Promise(resolve => setTimeout(resolve, 250));
+    return route.fulfill({ json: {
+      data: sorted.slice((pageNumber - 1) * size, pageNumber * size),
+      page: { page: pageNumber, size, total_rows: state.rows.length, total_pages: totalPages, sort: 'domain-asc' },
+    } });
+  });
+  return state;
+}
+
 test('login has a persistent theme control and accessible sign-in form', async ({ page }) => {
   await page.goto('/login');
   const theme = page.locator('#login-theme-toggle');
@@ -125,6 +157,16 @@ test('Profiles spacing, schedule labels, short IDs and filled Delete work in bot
   expect(edit.x - (label.x + label.width)).toBeGreaterThanOrEqual(8);
   for (const theme of ['dark', 'light']) {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
+    const radii = await page.evaluate(() => {
+      const radius = selector => getComputedStyle(document.querySelector(selector)).borderTopLeftRadius;
+      return {
+        standard: radius('#targets-tbody [data-action="edit-schedule"]'),
+        profiles: radius('#profiles-pager [data-profile-pager="next"]'),
+        findings: radius('#pager [data-pager="next"]'),
+      };
+    });
+    expect(radii.profiles).toBe(radii.standard);
+    expect(radii.findings).toBe(radii.standard);
     const colors = await row.locator('[data-action="delete"]').evaluate(button => ({
       button: getComputedStyle(button).backgroundColor,
       row: getComputedStyle(button.closest('tr')).backgroundColor,
@@ -172,6 +214,115 @@ test('profile creation, scan request, and deletion remain usable on the disposab
   expect(scanRequested).toBe(true);
   await row.locator('[data-action="delete"]').click();
   await expect(row).toHaveCount(0);
+});
+
+test('Profiles pager navigates beyond 250, preserves URL context, and changes page size', async ({ page }) => {
+  await signIn(page);
+  const state = await mockProfiles(page, 251, { mockIndex: false });
+  await page.goto('/?view=profiles&size=50');
+  await expect(page.locator('#targets-tbody tr')).toHaveCount(25);
+  await expect(page.locator('#target-count')).toHaveText('251 profiles');
+  await expect(page.locator('#profiles-pager-summary')).toHaveText('1–25 of 251');
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 11');
+  const pagerButton = await page.locator('#profiles-pager [data-profile-pager="next"]').boundingBox();
+  expect(pagerButton.height).toBeLessThanOrEqual(32);
+  await expect(page.locator('#profiles-pager [data-profile-pager="first"]')).toBeDisabled();
+  await expect(page.locator('#profiles-pager [data-profile-pager="prev"]')).toBeDisabled();
+  const indexRequests = state.indexRequests;
+  await page.locator('#profiles-pager [data-profile-pager="next"]').click();
+  await expect(page.locator('#profiles-pager-summary')).toHaveText('26–50 of 251');
+  await expect(page.locator('#targets-tbody')).toContainText('host-026.example.test');
+  await expect.poll(() => new URL(page.url()).searchParams.get('profiles_page')).toBe('2');
+  expect(new URL(page.url()).searchParams.get('size')).toBe('50');
+  expect(state.indexRequests).toBe(indexRequests);
+  await page.reload();
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 2 / 11');
+  await page.locator('#profiles-page-size').selectOption('50');
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 6');
+  await expect(page.locator('#targets-tbody')).toContainText('host-026.example.test');
+  expect(new URL(page.url()).searchParams.get('profiles_size')).toBe('50');
+  await page.locator('#profiles-pager [data-profile-pager="last"]').click();
+  await expect(page.locator('#profiles-pager-summary')).toHaveText('251–251 of 251');
+  await expect(page.locator('#profiles-pager [data-profile-pager="next"]')).toBeDisabled();
+  await expect(page.locator('#profiles-pager [data-profile-pager="last"]')).toBeDisabled();
+  await page.locator('#nav-btn-findings').click();
+  await page.locator('#nav-btn-profiles').click();
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 6 / 6');
+  expect(state.pageRequests).toBeGreaterThanOrEqual(4);
+});
+
+test('Profiles creation reveals the new row and deletion clamps the last page', async ({ page }) => {
+  await signIn(page);
+  const state = await mockProfiles(page, 26);
+  await page.route('**/api/profiles', route => {
+    if (route.request().method() !== 'POST') return route.continue();
+    const body = route.request().postDataJSON();
+    const created = {
+      ID: '00000000-0000-4000-8000-000000000027',
+      Domain: body.domain, Schedule: body.schedule, IsScanning: false, LastScanStatus: '',
+    };
+    state.rows.push(created);
+    return route.fulfill({ status: 201, json: created });
+  });
+  await page.route('**/api/profiles/*', route => {
+    if (route.request().method() !== 'DELETE') return route.fallback();
+    const id = route.request().url().split('/').pop();
+    state.rows = state.rows.filter(row => row.ID !== id);
+    return route.fulfill({ status: 204, body: '' });
+  });
+  await page.goto('/?view=profiles');
+  await page.locator('#input-domain').fill('host-026a.example.test');
+  await page.getByRole('button', { name: 'Add profile' }).click();
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 2 / 2');
+  const created = page.locator('#targets-tbody tr').filter({ hasText: 'host-026a.example.test' });
+  await expect(created).toBeVisible();
+  await expect(page.locator('#select-profile option')).toHaveCount(27);
+  await expect(page.locator('#select-home-profile option')).toHaveCount(27);
+  page.on('dialog', dialog => dialog.accept());
+  await created.locator('[data-action="delete"]').click();
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 2 / 2');
+  const last = page.locator('#targets-tbody tr').filter({ hasText: 'host-026.example.test' });
+  await last.locator('[data-action="delete"]').click();
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 1');
+  await expect(page.locator('#targets-tbody tr')).toHaveCount(25);
+});
+
+test('Profiles pager handles empty, single-page, and mobile-card layouts', async ({ page }) => {
+  await signIn(page);
+  const state = await mockProfiles(page, 1);
+  await page.goto('/?view=profiles');
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 1');
+  await expect(page.locator('#profiles-pager [data-profile-pager="next"]')).toBeDisabled();
+  const requests = state.pageRequests;
+  await page.setViewportSize({ width: 320, height: 568 });
+  await expect(page.locator('#targets-tbody tr')).toHaveCount(0);
+  await expect(page.locator('#targets-mobile li')).toHaveCount(1);
+  await expect(page.locator('#profiles-pager')).toBeVisible();
+  expect(state.pageRequests).toBe(requests);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(1);
+  state.rows = [];
+  await page.reload();
+  await expect(page.locator('#targets-empty')).toBeVisible();
+  await expect(page.locator('#profiles-pager')).toBeHidden();
+  await expect(page.locator('#target-count')).toHaveText('0 profiles');
+});
+
+test('a late Profiles page response cannot replace the newer page', async ({ page }) => {
+  await signIn(page);
+  const state = await mockProfiles(page, 75);
+  await page.goto('/?view=profiles');
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 3');
+  state.delayPage = 2;
+  await page.evaluate(() => {
+    goToProfilesPage(2);
+    viewState.profilesPage = 3;
+    loadProfilesPage();
+  });
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 3 / 3');
+  await expect(page.locator('#targets-tbody')).toContainText('host-051.example.test');
+  await page.waitForTimeout(300);
+  await expect(page.locator('#profiles-pager-position')).toHaveText('Page 3 / 3');
+  await expect(page.locator('#targets-tbody')).not.toContainText('host-026.example.test');
 });
 
 test('severity breakdown opens after hover, reuses cache, and hides on leave and Escape', async ({ page }) => {

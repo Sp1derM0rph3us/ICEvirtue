@@ -199,6 +199,27 @@
                         No profiles yet. Add a target domain above to get started.
                     </div>
                 </div>
+                <div id="profiles-page-error" class="hidden p-5 border-t border-slate-800 text-sm chroma-muted" role="alert">
+                    Could not load profiles. <button type="button" onclick="loadProfilesPage()" class="chroma-accent font-bold underline">Retry</button>
+                </div>
+                <div id="profiles-pager" class="chroma-profile-pager hidden items-center justify-between gap-4 px-5 py-3 border-t border-slate-800 flex-wrap" aria-label="Configured profiles pages">
+                    <div class="flex items-center gap-4 flex-wrap">
+                        <span id="profiles-pager-summary" class="text-xs font-mono font-bold chroma-muted tabular-nums whitespace-nowrap"></span>
+                        <div class="flex items-center gap-2">
+                            <label for="profiles-page-size" class="text-xs font-bold chroma-muted whitespace-nowrap">Per page</label>
+                            <select id="profiles-page-size" onchange="onProfilesPageSizeChanged()" class="chroma-select font-mono text-sm" aria-label="Profiles per page">
+                                <option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="250">250</option><option value="500">500</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="chroma-profile-pager-actions flex items-center gap-1.5 flex-wrap">
+                        <button type="button" onclick="goToProfilesPage(1)" data-profile-pager="first" class="chroma-button-secondary">&laquo; First</button>
+                        <button type="button" onclick="goToProfilesPage(viewState.profilesPage - 1)" data-profile-pager="prev" class="chroma-button-secondary">&lsaquo; Prev</button>
+                        <span id="profiles-pager-position" class="px-2 text-xs font-mono font-bold chroma-accent tabular-nums whitespace-nowrap"></span>
+                        <button type="button" onclick="goToProfilesPage(viewState.profilesPage + 1)" data-profile-pager="next" class="chroma-button-secondary">Next &rsaquo;</button>
+                        <button type="button" onclick="goToProfilesPage(profilePageMeta.total_pages)" data-profile-pager="last" class="chroma-button-secondary">Last &raquo;</button>
+                    </div>
+                </div>
             </div>
         </section>
 
@@ -510,6 +531,7 @@
         // operator a number the server silently refuses.
         const MAX_PAGE_SIZE = 1000;
         const PAGE_SIZES = [25, 50, 100, 250, 500];
+        const DEFAULT_PROFILES_SIZE = 25;
 
         // Per-tab defaults, matching the server's. They differ because the rows differ in
         // width: a vulnerability carries a name and a severity, a directory is one line.
@@ -558,6 +580,8 @@
             tab: 'subs',      // which top-level Findings tab
             node: null,       // the sub-dashboard's host, or null
             nodeTab: 'vulns', // which sub-dashboard tab
+            profilesPage: 1,
+            profilesSize: DEFAULT_PROFILES_SIZE,
             page: 1,
             size: DEFAULT_SIZE.subs,
             sort: 'name-asc',
@@ -575,6 +599,10 @@
         // profile so the browser could correlate them itself.
         let currentRows = [];
         let profileRows = [];
+        let profilePageMeta = { page: 1, size: DEFAULT_PROFILES_SIZE, total_rows: 0, total_pages: 1 };
+        let profilePageRequest = 0;
+        let profilePageLoading = false;
+        let profilePageError = false;
         const mobileLayout = window.matchMedia('(max-width: 640px)');
 
         // Counts accumulated from SSE while a scan runs, shown as a badge rather than
@@ -912,6 +940,9 @@
             viewState.node = node && node.length <= 253 ? node : null;
             viewState.page = clampInt(q.get('page'), 1, 1, 1000000);
             viewState.size = clampInt(q.get('size'), defaultSizeForView(), 1, MAX_PAGE_SIZE);
+            viewState.profilesPage = clampInt(q.get('profiles_page'), 1, 1, 1000000);
+            const profilesSize = Number(q.get('profiles_size'));
+            viewState.profilesSize = PAGE_SIZES.includes(profilesSize) ? profilesSize : DEFAULT_PROFILES_SIZE;
         }
 
         // writeViewState uses replaceState, not pushState: a filter click or a page step is
@@ -932,6 +963,8 @@
             }
             if (viewState.page > 1) q.set('page', String(viewState.page));
             if (viewState.size !== defaultSizeForView()) q.set('size', String(viewState.size));
+            if (viewState.profilesPage > 1) q.set('profiles_page', String(viewState.profilesPage));
+            if (viewState.profilesSize !== DEFAULT_PROFILES_SIZE) q.set('profiles_size', String(viewState.profilesSize));
             if (viewState.sort !== 'name-asc') q.set('sort', viewState.sort);
             if (viewState.filter) q.set('filter', viewState.filter);
 
@@ -1021,7 +1054,7 @@
                 e.target.reset();
                 // One refresh rather than three hand-maintained insertions: the table, the
                 // picker and the count all come from the server, so they cannot drift.
-                await refreshProfiles();
+                await refreshProfiles({ revealProfileId: newProfile.ID });
             } catch (err) {
                 alert("Failed to add profile: " + err.message);
             } finally {
@@ -1149,28 +1182,77 @@
             const frag = document.createDocumentFragment();
             profileRows.forEach(p => frag.appendChild(mobileLayout.matches ? buildTargetCard(p) : buildTargetRow(p, false)));
             (mobileLayout.matches ? mobile : tbody).appendChild(frag);
-            document.getElementById('targets-empty').classList.toggle('hidden', profileRows.length > 0);
+            document.getElementById('targets-empty').classList.toggle('hidden',
+                profileRows.length > 0 || profilePageMeta.total_rows > 0 || profilePageError);
         }
 
-        // refreshProfiles fills the targets table from the paginated endpoint, and the
-        // picker from its own unpaginated one.
-        //
-        // They are two requests on purpose. Both used to come from a single unpaginated
-        // /api/profiles, and paginating that one endpoint at 25 would have silently
-        // truncated the dropdown, leaving the 26th target unreachable with nothing on
-        // screen to explain why. The picker needs two columns for every profile; the table
-        // needs every column for one page.
-        async function refreshProfiles() {
+        function renderProfilesPager() {
+            const pager = document.getElementById('profiles-pager');
+            const showing = profilePageMeta.total_rows > 0 && !profilePageError;
+            pager.classList.toggle('hidden', !showing);
+            pager.classList.toggle('flex', showing);
+            document.getElementById('profiles-page-error').classList.toggle('hidden', !profilePageError);
+            document.getElementById('profiles-page-size').value = String(viewState.profilesSize);
+            document.getElementById('profiles-page-size').disabled = profilePageLoading;
+            if (!showing) return;
+
+            const from = (profilePageMeta.page - 1) * profilePageMeta.size + 1;
+            const to = Math.min(profilePageMeta.page * profilePageMeta.size, profilePageMeta.total_rows);
+            document.getElementById('profiles-pager-summary').textContent =
+                `${from}–${to} of ${profilePageMeta.total_rows}`;
+            document.getElementById('profiles-pager-position').textContent =
+                `Page ${profilePageMeta.page} / ${profilePageMeta.total_pages}`;
+            const atFirst = profilePageMeta.page <= 1;
+            const atLast = profilePageMeta.page >= profilePageMeta.total_pages;
+            for (const [action, disabled] of Object.entries({
+                first: atFirst, prev: atFirst, next: atLast, last: atLast,
+            })) {
+                pager.querySelector(`[data-profile-pager="${action}"]`).disabled = profilePageLoading || disabled;
+            }
+        }
+
+        // The table uses one page; the separate, compact index keeps every profile
+        // available in Home and Findings even when this table has many pages.
+        async function loadProfilesPage() {
+            const request = ++profilePageRequest;
+            profilePageLoading = true;
+            profilePageError = false;
+            renderProfilesPager();
+            writeViewState();
             try {
-                const [table, options] = await Promise.all([
-                    apiJSON('/api/profiles?size=250'),
-                    apiJSON('/api/profiles/index'),
-                ]);
-
-                const rows = table.data || [];
-                profileRows = rows;
+                const params = new URLSearchParams({
+                    page: String(viewState.profilesPage),
+                    size: String(viewState.profilesSize),
+                    sort: 'domain-asc',
+                });
+                const table = await apiJSON(`/api/profiles?${params}`);
+                if (request !== profilePageRequest) return;
+                profileRows = table.data || [];
+                profilePageMeta = table.page;
+                viewState.profilesPage = profilePageMeta.page;
+                viewState.profilesSize = profilePageMeta.size;
+                writeViewState();
                 renderProfileRows();
+                const count = profilePageMeta.total_rows;
+                document.getElementById('target-count').textContent =
+                    `${count} ${count === 1 ? 'profile' : 'profiles'}`;
+            } catch (err) {
+                if (request !== profilePageRequest) return;
+                console.error('Error loading profiles page:', err);
+                profileRows = [];
+                profilePageError = true;
+                renderProfileRows();
+            } finally {
+                if (request === profilePageRequest) {
+                    profilePageLoading = false;
+                    renderProfilesPager();
+                }
+            }
+        }
 
+        async function refreshProfileIndex() {
+            try {
+                const options = await apiJSON('/api/profiles/index');
                 const select = document.getElementById('select-profile');
                 select.innerHTML = '';
                 (options || []).forEach(o => {
@@ -1198,16 +1280,41 @@
                 if (viewState.homeProfile) homeSelect.value = viewState.homeProfile;
                 writeViewState();
                 profileIndexReady = true;
-
-                const countBadge = document.getElementById('target-count');
-                if (countBadge) {
-                    const count = table.page ? table.page.total_rows : rows.length;
-                    countBadge.innerText = `${count} ${count === 1 ? 'profile' : 'profiles'}`;
-                }
+                return options || [];
             } catch (err) {
-                console.error("Error refreshing profiles:", err);
+                console.error('Error refreshing profile index:', err);
                 profileIndexReady = false;
+                return null;
             }
+        }
+
+        async function refreshProfiles({ revealProfileId = null } = {}) {
+            if (revealProfileId) {
+                const options = await refreshProfileIndex();
+                if (options) {
+                    const index = options.findIndex(option => option.id === String(revealProfileId));
+                    if (index >= 0) viewState.profilesPage = Math.floor(index / viewState.profilesSize) + 1;
+                }
+                await loadProfilesPage();
+            } else {
+                await Promise.all([loadProfilesPage(), refreshProfileIndex()]);
+            }
+        }
+
+        function onProfilesPageSizeChanged() {
+            const size = Number(document.getElementById('profiles-page-size').value);
+            if (!PAGE_SIZES.includes(size)) return;
+            const firstRow = (profilePageMeta.page - 1) * profilePageMeta.size;
+            viewState.profilesSize = size;
+            viewState.profilesPage = Math.floor(firstRow / size) + 1;
+            loadProfilesPage();
+        }
+
+        function goToProfilesPage(page) {
+            const target = Math.min(Math.max(page, 1), Math.max(profilePageMeta.total_pages, 1));
+            if (target === viewState.profilesPage) return;
+            viewState.profilesPage = target;
+            loadProfilesPage();
         }
 
         function onProfileChanged() {
@@ -2130,6 +2237,7 @@
             readViewState();
             resetFilterPills(viewState.filter);
             document.getElementById('select-sort').value = viewState.sort;
+            document.getElementById('profiles-page-size').value = String(viewState.profilesSize);
             syncSizeSelect();
 
             refreshProfiles().then(() => {

@@ -262,8 +262,13 @@ button:not(:disabled), summary { cursor: pointer; }
 .chroma-finding-badge:hover, .chroma-finding-badge:focus-visible { border-color: var(--ui-coral); }
 .chroma-severity-tooltip { background: var(--ui-surface); color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: 10px; box-shadow: 0 8px 25px var(--ui-shadow); }
 #severity-tooltip { position: fixed; z-index: 60; pointer-events: none; min-width: 11rem; max-width: min(20rem, calc(100vw - 2rem)); }
-#pager button:disabled { opacity: .36; }
-#pager button:disabled:hover { border-color: var(--ui-line); color: var(--ui-muted); }
+#pager button, #profiles-pager button { border-radius: 9px; }
+#pager button:disabled, #profiles-pager button:disabled { opacity: .36; }
+#pager button:disabled:hover, #profiles-pager button:disabled:hover { border-color: var(--ui-line); color: var(--ui-muted); }
+.chroma-profile-pager { background: var(--ui-surface-soft); min-width: 0; }
+.chroma-profile-pager-actions { min-width: 0; }
+.chroma-profile-pager-actions button { min-height: 30px; padding: .375rem .75rem; font-size: .6875rem; line-height: 1rem; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; }
+.chroma-profile-pager select { min-width: 5rem; }
 .chroma-modal-scrim { background: var(--ui-scrim); backdrop-filter: none; }
 .chroma-modal { max-height: calc(100dvh - 2rem); overflow-y: auto; }
 .chroma-mobile-list { display: none; }
@@ -282,6 +287,14 @@ button:not(:disabled), summary { cursor: pointer; }
 body.chroma-login-page { display: flex; justify-content: center; align-items: center; margin: 0; padding: 1rem; }
 .glass-box.chroma-login-card { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 16px; box-shadow: 0 18px 48px var(--ui-shadow); backdrop-filter: none; }
 .glass-box.chroma-login-card::before { display: none; animation: none; }
+.chroma-login-header { display: grid; gap: .8rem; margin-bottom: 2rem; }
+.chroma-login-header .chroma-eyebrow, .chroma-login-header .chroma-subtitle { margin: 0; }
+.chroma-login-brand { display: flex; align-items: center; gap: .75rem; min-height: 32px; }
+.chroma-login-brand h1 { margin: 0; line-height: 1.15; }
+.chroma-login-form { display: grid; gap: 1.25rem; }
+.chroma-login-field { display: grid; gap: .5rem; min-width: 0; }
+.chroma-login-field .chroma-field-label { margin: 0; }
+#error-msg { margin-bottom: 1.25rem; }
 .chroma-login-input.input-cyber { display: block; width: 100%; background: var(--ui-canvas); border: 1px solid var(--ui-line); border-radius: 9px; color: var(--ui-ink); min-height: 48px; padding: .7rem .85rem; box-shadow: none; transition: border-color .15s; }
 .chroma-login-input.input-cyber:focus { border-color: var(--ui-rose); outline: 2px solid var(--ui-plum); outline-offset: 1px; box-shadow: none; }
 .chroma-login-submit.btn-cyber { border-radius: 9px; background: var(--ui-rose); color: var(--ui-canvas); box-shadow: none; transition: background-color .15s; }
@@ -356,8 +369,8 @@ body.chroma-login-page { display: flex; justify-content: center; align-items: ce
   #sub-dashboard > .glass-header > div:first-child > div:last-child { min-width: 0; overflow-wrap: anywhere; }
   #sub-dash-title { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
   #sub-dashboard > .flex-grow.overflow-auto { overflow: visible; padding: 1rem; }
-  #pager { padding: .8rem; }
-  #pager > div { flex-wrap: wrap; }
+  #pager, #profiles-pager { padding: .8rem; }
+  #pager > div, #profiles-pager > div { flex-wrap: wrap; }
   .chroma-finding-panel { overflow: visible; }
 }
 @media (max-width: 390px) {
