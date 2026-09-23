@@ -1,6 +1,7 @@
 # ICEvirtue
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_login.png)
+
 ICEvirtue is the netrunner's most essential tool. It executes a standardized reconnaissance and enumeration pipeline and stores the results inside **target profiles**, allowing netrunners to focus on what really matters: cracking those defenses.
 
 You register a domain once, tell ICEvirtue how often to look at it, and it keeps looking. Every run is diffed against everything it has seen before for that profile, so the dashboard tells you what is *new* rather than dumping the same ten thousand subdomains on you every night. Findings are grouped per profile into subdomains, alive hosts, directories, vulnerabilities and secrets, and the dashboard updates itself live over Server-Sent Events while a scan is running.
@@ -20,25 +21,28 @@ The application follows a continuous reconnaissance workflow separated into five
 **Stage 04, Vulnerability Scanning.** Unless you passed `--skip-nuclei`, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
 
 **Stage 05, Secret Hunting.** Finally ICEvirtue hunts hard-coded secrets and credentials in historical and current JavaScript. It collects candidate URLs from [Gau](https://github.com/lc/gau), validates the historical ones with HTTPX, crawls the live hosts with [Katana](https://github.com/projectdiscovery/katana), extracts script references with [Subjs](https://github.com/lc/subjs), and then feeds the resulting set of JS files to [Mantra](https://github.com/brosck/mantra) and [SecretHound](https://github.com/rafabd1/SecretHound). This stage is best effort: if one of those tools is missing or fails, the failure is logged and the rest of the stage still runs.
+
 ## Using The Dashboard
 
-The web interface is straightforward. You add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
+Start in **Profiles** to add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a
 
-Home gives each profile a compact overview: total identified assets, the last scan and last identified asset change in UTC, the share of assets that have ever answered HTTP, severity counts, and the highest-priority Nuclei findings. An HTTP response recorded earlier does not prove an asset answered the latest scan; findings likewise remain identified observations until ICEvirtue gains resolution tracking. WAF detection has a reserved panel for a future capability. Home has its own profile selector, so changing it does not disturb the Findings tab's selected node.
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
+
+**Home** gives the selected profile an overview: total identified assets, the share that have ever answered HTTP, the last scan and last identified asset chang
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
 
-Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
+Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you
 
 Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
 
-Once a scan starts, the "Findings" tab fills in as soon as the initial recon phase finishes, and each later stage complements the existing findings as it completes. Click a finding to see its details, or the icon at the far right of its row to open the asset itself. Secrets live in their own tab inside "Findings", and the "Select Profile" drop-down switches profiles. The dashboard is updated live, so you never need to refresh to see a target flip between scanning and idle, or to see new findings appear.
+**Findings** holds the assets identified for each profile. Choose a profile and use the **Nodes** tab to see each asset's HTTP status, counts of observations, first-seen time and last sync. You can sort, filter and page through the nodes. Click a node to inspect its IP address and its Findings, Directories and Credentials tabs, or use the icon at the far right of its row to open the asset in your browser. A node marked **No response** has no recorded HTTP response; this is not a live availability check. Findings appear as the scan stages complete.
 
-You can also force a scan outside its schedule from the dashboard. A profile that is already scanning refuses a second concurrent run rather than doubling up, and the scan lock is released automatically when the run finishes, including when it fails.
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_3.png)
 
-The "Last Run" column summarises how each profile's most recent run ended, so you do not have to read the service log to notice a problem. A healthy run reads `completed`. A run where some tool fell over reads `completed, amass failed in Stage 01 Discovery`, or `completed, 3 tools failed` when more than one did. A run that stopped early reads `halted:` followed by the reason, highlighted in red, and remember that a halted run still saved everything it collected before stopping.
+The **Credentials** tab in Findings shows every credential identified for the selected profile, regardless of which node it came from, with its type, value, source and scanning engine. SecretHound findings link to their source JavaScript files; Mantra findings without a source are shown as **Unattributed**. Older credentials without recorded scanner provenance show **Unknown** as the engine. A node's own Credentials tab shows only findings attributed to that node, including risk, occurrence count, and expandable description and context when available.
 
-![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_4.png)
 
 ### When A Run Stops Early
 
