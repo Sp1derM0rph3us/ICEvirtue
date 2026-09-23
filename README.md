@@ -24,7 +24,7 @@ The application follows a continuous reconnaissance workflow separated into five
 
 ## Using The Dashboard
 
-Start in **Profiles** to add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a
+Start in **Profiles** to add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. This page lists each profile's schedule, scan status and last run, and lets you run a scan, edit its schedule or delete it. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
