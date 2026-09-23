@@ -20,6 +20,25 @@ The application follows a continuous reconnaissance workflow separated into five
 **Stage 04, Vulnerability Scanning.** Unless you passed `--skip-nuclei`, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
 
 **Stage 05, Secret Hunting.** Finally ICEvirtue hunts hard-coded secrets and credentials in historical and current JavaScript. It collects candidate URLs from [Gau](https://github.com/lc/gau), validates the historical ones with HTTPX, crawls the live hosts with [Katana](https://github.com/projectdiscovery/katana), extracts script references with [Subjs](https://github.com/lc/subjs), and then feeds the resulting set of JS files to [Mantra](https://github.com/brosck/mantra) and [SecretHound](https://github.com/rafabd1/SecretHound). This stage is best effort: if one of those tools is missing or fails, the failure is logged and the rest of the stage still runs.
+## Using The Dashboard
+
+The web interface is straightforward. You add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
+
+Home gives each profile a compact overview: total identified assets, the last scan and last identified asset change in UTC, the share of assets that have ever answered HTTP, severity counts, and the highest-priority Nuclei findings. An HTTP response recorded earlier does not prove an asset answered the latest scan; findings likewise remain identified observations until ICEvirtue gains resolution tracking. WAF detection has a reserved panel for a future capability. Home has its own profile selector, so changing it does not disturb the Findings tab's selected node.
+
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
+
+Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
+
+Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
+
+Once a scan starts, the "Findings" tab fills in as soon as the initial recon phase finishes, and each later stage complements the existing findings as it completes. Click a finding to see its details, or the icon at the far right of its row to open the asset itself. Secrets live in their own tab inside "Findings", and the "Select Profile" drop-down switches profiles. The dashboard is updated live, so you never need to refresh to see a target flip between scanning and idle, or to see new findings appear.
+
+You can also force a scan outside its schedule from the dashboard. A profile that is already scanning refuses a second concurrent run rather than doubling up, and the scan lock is released automatically when the run finishes, including when it fails.
+
+The "Last Run" column summarises how each profile's most recent run ended, so you do not have to read the service log to notice a problem. A healthy run reads `completed`. A run where some tool fell over reads `completed, amass failed in Stage 01 Discovery`, or `completed, 3 tools failed` when more than one did. A run that stopped early reads `halted:` followed by the reason, highlighted in red, and remember that a halted run still saved everything it collected before stopping.
+
+![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
 ### When A Run Stops Early
 
@@ -304,26 +323,6 @@ The **session signing key** is 64 random bytes generated on first run and reused
 The key is written `0600` inside a `0700` directory. Copy it if you want existing sessions to survive a migration, and delete it if you want to invalidate every session, in which case everyone simply logs in again.
 
 The **tool config home** is where the spawned recon tools keep their own configuration and cache, such as `subfinder`'s `provider-config.yaml` and `nuclei`'s templates. It defaults to `/opt/icevirtue` and falls back to `$HOME` and then to a writable directory ICEvirtue can find, and `--tool-home` overrides it. Files land under `<tool-home>/.config/`. This is entirely independent of `--db-path`, and the resolved value is logged at startup. If you want API keys for `subfinder`'s paid sources, put them in `<tool-home>/.config/subfinder/provider-config.yaml`.
-
-## Using The Dashboard
-
-The web interface is straightforward. You add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
-
-Home gives each profile a compact overview: total identified assets, the last scan and last identified asset change in UTC, the share of assets that have ever answered HTTP, severity counts, and the highest-priority Nuclei findings. An HTTP response recorded earlier does not prove an asset answered the latest scan; findings likewise remain identified observations until ICEvirtue gains resolution tracking. WAF detection has a reserved panel for a future capability. Home has its own profile selector, so changing it does not disturb the Findings tab's selected node.
-
-![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
-
-Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
-
-Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
-
-Once a scan starts, the "Findings" tab fills in as soon as the initial recon phase finishes, and each later stage complements the existing findings as it completes. Click a finding to see its details, or the icon at the far right of its row to open the asset itself. Secrets live in their own tab inside "Findings", and the "Select Profile" drop-down switches profiles. The dashboard is updated live, so you never need to refresh to see a target flip between scanning and idle, or to see new findings appear.
-
-You can also force a scan outside its schedule from the dashboard. A profile that is already scanning refuses a second concurrent run rather than doubling up, and the scan lock is released automatically when the run finishes, including when it fails.
-
-The "Last Run" column summarises how each profile's most recent run ended, so you do not have to read the service log to notice a problem. A healthy run reads `completed`. A run where some tool fell over reads `completed, amass failed in Stage 01 Discovery`, or `completed, 3 tools failed` when more than one did. A run that stopped early reads `halted:` followed by the reason, highlighted in red, and remember that a halted run still saved everything it collected before stopping.
-
-![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_2.png)
 
 ## HTTP API
 
