@@ -8,10 +8,63 @@ import (
 	"testing"
 	"time"
 
+	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
+
+type legacySecretFinding struct {
+	ID          uint `gorm:"primaryKey"`
+	ProfileID   uuid.UUID
+	SourceURL   string
+	Host        *string
+	SecretType  string
+	SecretValue string
+	FirstSeen   time.Time
+	LastSeen    time.Time
+	DeletedAt   gorm.DeletedAt
+}
+
+func (legacySecretFinding) TableName() string { return "secret_findings" }
+
+func TestSecretMetadataMigrationRetainsLegacyRows(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy.db")
+	oldDB, err := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := oldDB.AutoMigrate(&legacySecretFinding{}); err != nil {
+		t.Fatal(err)
+	}
+	id := uuid.New()
+	if err := oldDB.Create(&legacySecretFinding{
+		ProfileID: id, SourceURL: "https://a.example.com/app.js", SecretType: "aws", SecretValue: "legacy",
+	}).Error; err != nil {
+		t.Fatal(err)
+	}
+	sqlDB, err := oldDB.DB()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := sqlDB.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	previous := DB
+	t.Cleanup(func() { DB = previous })
+	if err := InitDatabase(path); err != nil {
+		t.Fatalf("upgrading legacy database: %v", err)
+	}
+	var row models.SecretFinding
+	if err := DB.Where("profile_id = ?", id).First(&row).Error; err != nil {
+		t.Fatalf("legacy credential lost: %v", err)
+	}
+	if row.Engine != "" || row.Risk != "" || row.Occurrences != 0 || len(row.Context) != 0 {
+		t.Fatalf("legacy credential should have unknown metadata: %+v", row)
+	}
+}
 
 // newMigrateEnv opens an isolated database and returns a profile id to hang rows off.
 func newMigrateEnv(t *testing.T) uuid.UUID {

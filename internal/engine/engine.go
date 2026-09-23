@@ -1,9 +1,11 @@
 package engine
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -514,28 +516,42 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 	newCount := 0
 	for _, s := range secrets {
 		var existing models.SecretFinding
-		result := database.DB.Where("profile_id = ? AND secret_type = ? AND secret_value = ?", *profileID, s.SecretType, s.SecretValue).First(&existing)
+		result := database.DB.Where("profile_id = ? AND source_url = ? AND secret_type = ? AND secret_value = ?",
+			*profileID, s.SourceURL, s.SecretType, s.SecretValue).First(&existing)
 
-		if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
 			if Verbose {
 				log.Printf("[VERBOSE] [!] NEW Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
-			database.DB.Create(&s)
+			if err := database.DB.Create(&s).Error; err != nil {
+				log.Printf("[-] Storing secret finding: %v", err)
+				continue
+			}
 			touchAsset(profileID, hostkey.NormalizeOrNil(s.SourceURL))
 			newCount++
-		} else {
-			if Verbose {
-				log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
-			}
-			// Note the existing-row lookup above keys on (secret_type, secret_value)
-			// and ignores SourceURL, so a secret found on a second host updates the
-			// first row rather than creating one. That predates this change and is not
-			// fixed here; it means the host recorded for a shared secret is whichever
-			// one the most recent scan saw.
-			database.DB.Model(&existing).Updates(map[string]interface{}{
-				"last_seen": gorm.Expr("CURRENT_TIMESTAMP"),
-				"host":      hostkey.NormalizeOrNil(s.SourceURL),
-			})
+			continue
+		}
+		if result.Error != nil {
+			log.Printf("[-] Loading secret finding: %v", result.Error)
+			continue
+		}
+		if Verbose {
+			log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
+		}
+		changed := existing.Engine != s.Engine || existing.Risk != s.Risk ||
+			existing.Description != s.Description || existing.Occurrences != s.Occurrences ||
+			!slices.Equal(existing.Context, s.Context)
+		existing.Engine = s.Engine
+		existing.Risk = s.Risk
+		existing.Description = s.Description
+		existing.Context = s.Context
+		existing.Occurrences = s.Occurrences
+		if err := database.DB.Save(&existing).Error; err != nil {
+			log.Printf("[-] Updating secret finding: %v", err)
+			continue
+		}
+		if changed {
+			touchAsset(profileID, hostkey.NormalizeOrNil(s.SourceURL))
 		}
 	}
 	return newCount

@@ -48,16 +48,16 @@ type toolSpec struct {
 // Only the goflags-based tools are verified, because -version is a property of
 // that shared flag library. The rest are located by name alone.
 var toolSpecs = map[string]toolSpec{
-	"subfinder":       {names: []string{"subfinder"}, verify: true},
-	"httpx":           {names: []string{"httpx", "httpx-toolkit", "httpx-pd"}, verify: true},
-	"dnsx":            {names: []string{"dnsx", "dnsx-toolkit"}, verify: true},
-	"nuclei":          {names: []string{"nuclei", "nuclei-toolkit"}, verify: true},
-	"katana":          {names: []string{"katana", "katana-toolkit"}, verify: true},
-	"amass":           {names: []string{"amass"}},
-	"gau":             {names: []string{"gau"}},
-	"subjs":           {names: []string{"subjs"}},
-	"mantra":          {names: []string{"mantra"}},
-	"secretfinder.py": {names: []string{"secretfinder.py", "SecretFinder.py"}},
+	"subfinder":   {names: []string{"subfinder"}, verify: true},
+	"httpx":       {names: []string{"httpx", "httpx-toolkit", "httpx-pd"}, verify: true},
+	"dnsx":        {names: []string{"dnsx", "dnsx-toolkit"}, verify: true},
+	"nuclei":      {names: []string{"nuclei", "nuclei-toolkit"}, verify: true},
+	"katana":      {names: []string{"katana", "katana-toolkit"}, verify: true},
+	"amass":       {names: []string{"amass"}},
+	"gau":         {names: []string{"gau"}},
+	"subjs":       {names: []string{"subjs"}},
+	"mantra":      {names: []string{"mantra"}},
+	"secrethound": {names: []string{"secrethound"}},
 }
 
 // resolution is the cached outcome of locating one tool.

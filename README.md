@@ -19,7 +19,7 @@ The application follows a continuous reconnaissance workflow separated into five
 
 **Stage 04, Vulnerability Scanning.** Unless you passed `--skip-nuclei`, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
 
-**Stage 05, Secret Hunting.** Finally ICEvirtue hunts hard-coded secrets and credentials in historical and current JavaScript. It collects candidate URLs from [Gau](https://github.com/lc/gau), validates the historical ones with HTTPX, crawls the live hosts with [Katana](https://github.com/projectdiscovery/katana), extracts script references with [Subjs](https://github.com/lc/subjs), and then feeds the resulting set of live JS files to [Mantra](https://github.com/brosck/mantra) and [SecretFinder](https://github.com/m4ll0k/SecretFinder). This stage is best effort: if one of those tools is missing or fails, the failure is logged and the rest of the stage still runs.
+**Stage 05, Secret Hunting.** Finally ICEvirtue hunts hard-coded secrets and credentials in historical and current JavaScript. It collects candidate URLs from [Gau](https://github.com/lc/gau), validates the historical ones with HTTPX, crawls the live hosts with [Katana](https://github.com/projectdiscovery/katana), extracts script references with [Subjs](https://github.com/lc/subjs), and then feeds the resulting set of JS files to [Mantra](https://github.com/brosck/mantra) and [SecretHound](https://github.com/rafabd1/SecretHound). This stage is best effort: if one of those tools is missing or fails, the failure is logged and the rest of the stage still runs.
 
 ### When A Run Stops Early
 
@@ -60,11 +60,13 @@ Not every tool is needed in every configuration. Which ones ICEvirtue actually r
 | `dnsx` | 01 | only if `--dnsx-list` is given |
 | `httpx` | 02, 05 | always |
 | `nuclei` | 04 | unless `--skip-nuclei` |
-| `gau`, `katana`, `subjs`, `mantra`, `secretfinder.py` | 05 | always attempted, failures are non-fatal |
+| `gau`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | always attempted, failures are non-fatal |
 
 Stage 03 needs no external tool at all, since the fuzzer is built in.
 
-Note that `secretfinder.py` has to be on `PATH` under exactly that name and be directly executable, which usually means giving it a shebang and a `chmod +x`.
+Build SecretHound with `go build -o secrethound ./cmd/secrethound` from its repository and put the binary on `PATH`, or pin it with `--tool-paths secrethound=/absolute/path/to/secrethound`. ICEvirtue supplies a `.urls` list and reads SecretHound's JSON output. SecretHound's default TLS behavior is used.
+
+The Credentials list shows which engine found each result. A node's Credentials tab also shows SecretHound's risk, occurrence count, description, and context. Mantra results have no source URL, so they appear in the general list without node attribution. Existing findings show **Unknown** as their engine until a scanner rediscovers them.
 
 ### When A Tool Name Belongs To Something Else
 
@@ -374,7 +376,8 @@ A subdomain row carries its own finding counts, a representative status code, an
 ## Dashboard fixture data
 
 Create a disposable database with two sample targets, changed and unchanged assets,
-Nuclei findings at several severity levels, directories, secrets, and a demo login:
+Nuclei findings at several severity levels, directories, SecretHound and Mantra
+credential findings, and a demo login:
 
 ```sh
 go run ./cmd/mockdata
@@ -383,6 +386,10 @@ go run . --db-path mock-dashboard.db
 
 Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and
 its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it.
+The general Credentials tab shows both engines. Open the `app.acme.example.com` or
+`api.acme.example.com` node to inspect SecretHound risk, occurrences, description,
+and context. Mantra's unique finding is unattributed and appears only in the general
+tab; a duplicate Mantra finding is retained in the database but suppressed there.
 New fixtures use calendar schedules (daily and weekly), which the Profiles table shows
 with their time of day. Existing fixtures retain their stored `@every` interval until
 you recreate or edit them; the UI labels those as intervals without inventing a clock time.

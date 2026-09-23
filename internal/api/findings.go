@@ -255,7 +255,17 @@ func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 	}
 
 	listPage[models.SecretFinding](w, q, &models.SecretFinding{}, "",
-		profileScope(id, "secret_findings", hostScope(q, "secret_findings")), secretSorts[q.Sort])
+		profileScope(id, "secret_findings", hostScope(q, "secret_findings"), func(db *gorm.DB) *gorm.DB {
+			// Keep historical Mantra rows in storage, but prefer a sourced
+			// SecretHound result for the same credential in the paginated view.
+			return db.Where(`NOT (secret_findings.source_url = ? AND EXISTS (
+				SELECT 1 FROM secret_findings AS matched
+				WHERE matched.profile_id = secret_findings.profile_id
+				AND matched.secret_type = secret_findings.secret_type
+				AND matched.secret_value = secret_findings.secret_value
+				AND matched.engine = ? AND matched.deleted_at IS NULL))`,
+				"mantra-discovery", "SecretHound")
+		}), secretSorts[q.Sort])
 }
 
 func getProfileHosts(w http.ResponseWriter, r *http.Request) {

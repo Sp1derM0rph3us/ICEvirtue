@@ -3,8 +3,12 @@ package engine
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
+	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -23,6 +27,16 @@ type KatanaResult struct {
 type MantraResult struct {
 	Type   string `json:"type"`
 	Secret string `json:"secret"`
+}
+
+type SecretHoundResult struct {
+	Type        string   `json:"type"`
+	Risk        string   `json:"risk"`
+	Value       string   `json:"value"`
+	SourceURL   string   `json:"source_url"`
+	Context     []string `json:"context"`
+	Occurrences int      `json:"occurrences"`
+	Description string   `json:"description"`
 }
 
 var jsExtensions = []string{".js", ".json", ".ts", ".tsx"}
@@ -50,23 +64,19 @@ func stageSecrets(profile *models.Profile, targets []models.AliveHost) ([]models
 	report := newStageReport("Stage 05 Secret Hunting", profile.Domain)
 
 	if len(jsURLs) == 0 {
-		report.skip("mantra", "no live JS files were discovered")
-		report.skip("secretfinder.py", "no live JS files were discovered")
+		report.skip("mantra", "no JS URLs were discovered")
+		report.skip("secrethound", "no JS URLs were discovered")
 		return nil, report
 	}
 
-	log.Printf("[*] [Target: %s] Feeding %d live JS file(s) into the secret scanners...", profile.Domain, len(jsURLs))
+	log.Printf("[*] [Target: %s] Feeding %d JS URL(s) into the secret scanners...", profile.Domain, len(jsURLs))
 
-	var secrets []models.SecretFinding
-	seen := make(map[string]bool)
+	houndSecrets, err := scanWithSecretHound(profile, jsURLs)
+	report.record("secrethound", len(houndSecrets), err)
 
 	mantraSecrets, err := scanWithMantra(profile, jsURLs)
 	report.record("mantra", len(mantraSecrets), err)
-	secrets = mergeSecrets(secrets, mantraSecrets, seen)
-
-	sfSecrets, err := scanWithSecretFinder(profile, jsURLs)
-	report.record("secretfinder.py", len(sfSecrets), err)
-	secrets = mergeSecrets(secrets, sfSecrets, seen)
+	secrets := mergeSecrets(houndSecrets, mantraSecrets)
 
 	report.Unique = len(secrets)
 	return secrets, report
@@ -204,7 +214,7 @@ func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFi
 		if jsonErr := json.Unmarshal(scanner.Bytes(), &res); jsonErr != nil {
 			continue
 		}
-		if res.Type == "" && res.Secret == "" {
+		if strings.TrimSpace(res.Type) == "" || strings.TrimSpace(res.Secret) == "" {
 			continue
 		}
 		secrets = append(secrets, models.SecretFinding{
@@ -212,61 +222,80 @@ func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFi
 			SecretType:  res.Type,
 			SecretValue: res.Secret,
 			SourceURL:   "mantra-discovery",
+			Engine:      "Mantra",
 		})
 	}
 
 	return secrets, err
 }
 
-// scanWithSecretFinder runs SecretFinder over a temp file listing the JS URLs,
-// since it takes its input from a file rather than stdin.
-func scanWithSecretFinder(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
-	log.Printf("[*] [Target: %s] Running secretfinder.py...", profile.Domain)
+// SecretHound recognizes .urls as a URL list even when it contains one entry.
+// Its JSON output is written on close, so read the file after the process exits.
+func scanWithSecretHound(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
+	log.Printf("[*] [Target: %s] Running secrethound...", profile.Domain)
 
-	tmpFile, err := os.CreateTemp("", "js_targets*.txt")
+	urls := make([]string, 0, len(jsURLs))
+	allowed := make(map[string]bool, len(jsURLs))
+	for _, raw := range jsURLs {
+		u := strings.TrimSpace(raw)
+		if validHTTPURL(u) && !allowed[u] {
+			allowed[u] = true
+			urls = append(urls, u)
+		}
+	}
+	if len(urls) == 0 {
+		return nil, fmt.Errorf("no valid HTTP(S) JS URLs for SecretHound")
+	}
+
+	dir, err := os.MkdirTemp("", "icevirtue-secrethound-")
 	if err != nil {
 		return nil, err
 	}
-	defer os.Remove(tmpFile.Name())
-
-	if _, err := tmpFile.WriteString(strings.Join(jsURLs, "\n")); err != nil {
-		tmpFile.Close()
+	defer os.RemoveAll(dir)
+	inputPath := filepath.Join(dir, "targets.urls")
+	outputPath := filepath.Join(dir, "findings.json")
+	if err := os.WriteFile(inputPath, []byte(strings.Join(urls, "\n")+"\n"), 0600); err != nil {
 		return nil, err
 	}
-	tmpFile.Close()
 
-	outb, runErr := runTool("secretfinder.py", []string{"-i", tmpFile.Name()}, nil, timeoutSecretFinder)
-
-	var secrets []models.SecretFinding
-	var currentURL string
-
-	scanner := newLineScanner(outb)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		if strings.HasPrefix(line, "URL:") {
-			currentURL = strings.TrimSpace(strings.TrimPrefix(line, "URL:"))
-			continue
-		}
-
-		if !strings.HasPrefix(line, "->") {
-			continue
-		}
-
-		parts := strings.SplitN(line, ":", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		secrets = append(secrets, models.SecretFinding{
-			ProfileID:   profile.ID,
-			SecretType:  strings.TrimSpace(strings.TrimPrefix(parts[0], "->")),
-			SecretValue: strings.TrimSpace(parts[1]),
-			SourceURL:   currentURL,
-		})
+	_, runErr := runTool("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, nil, timeoutSecretHound)
+	data, readErr := os.ReadFile(outputPath)
+	if readErr != nil {
+		return nil, errors.Join(runErr, fmt.Errorf("reading SecretHound JSON: %w", readErr))
+	}
+	var results []SecretHoundResult
+	if err := json.Unmarshal(data, &results); err != nil {
+		return nil, errors.Join(runErr, fmt.Errorf("parsing SecretHound JSON: %w", err))
 	}
 
-	return secrets, runErr
+	findings := make([]models.SecretFinding, 0, len(results))
+	invalid := 0
+	for _, result := range results {
+		if strings.TrimSpace(result.Type) == "" || strings.TrimSpace(result.Value) == "" ||
+			!validHTTPURL(result.SourceURL) || !allowed[result.SourceURL] || result.Occurrences < 0 {
+			invalid++
+			continue
+		}
+		findings = append(findings, models.SecretFinding{
+			ProfileID: profile.ID, SourceURL: result.SourceURL,
+			SecretType: result.Type, SecretValue: result.Value,
+			Engine: "SecretHound", Risk: result.Risk,
+			Description: result.Description, Context: result.Context,
+			Occurrences: result.Occurrences,
+		})
+	}
+	if invalid > 0 {
+		runErr = errors.Join(runErr, fmt.Errorf("SecretHound returned %d malformed finding(s)", invalid))
+	}
+	return findings, runErr
+}
+
+func validHTTPURL(raw string) bool {
+	if raw == "" || strings.ContainsAny(raw, "\r\n\t") {
+		return false
+	}
+	u, err := url.Parse(raw)
+	return err == nil && (u.Scheme == "http" || u.Scheme == "https") && u.Hostname() != ""
 }
 
 // parsePlainURLs reads one URL per line, which is what httpx -silent and subjs emit.
@@ -286,16 +315,33 @@ func parsePlainURLs(out *bytes.Buffer) []string {
 	return urls
 }
 
-// mergeSecrets appends the secrets not already present, keyed on type and value
-// so the same credential found by both scanners is stored once.
-func mergeSecrets(into, from []models.SecretFinding, seen map[string]bool) []models.SecretFinding {
-	for _, s := range from {
-		sig := s.SecretType + "|" + s.SecretValue
-		if seen[sig] {
+// Retain each SecretHound source; its sourced result takes precedence over an
+// unattributed Mantra result with the same type and value.
+func mergeSecrets(hound, mantra []models.SecretFinding) []models.SecretFinding {
+	type credential struct{ kind, value string }
+	type sourceFinding struct{ source, kind, value string }
+	sourced := make(map[credential]bool)
+	seen := make(map[sourceFinding]bool)
+	merged := make([]models.SecretFinding, 0, len(hound)+len(mantra))
+	for _, s := range hound {
+		key := sourceFinding{s.SourceURL, s.SecretType, s.SecretValue}
+		if seen[key] {
 			continue
 		}
-		seen[sig] = true
-		into = append(into, s)
+		seen[key] = true
+		sourced[credential{s.SecretType, s.SecretValue}] = true
+		merged = append(merged, s)
 	}
-	return into
+	for _, s := range mantra {
+		if sourced[credential{s.SecretType, s.SecretValue}] {
+			continue
+		}
+		key := sourceFinding{s.SourceURL, s.SecretType, s.SecretValue}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		merged = append(merged, s)
+	}
+	return merged
 }

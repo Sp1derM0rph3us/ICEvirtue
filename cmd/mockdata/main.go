@@ -103,8 +103,40 @@ func seedPrimaryProfile(now time.Time) {
 	createDirectory(profile, api, "https://api.acme.example.com", "https://api.acme.example.com/v1", 200)
 	createDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/debug", 405)
 
-	createSecret(profile, app, "https://app.acme.example.com/static/app.9f4a.js", "aws-access-key", "AKIAIOSFODNN7EXAMPLE")
-	createSecret(profile, api, "https://api.acme.example.com/openapi.json", "generic-api-key", "demo-api-key-7d2d")
+	createSecret(profile, models.SecretFinding{
+		SourceURL:   "https://app.acme.example.com/static/app.9f4a.js",
+		SecretType:  "aws-access-key",
+		SecretValue: "AKIAIOSFODNN7EXAMPLE",
+		Engine:      "SecretHound",
+		Risk:        "high",
+		Description: "AWS access key embedded in client JavaScript.",
+		Context:     []string{"const awsAccessKeyId = 'AKIAIOSFODNN7EXAMPLE';", "window.appConfig.awsAccessKeyId = awsAccessKeyId;"},
+		Occurrences: 2,
+	})
+	createSecret(profile, models.SecretFinding{
+		SourceURL:   "https://api.acme.example.com/openapi.json",
+		SecretType:  "generic-api-key",
+		SecretValue: "demo-api-key-7d2d",
+		Engine:      "SecretHound",
+		Risk:        "medium",
+		Description: "Example API key in the published API document.",
+		Context:     []string{"x-api-key: demo-api-key-7d2d"},
+		Occurrences: 1,
+	})
+	createSecret(profile, models.SecretFinding{
+		SourceURL:   "mantra-discovery",
+		SecretType:  "generic-token",
+		SecretValue: "mock-mantra-token-42",
+		Engine:      "Mantra",
+	})
+	// This overlap remains in the database but the Credentials API prefers the
+	// sourced SecretHound row when both engines report the same credential.
+	createSecret(profile, models.SecretFinding{
+		SourceURL:   "mantra-discovery",
+		SecretType:  "aws-access-key",
+		SecretValue: "AKIAIOSFODNN7EXAMPLE",
+		Engine:      "Mantra",
+	})
 }
 
 func seedSecondaryProfile(now time.Time) {
@@ -150,8 +182,9 @@ func createDirectory(profile models.Profile, host, subdomainURL, dirURL string, 
 	}
 }
 
-func createSecret(profile models.Profile, host, sourceURL, secretType, secretValue string) {
-	if err := database.DB.Create(&models.SecretFinding{ProfileID: profile.ID, SourceURL: sourceURL, SecretType: secretType, SecretValue: secretValue}).Error; err != nil {
-		log.Fatalf("creating secret for %s: %v", host, err)
+func createSecret(profile models.Profile, finding models.SecretFinding) {
+	finding.ProfileID = profile.ID
+	if err := database.DB.Create(&finding).Error; err != nil {
+		log.Fatalf("creating secret from %s: %v", finding.SourceURL, err)
 	}
 }

@@ -165,15 +165,18 @@ type Vulnerability struct {
 
 type SecretFinding struct {
 	ID uint `gorm:"primaryKey"`
-	// SourceURL is sometimes the literal placeholder "mantra-discovery" rather than
-	// a URL, so Host is NULL for those rows and they are attributed to no node —
-	// which is exactly what happened before, since "mantra-discovery".includes(domain)
-	// was never true either. Exact-host matching costs those findings nothing.
-	ProfileID   uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_secret;index:idx_secret_host,priority:1,where:deleted_at IS NULL;not null"`
-	SourceURL   string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
-	Host        *string        `gorm:"index:idx_secret_host,priority:2"`
-	SecretType  string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
-	SecretValue string         `gorm:"uniqueIndex:idx_profile_secret;not null"`
+	// Mantra has no source URL. Its placeholder has no host and cannot be
+	// attributed to a node.
+	ProfileID   uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_secret;index:idx_secret_host,priority:1,where:deleted_at IS NULL;index:idx_secret_match,priority:1,where:deleted_at IS NULL;not null"`
+	SourceURL   string    `gorm:"uniqueIndex:idx_profile_secret;not null"`
+	Host        *string   `gorm:"index:idx_secret_host,priority:2"`
+	SecretType  string    `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:2;not null"`
+	SecretValue string    `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:3;not null"`
+	Engine      string    `gorm:"index:idx_secret_match,priority:4"`
+	Risk        string
+	Description string
+	Context     []string `gorm:"serializer:json"`
+	Occurrences int
 	FirstSeen   time.Time      `gorm:"autoCreateTime"`
 	LastSeen    time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt   gorm.DeletedAt `gorm:"index"`

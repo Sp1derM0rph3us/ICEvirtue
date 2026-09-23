@@ -112,6 +112,52 @@ func TestPerRowCountsUseExactHostMatching(t *testing.T) {
 	}
 }
 
+func TestSecretsPreferSourcedSecretHoundRowsAndExposeMetadata(t *testing.T) {
+	profile := newAPIEnv(t)
+	id := profile.ID
+	rows := []models.SecretFinding{
+		{ProfileID: id, SourceURL: "mantra-discovery", SecretType: "aws", SecretValue: "same", Engine: "Mantra"},
+		{ProfileID: id, SourceURL: "https://a.example.com/app.js", SecretType: "aws", SecretValue: "same", Engine: "SecretHound", Risk: "high", Context: []string{"key in config"}, Occurrences: 2, Description: "AWS key"},
+		{ProfileID: id, SourceURL: "https://b.example.com/app.js", SecretType: "aws", SecretValue: "same", Engine: "SecretHound"},
+		{ProfileID: id, SourceURL: "mantra-discovery", SecretType: "stripe", SecretValue: "unique", Engine: "Mantra"},
+		{ProfileID: id, SourceURL: "https://old.example.com/app.js", SecretType: "old", SecretValue: "legacy"},
+	}
+	for i := range rows {
+		if err := database.DB.Create(&rows[i]).Error; err != nil {
+			t.Fatalf("seeding secret: %v", err)
+		}
+	}
+	path := "/api/profiles/" + id.String() + "/secrets"
+	all := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path, getProfileSecrets), "secrets")
+	if all.Page.TotalRows != 4 || len(all.Data) != 4 {
+		t.Fatalf("got %d visible rows, want 4 with duplicate Mantra row suppressed: %+v", all.Page.TotalRows, all.Data)
+	}
+	var sourced, legacy bool
+	for _, row := range all.Data {
+		if row.SourceURL == "mantra-discovery" && row.SecretValue == "same" {
+			t.Error("unattributed duplicate is visible")
+		}
+		if row.SourceURL == "https://a.example.com/app.js" {
+			sourced = row.Engine == "SecretHound" && row.Risk == "high" && row.Occurrences == 2 &&
+				row.Description == "AWS key" && len(row.Context) == 1 && row.Context[0] == "key in config"
+		}
+		if row.SourceURL == "https://old.example.com/app.js" {
+			legacy = row.Engine == ""
+		}
+	}
+	if !sourced || !legacy {
+		t.Errorf("metadata or legacy engine lost: %+v", all.Data)
+	}
+	var stored int64
+	if err := database.DB.Model(&models.SecretFinding{}).Where("profile_id = ?", id).Count(&stored).Error; err != nil || stored != 5 {
+		t.Errorf("historical rows not retained: count=%d err=%v", stored, err)
+	}
+	node := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path+"?host=a.example.com", getProfileSecrets), "secrets")
+	if node.Page.TotalRows != 1 || node.Data[0].SourceURL != "https://a.example.com/app.js" {
+		t.Errorf("node scope = %+v, want only a.example.com finding", node)
+	}
+}
+
 func intPtr(v int) *int { return &v }
 
 // TestStatusPrefersTheMostAliveHost covers the MIN rule. httpx can report both an

@@ -30,16 +30,16 @@ var defaultToolHome = "/opt/icevirtue"
 // self-caps at 10 minutes so its budget must comfortably exceed that; amass and
 // katana are the genuinely unbounded ones.
 const (
-	timeoutSubfinder    = 20 * time.Minute
-	timeoutAmass        = 60 * time.Minute
-	timeoutDnsx         = 30 * time.Minute
-	timeoutHttpx        = 30 * time.Minute
-	timeoutNuclei       = 120 * time.Minute
-	timeoutGau          = 30 * time.Minute
-	timeoutKatana       = 45 * time.Minute
-	timeoutSubjs        = 15 * time.Minute
-	timeoutMantra       = 30 * time.Minute
-	timeoutSecretFinder = 30 * time.Minute
+	timeoutSubfinder   = 20 * time.Minute
+	timeoutAmass       = 60 * time.Minute
+	timeoutDnsx        = 30 * time.Minute
+	timeoutHttpx       = 30 * time.Minute
+	timeoutNuclei      = 120 * time.Minute
+	timeoutGau         = 30 * time.Minute
+	timeoutKatana      = 45 * time.Minute
+	timeoutSubjs       = 15 * time.Minute
+	timeoutMantra      = 30 * time.Minute
+	timeoutSecretHound = 30 * time.Minute
 )
 
 // maxStreamCapture bounds how much of a failing tool's output we keep for the
@@ -278,7 +278,7 @@ func PreflightTools() {
 		{"katana", true},
 		{"subjs", true},
 		{"mantra", true},
-		{"secretfinder.py", true},
+		{"secrethound", true},
 	}
 
 	var present, missing, skipped, doubtful []string

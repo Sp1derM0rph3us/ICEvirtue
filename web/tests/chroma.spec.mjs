@@ -67,6 +67,43 @@ test('Home, Profiles, Findings and node details retain their actions', async ({ 
   await expect(page.locator('#table-subs')).toBeVisible();
 });
 
+test('credential views show engine and limit SecretHound details to a node', async ({ page }) => {
+  await signIn(page);
+  const rendered = await page.evaluate(() => {
+    const finding = {
+      SecretType: 'aws', SecretValue: 'AKIA-test',
+      SourceURL: 'https://a.example.com/app.js', Engine: 'SecretHound',
+      Risk: 'high', Occurrences: 2, Description: '<img src=x onerror=alert(1)>',
+      Context: ['<script>alert(1)</script>'],
+    };
+    const general = buildSecretRow(finding);
+    const node = buildSecretRow(finding, true);
+    const generalMobile = buildSecretCard(finding);
+    const nodeMobile = buildSecretCard(finding, true);
+    return {
+      generalCells: general.cells.length,
+      generalText: general.textContent,
+      nodeCells: node.cells.length,
+      nodeText: node.textContent,
+      nodeDetails: node.querySelector('details')?.textContent,
+      injectedElements: node.querySelectorAll('img, script').length + nodeMobile.querySelectorAll('img, script').length,
+      generalMobileText: generalMobile.textContent,
+      nodeMobileText: nodeMobile.textContent,
+    };
+  });
+  expect(rendered.generalCells).toBe(4);
+  expect(rendered.generalText).toContain('SecretHound');
+  expect(rendered.generalText).not.toContain('Risk:');
+  expect(rendered.nodeCells).toBe(5);
+  expect(rendered.nodeText).toContain('Risk: high');
+  expect(rendered.nodeText).toContain('Occurrences: 2');
+  expect(rendered.nodeDetails).toContain('<img src=x onerror=alert(1)>');
+  expect(rendered.injectedElements).toBe(0);
+  expect(rendered.generalMobileText).not.toContain('high');
+  expect(rendered.nodeMobileText).toContain('high');
+  expect(rendered.nodeMobileText).toContain('<script>alert(1)</script>');
+});
+
 test('Profiles spacing, schedule labels, short IDs and filled Delete work in both themes', async ({ page }) => {
   await signIn(page);
   await page.locator('#nav-btn-profiles').click();

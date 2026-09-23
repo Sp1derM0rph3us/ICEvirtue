@@ -338,9 +338,10 @@
                     <table class="chroma-table chroma-desktop-table w-full text-left font-sans text-sm">
                         <thead class="sticky top-0 bg-black/95 backdrop-blur shadow-sm z-10">
                             <tr class="text-slate-500 uppercase tracking-widest">
-                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Type</th>
-                                <th class="p-5 font-black w-1/2 border-b border-slate-800">Value</th>
-                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Source</th>
+                                <th class="p-5 font-black border-b border-slate-800">Type</th>
+                                <th class="p-5 font-black border-b border-slate-800">Value</th>
+                                <th class="p-5 font-black border-b border-slate-800">Source</th>
+                                <th class="p-5 font-black border-b border-slate-800">Engine</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-secs" class="divide-y divide-slate-900 text-slate-300">
@@ -415,9 +416,11 @@
                             <table class="chroma-table chroma-desktop-table w-full text-left bg-card font-sans">
                                 <thead class="bg-black border-b border-slate-900">
                                     <tr class="text-slate-500 text-xs uppercase tracking-widest">
-                                        <th class="p-5 font-black w-1/4">Type</th>
-                                        <th class="p-5 font-black w-1/2">Value</th>
-                                        <th class="p-5 font-black w-1/4">Source</th>
+                                        <th class="p-5 font-black">Type</th>
+                                        <th class="p-5 font-black">Value</th>
+                                        <th class="p-5 font-black">Source</th>
+                                        <th class="p-5 font-black">Engine</th>
+                                        <th class="p-5 font-black">Finding details</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-sub-secs" class="divide-y divide-slate-950 text-slate-300 text-sm">
@@ -1541,13 +1544,36 @@
             return tr;
         }
 
-        function buildSecretRow(s, pad = 'p-5', urlWidth = '') {
+        function secretSource(s) {
+            return safeURL(s.SourceURL) === '#'
+                ? '<span class="chroma-muted">Unattributed</span>'
+                : `<a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors" title="${esc(s.SourceURL)}">Open source &rarr;</a>`;
+        }
+
+        function secretContext(s) {
+            const entries = Array.isArray(s.Context) ? s.Context : [];
+            return entries.length
+                ? entries.map(value => `<div class="break-all">• ${esc(value)}</div>`).join('')
+                : '<span class="chroma-muted">None recorded</span>';
+        }
+
+        function buildSecretRow(s, node = false) {
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-accent/[0.04] transition-colors group';
+            const pad = node ? 'p-4' : 'p-5';
             tr.innerHTML = `
                 <td class="${pad} font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${esc(s.SecretType)}</span></td>
                 <td class="${pad} font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${esc(s.SecretValue)}</td>
-                <td class="${pad} text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors ${urlWidth}" title="${esc(s.SourceURL)}">Open source &rarr;</a></td>
+                <td class="${pad} text-xs font-sans font-bold">${secretSource(s)}</td>
+                <td class="${pad} text-xs font-sans font-bold">${esc(s.Engine || 'Unknown')}</td>
+                ${node ? `<td class="${pad} text-xs font-sans">
+                    <div>Risk: ${esc(s.Risk || 'Unknown')}</div>
+                    <div>Occurrences: ${s.Occurrences > 0 ? esc(s.Occurrences) : '—'}</div>
+                    <details><summary class="text-accent cursor-pointer">Description and context</summary>
+                        <div class="mt-2 break-words">${esc(s.Description || 'No description recorded')}</div>
+                        <div class="mt-2">${secretContext(s)}</div>
+                    </details>
+                </td>` : ''}
             `;
             return tr;
         }
@@ -1616,11 +1642,19 @@
             ], actions);
         }
 
-        function buildSecretCard(s) {
-            return mobileCard(esc(s.SecretType || 'Credential'), [
+        function buildSecretCard(s, node = false) {
+            const fields = [
                 ['Value', `<span class="select-all font-mono">${esc(s.SecretValue)}</span>`],
-                ['Source', `<a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer">${esc(s.SourceURL || 'Unknown')}</a>`],
-            ]);
+                ['Source', secretSource(s)],
+                ['Engine', esc(s.Engine || 'Unknown')],
+            ];
+            if (node) fields.push(
+                ['Risk', esc(s.Risk || 'Unknown')],
+                ['Occurrences', s.Occurrences > 0 ? esc(s.Occurrences) : '—'],
+                ['Description', esc(s.Description || 'No description recorded')],
+                ['Context', secretContext(s)],
+            );
+            return mobileCard(esc(s.SecretType || 'Credential'), fields);
         }
 
         function buildVulnCard(v) {
@@ -1800,7 +1834,9 @@
             const target = viewState.node
                 ? `tbody-sub-${viewState.nodeTab}`
                 : (viewState.tab === 'secs' ? 'tbody-secs' : 'tbody-subs');
-            const colspan = target === 'tbody-sub-dirs' ? 2 : 3;
+            const colspan = target === 'tbody-sub-dirs' ? 2
+                : target === 'tbody-secs' ? 4
+                : target === 'tbody-sub-secs' ? 5 : 3;
             const mobile = viewState.node ? 'node-mobile' : (viewState.tab === 'secs' ? 'secs-mobile' : 'subs-mobile');
             renderRows(target, mobile, [], () => null, () => null,
                 target === 'tbody-subs' ? 6 : colspan, message);
@@ -1826,7 +1862,7 @@
                         : 'No nodes found yet.';
                     renderRows('tbody-subs', 'subs-mobile', currentRows, buildSubRow, buildSubCard, 6, message);
                 } else {
-                    renderRows('tbody-secs', 'secs-mobile', currentRows, s => buildSecretRow(s), buildSecretCard, 3, 'No credentials found yet.');
+                    renderRows('tbody-secs', 'secs-mobile', currentRows, s => buildSecretRow(s), s => buildSecretCard(s), 4, 'No credentials found yet.');
                 }
             } else {
                 tSubs.classList.add('hidden');
@@ -1853,7 +1889,7 @@
             } else if (viewState.nodeTab === 'dirs') {
                 renderRows('tbody-sub-dirs', 'node-mobile', currentRows, buildDirRow, buildDirCard, 2, 'No directories discovered in this node.');
             } else {
-                renderRows('tbody-sub-secs', 'node-mobile', currentRows, s => buildSecretRow(s, 'p-4'), buildSecretCard, 3, 'No credentials found in this node.');
+                renderRows('tbody-sub-secs', 'node-mobile', currentRows, s => buildSecretRow(s, true), s => buildSecretCard(s, true), 5, 'No credentials found in this node.');
             }
         }
 
