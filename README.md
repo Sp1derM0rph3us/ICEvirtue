@@ -307,13 +307,15 @@ The **tool config home** is where the spawned recon tools keep their own configu
 
 The web interface is straightforward. You add a target domain, for instance `hackerone.com`, and choose how often ICEvirtue should scan it: every day, week, month or year, at a time of day you pick. Every profile created through the dashboard runs in Full Mode, so the breadth of the pipeline is controlled by the engine flags rather than per profile.
 
+Home gives each profile a compact overview: total identified assets, the last scan and last identified asset change in UTC, the share of assets that have ever answered HTTP, severity counts, and the highest-priority Nuclei findings. An HTTP response recorded earlier does not prove an asset answered the latest scan; findings likewise remain identified observations until ICEvirtue gains resolution tracking. WAF detection has a reserved panel for a future capability. Home has its own profile selector, so changing it does not disturb the Findings tab's selected node.
+
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_1.png)
 
 Scheduling follows the **system clock of the machine ICEvirtue runs on**, and there is currently no way to set a different timezone in the application. If you are hosting on a VPS, check what the server's clock is set to, otherwise your scans will fire at a different local time than you intended.
 
 Under the hood, the schedules the dashboard produces are human-readable strings such as `every day at 14:30`. The API also accepts `@every 12h` style intervals and raw cron expressions, and because the scheduler is second-granular a raw cron expression needs six fields (`seconds minutes hours day-of-month month day-of-week`) rather than the usual five.
 
-Once a scan starts, the "Discoveries" tab fills in as soon as the initial recon phase finishes, and each later stage complements the existing findings as it completes. Click a finding to see its details, or the icon at the far right of its row to open the asset itself. Secrets live in their own tab inside "Discoveries", and the "Select Profile" drop-down switches targets. The dashboard is updated live, so you never need to refresh to see a target flip between scanning and idle, or to see new findings appear.
+Once a scan starts, the "Findings" tab fills in as soon as the initial recon phase finishes, and each later stage complements the existing findings as it completes. Click a finding to see its details, or the icon at the far right of its row to open the asset itself. Secrets live in their own tab inside "Findings", and the "Select Profile" drop-down switches profiles. The dashboard is updated live, so you never need to refresh to see a target flip between scanning and idle, or to see new findings appear.
 
 You can also force a scan outside its schedule from the dashboard. A profile that is already scanning refuses a second concurrent run rather than doubling up, and the scan lock is released automatically when the run finishes, including when it fails.
 
@@ -337,6 +339,7 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `DELETE /api/profiles/{id}` | Delete a profile and all of its findings. |
 | `PUT /api/profiles/{id}/schedule` | Change a profile's schedule. |
 | `POST /api/profiles/{id}/scan` | Force a scan now, returns immediately and runs in the background. |
+| `GET /api/profiles/{id}/overview` | Profile-scoped Home summary: UTC scan/change times, exact asset and severity counts, and eight Critical/High findings. |
 | `GET /api/profiles/{id}/subdomains` | Subdomains found for the profile. |
 | `GET /api/profiles/{id}/hosts` | Alive hosts, with status code, title, web server and IPs. |
 | `GET /api/profiles/{id}/directories` | Directory and file findings. |
@@ -380,6 +383,16 @@ go run . --db-path mock-dashboard.db
 
 Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and
 its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it.
+New fixtures use calendar schedules (daily and weekly), which the Profiles table shows
+with their time of day. Existing fixtures retain their stored `@every` interval until
+you recreate or edit them; the UI labels those as intervals without inventing a clock time.
+
+To run the dev-only Chroma browser smoke suite against this disposable fixture, run
+`npm install` and `npx playwright install`, leave the dashboard running, then run
+`npm run test:ui`. The suite exercises Chromium, Firefox and WebKit at phone,
+tablet, desktop and short-landscape sizes; use `ICEVIRTUE_SMOKE_URL` if the server is
+not at `http://127.0.0.1:8888`. Do not point the suite at a production database: one
+test creates and removes a temporary profile.
 
 ## Troubleshooting
 

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -384,6 +385,9 @@ func TestCleanRunRecordsCompleted(t *testing.T) {
 	p := reloadProfile(t, profile.ID)
 	if p.LastScanStatus != "completed" {
 		t.Errorf("LastScanStatus = %q, want %q", p.LastScanStatus, "completed")
+	}
+	if p.LastScan.IsZero() || p.LastScan.Location() != time.UTC {
+		t.Errorf("LastScan = %v, want a nonzero UTC timestamp", p.LastScan)
 	}
 	if p.IsScanning {
 		t.Error("IsScanning must be cleared after the run")

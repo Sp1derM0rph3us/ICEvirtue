@@ -33,8 +33,8 @@ var domainPattern = regexp.MustCompile(`^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 var profileSorts = map[string]string{
 	"domain-asc":  "profiles.domain ASC, profiles.id ASC",
 	"domain-desc": "profiles.domain DESC, profiles.id DESC",
-	"scan-desc":   "profiles.last_scan DESC, profiles.domain ASC",
-	"scan-asc":    "profiles.last_scan ASC, profiles.domain ASC",
+	"scan-desc":   "julianday(profiles.last_scan) DESC, profiles.domain ASC",
+	"scan-asc":    "julianday(profiles.last_scan) ASC, profiles.domain ASC",
 }
 
 // getProfiles serves the targets table, paginated.

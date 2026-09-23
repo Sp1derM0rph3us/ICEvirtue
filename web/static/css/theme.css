@@ -1,223 +1,377 @@
-/* ICEvirtue light theme.
- *
- * ============================ READ THIS FIRST ============================
- * This file must NEVER be wrapped in @layer, and it is not part of the
- * Tailwind build -- do not feed it to the compiler and do not import it from
- * input.css.
- *
- * Every rule in web/css/output.css lives inside a cascade layer (properties,
- * theme, base, components, utilities). Unlayered rules sort above all named
- * layers, so everything here wins unconditionally without !important and
- * without specificity tricks. That is the whole mechanism.
- *
- * The one thing it does NOT automatically beat is the unlayered <style> block
- * inside web/template.html, which competes on equal footing and is decided by
- * specificity and source order. That is why every rule below is prefixed with
- * [data-theme="light"] and why the <link> to this file must come AFTER that
- * </style> tag.
- * =========================================================================
- *
- * How the retheming works: Tailwind v4 compiles solid-colour utilities to
- * var(--color-*) references, and alpha variants to
- * color-mix(... var(--color-*) ...). Overriding the variables therefore
- * restyles all ~500 class usages in the markup without touching a single one
- * of them. This is why the theme is not built from dark:/light: variants --
- * those are not compiled into output.css and cannot be added without npm.
- *
- * Values are literal oklch() copied verbatim out of output.css. Never write
- * --color-a: var(--color-b) here: CSS detects custom-property cycles and
- * invalidates every property in the cycle, which would silently blank the
- * whole palette.
- */
+/* Chroma is the shared theme for the authenticated dashboard and login page.
+ * This stylesheet is intentionally unlayered and loaded after output.css. The
+ * compiled Tailwind file supplies layout utilities; semantic surfaces and
+ * interaction states live here so no browser-side CSS runtime is required. */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ui-canvas: #18141e;
+  --ui-surface: #241e2b;
+  --ui-surface-soft: #312632;
+  --ui-ink: #f6eef5;
+  --ui-muted: #b9acba;
+  --ui-line: #483d4a;
+  --ui-rose: #ff96b5;
+  --ui-plum: #baa9ff;
+  --ui-coral: #ff8793;
+  --ui-amber: #f7c28a;
+  --ui-teal: #8cd4cf;
+  --ui-blue: #9bc5ff;
+  --ui-track: #4a3a4c;
+  --ui-shadow: rgb(0 0 0 / .24);
+  --ui-scrim: rgb(10 7 15 / .68);
+  --ui-hero: radial-gradient(ellipse 100% 130% at 2% 0%, #4c2d43 0%, transparent 72%), radial-gradient(ellipse 96% 125% at 100% 100%, #302947 0%, transparent 74%), #382b3c;
+  --ui-canvas-wash: radial-gradient(ellipse 78% 55% at 92% 2%, #261c2e 0%, transparent 78%), radial-gradient(ellipse 72% 58% at 96% 96%, #211c2c 0%, transparent 78%), var(--ui-canvas);
+  --ui-canvas-wash-mobile: radial-gradient(ellipse 100% 50% at 92% 2%, #261c2e 0%, transparent 78%), var(--ui-canvas);
+  --color-dark: #18141e;
+  --color-card: #241e2b;
+  --color-black: #211b29;
+  --color-white: #f6eef5;
+  --color-accent: #ff96b5;
+  --color-slate-200: #eee5ef;
+  --color-slate-300: #dcd0dd;
+  --color-slate-400: #c6b7c8;
+  --color-slate-500: #b9acba;
+  --color-slate-600: #a796ab;
+  --color-slate-700: #85758b;
+  --color-slate-800: #483d4a;
+  --color-slate-900: #3c3240;
+  --color-slate-950: #352b39;
+  --color-rose-950: #4b2638;
+  --color-rose-900: #7b3c53;
+  --color-rose-500: #ff8793;
+  --color-rose-400: #ff9fab;
+  --color-orange-950: #483223;
+  --color-orange-900: #6a4a2d;
+  --color-orange-400: #f7c28a;
+  --color-amber-950: #46371f;
+  --color-amber-900: #675230;
+  --color-amber-500: #f7c28a;
+  --color-emerald-950: #203b39;
+  --color-emerald-900: #315854;
+  --color-emerald-500: #8cd4cf;
+  --color-emerald-400: #8cd4cf;
+  --color-blue-950: #25364d;
+  --color-blue-900: #35516f;
+  --color-blue-400: #9bc5ff;
+}
 
-/* ---------------------------------------------------------------- variables */
-
-[data-theme="light"] {
-  /* Native select popups and scrollbars follow this. Deliberately not set for
-     the dark theme, which would change how they look today. */
+:root[data-theme="light"] {
   color-scheme: light;
-
-  /* Surfaces. Dark mode puts its surfaces BELOW the ramp (#000 and #0d0d0d)
-     with borders at 12.9-27.9% lightness, a 7-22 point delta that is what makes
-     the hairlines read. Light mode cannot mirror that, so the surfaces stack
-     slate-100 (page) < white (card) and the border shades are pulled well down
-     the ramp instead -- see the note on the ramp below. */
-  --color-dark: oklch(96.8% .007 247.896);   /* page background */
-  --color-card: #ffffff;                     /* raised panels */
-  --color-black: oklch(98.4% .003 247.858);  /* recessed: inputs, sticky heads */
-
-  /* text-only: verified there is no bg-white, border-white or divide-white
-     anywhere in either page. */
-  --color-white: oklch(20.8% .042 265.755);
-
-  /* Darkened from #bc13fe, which lands at exactly 4.51:1 on white and drags
-     text-accent/80 down to ~3.6:1 on a 12px mono <code>. Still unmistakably
-     the same neon violet. */
-  --color-accent: #a20fd8;
-
-  /* The slate ramp is COMPRESSED, not inverted.
-     A straight inversion breaks in three places: slate-800 serves 26 borders
-     AND 3 text uses, so one value cannot satisfy both; mirroring collapses the
-     border/surface lightness delta to 1.6-7 points and makes divide-slate-950
-     invisible on white; and slate-600 (22 uses) and slate-700 (8 uses) fall to
-     2.5:1 and 1.35:1. Light mode therefore has ~6 usable text steps, not 9. */
-  --color-slate-200: oklch(27.9% .041 260.031);  /* 14.4:1  body text */
-  --color-slate-300: oklch(37.2% .044 257.287);  /*  9.5:1  table body */
-  --color-slate-400: oklch(44.6% .043 257.281);  /*  7.0:1  table headers */
-  --color-slate-500: oklch(52%   .045 257.4);    /*  5.4:1  labels, 28 uses */
-  --color-slate-600: oklch(58%   .045 257.4);    /*  4.5:1  tertiary, 22 uses */
-  --color-slate-700: oklch(66%   .043 257);      /*  3.4:1  decorative, AA-large only */
-  --color-slate-800: oklch(86.9% .022 252.894);  /* 26 borders */
-  --color-slate-900: oklch(92.9% .013 255.508);  /* 22 borders, 4 badge fills */
-  --color-slate-950: oklch(90.5% .015 255.5);    /* divide-*: a touch darker so
-                                                    table rules stay visible */
-
-  /* Semantic status and severity badges.
-     The markup pattern is bg-{hue}-950/30..40 + text-{hue}-400|500 +
-     border-{hue}-900/50, which is dark-mode-native: left alone it paints a dark
-     saturated wash at 30-40% alpha over white with mid-tone text on top, which
-     is muddy and low-contrast. One consistent remap fixes every badge at once:
-     950 -> the 200 value (fill), 900 -> the 400 value (border),
-     400/500 -> the 700 value (text). */
-  --color-emerald-950: oklch(90.5% .093 164.15);
-  --color-emerald-900: oklch(76.5% .177 163.223);
-  --color-emerald-500: oklch(50.8% .118 165.612);
-  --color-emerald-400: oklch(50.8% .118 165.612);
-
-  --color-rose-950: oklch(89.2% .058 10.001);
-  --color-rose-900: oklch(71.2% .194 13.428);
-  --color-rose-500: oklch(51.4% .222 16.935);
-  --color-rose-400: oklch(51.4% .222 16.935);
-
-  --color-blue-950: oklch(88.2% .059 254.128);
-  --color-blue-900: oklch(70.7% .165 254.624);
-  --color-blue-400: oklch(48.8% .243 264.376);
-
-  --color-orange-950: oklch(90.1% .076 70.697);
-  --color-orange-900: oklch(75%   .183 55.934);
-  --color-orange-400: oklch(55.3% .195 38.402);
-
-  --color-amber-950: oklch(92.4% .12 95.746);
-  --color-amber-900: oklch(82.8% .189 84.429);
-  --color-amber-500: oklch(55.5% .163 48.998);
+  --ui-canvas: #f5f1f6;
+  --ui-surface: #fffdfd;
+  --ui-surface-soft: #faf1f5;
+  --ui-ink: #2d2634;
+  --ui-muted: #736678;
+  --ui-line: #e6dce7;
+  --ui-rose: #a93664;
+  --ui-plum: #6851a8;
+  --ui-coral: #a63549;
+  --ui-amber: #966020;
+  --ui-teal: #32716d;
+  --ui-blue: #355b9a;
+  --ui-track: #e8dce6;
+  --ui-shadow: rgb(57 29 58 / .09);
+  --ui-scrim: rgb(36 22 43 / .48);
+  --ui-hero: radial-gradient(ellipse 100% 130% at 2% 0%, #f5dce8 0%, transparent 72%), radial-gradient(ellipse 96% 125% at 100% 100%, #e9e1f5 0%, transparent 74%), #f4eaf2;
+  --ui-canvas-wash: radial-gradient(ellipse 78% 55% at 92% 2%, #f1e5f0 0%, transparent 78%), radial-gradient(ellipse 72% 58% at 96% 96%, #ede8f6 0%, transparent 78%), var(--ui-canvas);
+  --ui-canvas-wash-mobile: radial-gradient(ellipse 100% 50% at 92% 2%, #f1e5f0 0%, transparent 78%), var(--ui-canvas);
+  --color-dark: #f5f1f6;
+  --color-card: #fffdfd;
+  --color-black: #faf6fa;
+  --color-white: #2d2634;
+  --color-accent: #a93664;
+  --color-slate-200: #352d3b;
+  --color-slate-300: #483c4c;
+  --color-slate-400: #5a4d60;
+  --color-slate-500: #736678;
+  --color-slate-600: #736678;
+  --color-slate-700: #807284;
+  --color-slate-800: #e6dce7;
+  --color-slate-900: #eee5ed;
+  --color-slate-950: #e9e0e9;
+  --color-rose-950: #f9e6eb;
+  --color-rose-900: #d88d9a;
+  --color-rose-500: #a63549;
+  --color-rose-400: #a63549;
+  --color-orange-950: #faeddd;
+  --color-orange-900: #d3a068;
+  --color-orange-400: #966020;
+  --color-amber-950: #f8eedc;
+  --color-amber-900: #d6b076;
+  --color-amber-500: #966020;
+  --color-emerald-950: #e5f1ee;
+  --color-emerald-900: #97bdb7;
+  --color-emerald-500: #32716d;
+  --color-emerald-400: #32716d;
+  --color-blue-950: #e7ecf8;
+  --color-blue-900: #9db1d2;
+  --color-blue-400: #355b9a;
 }
 
-/* ------------------------------------------------- class-level overrides ---
- * Kept to the irreducible minimum. Because these are unlayered they also beat
- * the hover:/group-hover: variants that live in @layer utilities, so a
- * class-level override silently kills an element's hover colour. Only used
- * where a variable is genuinely role-conflicted AND the element carries no
- * competing state variant -- each of the sites below was checked.
- *
- * [class~="..."] matches one whitespace-separated token exactly, needs no CSS
- * escaping for the [ ] # ( ) characters in Tailwind's arbitrary values, and has
- * specificity (0,2,0).
- */
-
-/* slate-800 is a border shade in light mode, so its three TEXT uses -- the DEAD
-   badge, the "---" no-findings placeholder, and the domain input's placeholder
-   -- would render near-invisible. Verified: none has a hover or group-hover
-   text utility. */
-[data-theme="light"] [class~="text-slate-800"] { color: oklch(70.4% .04 256.788); }
-[data-theme="light"] [class~="placeholder:text-slate-800"]::placeholder { color: oklch(70.4% .04 256.788); }
-
-/* text-black only ever sits on a solid bg-accent (verified: 5 of 5 uses), and
-   the accent is now dark enough that black-on-accent fails. */
+body { background: var(--ui-canvas-wash); color: var(--ui-ink); }
+body::before, body::after { display: none !important; content: none !important; }
+.hidden { display: none !important; }
 [data-theme="light"] [class~="text-black"] { color: #fff; }
+[data-theme="light"] [class~="text-slate-800"] { color: var(--ui-muted); }
+[data-theme="light"] [class~="placeholder:text-slate-800"]::placeholder { color: var(--ui-muted); }
+[data-theme="light"] [class~="bg-black/80"] { background: var(--ui-scrim); }
+[class*="shadow-[0_0_"] { --tw-shadow-color: transparent; }
+[class*="drop-shadow-[0_0_"] { --tw-drop-shadow-color: transparent; }
 
-/* #d000ff is a hardcoded hover brighten that was lighter than the base accent.
-   Against the darkened accent that is the wrong direction and only 4.1:1. */
-[data-theme="light"] [class~="hover:bg-[#d000ff]"]:hover { background-color: #8b0fbd; }
+.neon-text, .neon-glow { text-shadow: none; }
+.glass-header { background: var(--ui-surface); border-bottom: 1px solid var(--ui-line); box-shadow: none; backdrop-filter: none; }
+.tab-active { color: var(--ui-rose); border-bottom: 2px solid var(--ui-rose); text-shadow: none; }
+.tab-inactive { color: var(--ui-muted); }
+.tab-inactive:hover { color: var(--ui-rose); }
+[data-theme="light"] .theme-icon-moon, [data-theme="dark"] .theme-icon-sun { display: none; }
+::-webkit-scrollbar { width: 7px; height: 7px; }
+::-webkit-scrollbar-track { background: var(--ui-canvas); }
+::-webkit-scrollbar-thumb { background: var(--ui-line); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: var(--ui-rose); }
 
-/* The modal scrim is bg-black/80. With --color-black now near-white that would
-   white out the page behind the dialog instead of dimming it. */
-[data-theme="light"] [class~="bg-black/80"] { background-color: rgb(15 23 42 / .45); }
-
-/* ------------------------------------------------------------ glow shadows ---
- * Every arbitrary shadow compiles to
- *   --tw-shadow: 0 0 15px var(--tw-shadow-color, #bc13fe4d)
- * so setting --tw-shadow-color recolours the halo while keeping the blur,
- * spread and the hover growth animation. Do NOT use box-shadow:none here: that
- * discards the geometry, and on the modal's save button it would also kill the
- * resting shadow-md.
- *
- * @property declares both of these inherits:false, so they cannot be set on
- * <html> and inherited -- the rule has to match the element carrying the class,
- * which is what the attribute selector does.
- *
- * Order matters: the specific rules must follow the generic one, since they
- * have equal (0,2,0) specificity and the last match wins.
- */
-[data-theme="light"] [class*="shadow-[0_0_"]:not([class*="shadow-md"]) {
-  --tw-shadow-color: rgb(162 15 216 / .28);
-  --tw-drop-shadow-color: rgb(162 15 216 / .30);
+button, select, input { -webkit-tap-highlight-color: transparent; }
+button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible {
+  outline: 2px solid var(--ui-plum); outline-offset: 3px;
 }
-/* shadow-md + hover:shadow-[0_0_20px_...]: scope to hover so the resting
-   elevation is left alone. */
-[data-theme="light"] [class*="hover:shadow-[0_0_"]:hover {
-  --tw-shadow-color: rgb(162 15 216 / .28);
-}
-/* Black "void" glows have to become real elevation on a light ground. */
-[data-theme="light"] [class*="rgba(0,0,0"] { --tw-shadow-color: rgb(15 23 42 / .16); }
-/* Non-accent hues: the scanning-status dot and the critical-severity badge. */
-[data-theme="light"] [class*="#4ade80"] { --tw-shadow-color: rgb(0 122 85 / .30); }
-[data-theme="light"] [class*="rgba(244,63,94"] { --tw-shadow-color: rgb(199 0 54 / .22); }
+button:not(:disabled), summary { cursor: pointer; }
+.chroma-surface { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 16px; box-shadow: none; }
+.chroma-soft-surface { background: var(--ui-surface-soft); border: 1px solid var(--ui-line); border-radius: 16px; }
+.chroma-muted { color: var(--ui-muted); }
+.chroma-accent { color: var(--ui-rose); }
+.chroma-brand { color: var(--ui-ink); font-size: 1.08rem; font-weight: 800; font-style: normal; letter-spacing: .08em; }
+.chroma-brand-mark { width: 24px; height: 24px; border: 6px solid var(--ui-rose); border-radius: 50%; position: relative; flex: none; }
+.chroma-brand-mark::after { content: ''; width: 5px; height: 5px; border-radius: 50%; background: var(--ui-plum); position: absolute; right: -5px; top: -5px; }
+.chroma-topbar { padding-block: 0; }
+.chroma-nav-layout { min-height: 64px; gap: 1rem; }
+.chroma-nav-actions { gap: 1.25rem; letter-spacing: normal; text-transform: none; font-size: .82rem; }
+.chroma-nav-tab { padding: 1.4rem 0 1.2rem; font-weight: 700; }
+.chroma-theme-button { background: var(--ui-surface-soft); color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: 9px; padding: .6rem; min-width: 40px; min-height: 40px; justify-content: center; }
+.chroma-logout { color: var(--ui-muted); font-size: .76rem; font-weight: 700; letter-spacing: normal; }
+.chroma-logout:hover { color: var(--ui-rose); }
+.chroma-app-main { padding-top: 1.8rem; padding-bottom: 2rem; }
+.chroma-page-header { display: flex; align-items: end; justify-content: space-between; flex-wrap: wrap; gap: 1rem 2rem; margin-bottom: 1.3rem; }
+.chroma-page-header > div:first-child { flex: 1 1 22rem; }
+.chroma-profile-picker { width: min(100%, 17rem); flex: none; }
+.chroma-eyebrow { display: block; font-size: .68rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--ui-rose); margin-bottom: .45rem; }
+.chroma-page-title { margin: 0; font-size: clamp(1.6rem, 3vw, 2rem); line-height: 1.15; font-weight: 750; letter-spacing: -.045em; color: var(--ui-ink); }
+.chroma-subtitle { color: var(--ui-muted); font-size: .78rem; margin-top: .42rem; }
+.chroma-field-label { color: var(--ui-muted); display: block; font-size: .68rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; margin-bottom: .4rem; }
+.chroma-select, .chroma-input { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 9px; color: var(--ui-ink); min-height: 44px; padding: .65rem .8rem; }
+.chroma-select:focus, .chroma-input:focus { border-color: var(--ui-rose); outline: 2px solid var(--ui-plum); outline-offset: 1px; }
+.chroma-button { background: var(--ui-rose); color: var(--ui-canvas); border-radius: 9px; min-height: 44px; padding: .65rem 1.1rem; font-weight: 750; }
+[data-theme="light"] .chroma-button { color: #fff; }
+.chroma-button:hover:not(:disabled) { background: var(--ui-plum); color: var(--ui-canvas); }
+.chroma-button-secondary { background: var(--ui-surface); color: var(--ui-rose); border: 1px solid var(--ui-line); border-radius: 9px; min-height: 40px; padding: .55rem .85rem; font-weight: 700; }
+.chroma-button-secondary:hover:not(:disabled) { background: var(--ui-surface-soft); border-color: var(--ui-rose); }
+.chroma-button-secondary.chroma-button-danger { background: var(--ui-coral); color: var(--ui-canvas); border-color: var(--ui-coral); }
+[data-theme="light"] .chroma-button-secondary.chroma-button-danger { color: #fff; }
+.chroma-button-secondary.chroma-button-danger:hover:not(:disabled) { background: color-mix(in srgb, var(--ui-coral) 83%, var(--ui-ink)); border-color: var(--ui-coral); color: var(--ui-canvas); }
+[data-theme="light"] .chroma-button-secondary.chroma-button-danger:hover:not(:disabled) { color: #fff; }
+.chroma-section-title { color: var(--ui-ink); font-size: .86rem; font-weight: 750; text-transform: none; letter-spacing: normal; }
+.chroma-status { display: inline-flex; align-items: center; gap: .4rem; border-radius: 6px; padding: .3rem .5rem; font-size: .72rem; font-weight: 750; color: var(--ui-teal); background: color-mix(in srgb, var(--ui-teal) 13%, var(--ui-surface)); }
+.chroma-status--idle { color: var(--ui-muted); background: var(--ui-surface-soft); }
+.chroma-status--error { color: var(--ui-coral); background: color-mix(in srgb, var(--ui-coral) 12%, var(--ui-surface)); }
+.chroma-status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; flex: none; }
 
-/* ------------------------------- hand-written CSS from the pages themselves ---
- * These live in unlayered <style> blocks, so they need (0,3,0) to be beaten
- * where the original selector is already (0,2,0).
- */
+.chroma-home-header { margin-bottom: 1.3rem; }
+.chroma-home-grid { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(17rem, .9fr); gap: .8rem; }
+.chroma-home-hero { background: var(--ui-hero); border: 1px solid var(--ui-line); border-radius: 16px; padding: 1.5rem 1.65rem 1.35rem; min-width: 0; }
+.chroma-home-hero-top, .chroma-home-values, .chroma-panel-heading { display: flex; justify-content: space-between; align-items: baseline; gap: .75rem; }
+.chroma-home-hero-top { color: var(--ui-muted); font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.chroma-home-hero-top span:last-child { color: var(--ui-rose); text-transform: none; letter-spacing: normal; }
+.chroma-home-values { align-items: end; margin: 1.35rem 0 1.25rem; }
+.chroma-home-total { color: var(--ui-ink); font-size: clamp(3.4rem, 7vw, 4.8rem); font-weight: 760; line-height: .9; letter-spacing: -.085em; }
+.chroma-home-response { color: var(--ui-ink); font-size: 1.65rem; font-weight: 750; letter-spacing: -.04em; text-align: right; }
+.chroma-home-response small, .chroma-home-total-label { display: block; color: var(--ui-muted); font-size: .7rem; font-weight: 500; line-height: 1.4; letter-spacing: normal; margin-top: .45rem; }
+.chroma-home-times { display: grid; align-content: stretch; padding: .35rem 1.25rem; }
+.chroma-time-item { display: flex; flex-direction: column; justify-content: center; gap: .3rem; min-width: 0; padding: .8rem 0; }
+.chroma-time-item + .chroma-time-item { border-top: 1px solid var(--ui-line); }
+.chroma-time-label { color: var(--ui-muted); font-size: .67rem; font-weight: 800; text-transform: uppercase; letter-spacing: .09em; }
+.chroma-time-value { color: var(--ui-ink); font-size: 1rem; font-weight: 750; overflow-wrap: anywhere; }
+.chroma-time-detail { color: var(--ui-muted); font-size: .7rem; }
+.chroma-home-lower { margin-top: .8rem; align-items: start; }
+.chroma-side { display: grid; gap: .8rem; align-content: start; }
+.chroma-panel { padding: 1.25rem; }
+.chroma-panel-heading { margin-bottom: .8rem; }
+.chroma-panel-heading h2 { color: var(--ui-ink); font-size: .88rem; font-weight: 750; margin: 0; }
+.chroma-panel-heading small { color: var(--ui-muted); font-size: .7rem; }
+.overview-track { display: flex; height: .6rem; border-radius: 99px; overflow: hidden; background: var(--ui-track); }
+.overview-track > span { display: block; height: 100%; flex: none; }
+.overview-track > span + span { border-left: 2px solid var(--ui-surface); }
+.overview-legend { display: flex; flex-wrap: wrap; gap: .4rem 1rem; }
+.overview-key { display: inline-flex; align-items: center; gap: .35rem; }
+.overview-key::before { content: ''; width: .5rem; height: .5rem; border-radius: 2px; flex: none; background: var(--key-color); }
+.overview-priority-item + .overview-priority-item { border-top: 1px solid var(--ui-line); }
+.overview-priority-item { column-gap: 1rem; row-gap: .5rem; }
+.chroma-priority-badge { display: inline-block; width: fit-content; border-radius: 5px; padding: .25rem .4rem; font-size: .65rem; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; }
+.chroma-priority-badge--critical { background: color-mix(in srgb, var(--ui-coral) 13%, var(--ui-surface)); color: var(--ui-coral); }
+.chroma-priority-badge--high { background: color-mix(in srgb, var(--ui-amber) 14%, var(--ui-surface)); color: var(--ui-amber); }
 
-/* web/template.html <style> */
-[data-theme="light"] .tab-active { border-bottom-color: #a20fd8; color: #a20fd8; text-shadow: none; }
-[data-theme="light"] .tab-inactive { color: oklch(52% .045 257.4); }
-[data-theme="light"] .tab-inactive:hover { color: #a20fd8; }
+.chroma-view-title { margin: 0 0 1rem; }
+.chroma-form-panel, .chroma-list-panel, .chroma-controls-panel, .chroma-finding-panel { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 16px; box-shadow: none; }
+.chroma-form-panel > .chroma-section-title { margin-bottom: 1rem; }
+.chroma-profile-form { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 23rem) auto; gap: 1.25rem; align-items: end; }
+.chroma-profile-form > div { min-width: 0; }
+.chroma-profile-form .chroma-schedule-control { width: 100%; height: 44px; min-height: 44px; }
+.chroma-profile-schedule { display: flex; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.chroma-schedule-label { display: inline-block; background: var(--ui-surface-soft); border: 1px solid var(--ui-line); border-radius: 7px; padding: .45rem .6rem; color: var(--ui-rose); font-size: .75rem; font-weight: 700; line-height: 1.25; }
+.chroma-edit-schedule { display: inline-flex; align-items: center; justify-content: center; width: 38px; min-width: 38px; height: 38px; min-height: 38px; padding: 0; }
+.chroma-findings-section { gap: 1rem; }
+.chroma-findings-section .chroma-page-header { margin-bottom: 0; }
+.chroma-table { border-collapse: separate; border-spacing: 0; }
+.chroma-profile-table, .chroma-node-table { table-layout: fixed; min-width: 920px; }
+.chroma-profile-table col:nth-child(1) { width: 8%; }
+.chroma-profile-table col:nth-child(2) { width: 20%; }
+.chroma-profile-table col:nth-child(3) { width: 26%; }
+.chroma-profile-table col:nth-child(4) { width: 9%; }
+.chroma-profile-table col:nth-child(5) { width: 16%; }
+.chroma-profile-table col:nth-child(6) { width: 21%; }
+.chroma-profile-table th:first-child, .chroma-profile-table td:first-child { padding-inline: .75rem; white-space: nowrap; }
+.chroma-profile-table td:nth-child(2) { overflow-wrap: anywhere; }
+.chroma-node-table col:nth-child(1) { width: 7%; }
+.chroma-node-table col:nth-child(2) { width: 25%; }
+.chroma-node-table col:nth-child(3) { width: 14%; }
+.chroma-node-table col:nth-child(4) { width: 27%; }
+.chroma-node-table col:nth-child(5) { width: 12%; }
+.chroma-node-table col:nth-child(6) { width: 15%; }
+.chroma-node-table th:nth-child(3), .chroma-node-table td:nth-child(3), .chroma-node-table th:nth-child(4), .chroma-node-table td:nth-child(4) { text-align: center; }
+.chroma-node-table th:nth-child(5), .chroma-node-table td:nth-child(5), .chroma-node-table th:nth-child(6), .chroma-node-table td:nth-child(6) { text-align: right; }
+.chroma-node-table th:first-child, .chroma-node-table td:first-child { padding-inline: .9rem; white-space: nowrap; }
+.chroma-node-table th:nth-child(6), .chroma-node-table td:nth-child(6) { padding-inline: .75rem; }
+.chroma-node-table td:nth-child(2) { overflow-wrap: anywhere; }
+.chroma-node-last { white-space: nowrap; }
+.chroma-node-open { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 30px; height: 30px; padding: 0; background: var(--ui-surface-soft); border: 1px solid var(--ui-line); border-radius: 6px; color: var(--ui-muted); }
+.chroma-node-open:hover { border-color: var(--ui-rose); color: var(--ui-rose); }
+.chroma-node-open svg { width: 14px; height: 14px; }
+.chroma-table thead { background: var(--ui-surface-soft); }
+.chroma-table th { color: var(--ui-muted); font-size: .68rem; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
+.chroma-table td { color: var(--ui-ink); border-top: 1px solid var(--ui-line); }
+.chroma-table tbody tr:hover { background: var(--ui-surface-soft); }
+.chroma-table tbody tr { box-shadow: none; }
+.chroma-table tbody button, .chroma-table tbody a { opacity: 1; }
+.chroma-filter-pill { border: 1px solid var(--ui-line); background: var(--ui-surface); color: var(--ui-muted); border-radius: 8px; padding: .45rem .7rem; min-height: 36px; font-size: .7rem; font-weight: 700; letter-spacing: normal; text-transform: none; }
+.chroma-filter-pill:hover { color: var(--ui-rose); border-color: var(--ui-rose); }
+.chroma-filter-pill[aria-pressed="true"] { background: var(--ui-rose); color: var(--ui-canvas); border-color: var(--ui-rose); }
+[data-theme="light"] .chroma-filter-pill[aria-pressed="true"] { color: #fff; }
+.chroma-filter-details { display: none; }
+.chroma-tab { color: var(--ui-muted); background: transparent; border-radius: 8px; min-height: 40px; padding: .55rem 1rem; font-size: .76rem; font-weight: 750; }
+.chroma-tab:hover { color: var(--ui-rose); }
+.chroma-tab[aria-selected="true"] { color: var(--ui-canvas); background: var(--ui-rose); }
+[data-theme="light"] .chroma-tab[aria-selected="true"] { color: #fff; }
+.chroma-finding-badge { background: color-mix(in srgb, var(--ui-coral) 13%, var(--ui-surface)); color: var(--ui-coral); border: 1px solid color-mix(in srgb, var(--ui-coral) 20%, var(--ui-line)); border-radius: 5px; }
+.chroma-finding-badge:hover, .chroma-finding-badge:focus-visible { border-color: var(--ui-coral); }
+.chroma-severity-tooltip { background: var(--ui-surface); color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: 10px; box-shadow: 0 8px 25px var(--ui-shadow); }
+#severity-tooltip { position: fixed; z-index: 60; pointer-events: none; min-width: 11rem; max-width: min(20rem, calc(100vw - 2rem)); }
+#pager button:disabled { opacity: .36; }
+#pager button:disabled:hover { border-color: var(--ui-line); color: var(--ui-muted); }
+.chroma-modal-scrim { background: var(--ui-scrim); backdrop-filter: none; }
+.chroma-modal { max-height: calc(100dvh - 2rem); overflow-y: auto; }
+.chroma-mobile-list { display: none; }
+.chroma-mobile-card { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 13px; padding: 1rem; min-width: 0; }
+.chroma-mobile-card + .chroma-mobile-card { margin-top: .65rem; }
+.chroma-mobile-card h3 { color: var(--ui-ink); font-size: .9rem; font-weight: 750; overflow-wrap: anywhere; }
+.chroma-mobile-card dl { display: grid; grid-template-columns: minmax(6rem, .7fr) minmax(0, 1.3fr); gap: .4rem .8rem; margin-top: .8rem; font-size: .76rem; }
+.chroma-mobile-card dt { color: var(--ui-muted); }
+.chroma-mobile-card dd { min-width: 0; color: var(--ui-ink); overflow-wrap: anywhere; }
+.chroma-mobile-card .chroma-mobile-actions { display: flex; flex-wrap: wrap; gap: .5rem; margin-top: 1rem; }
+.chroma-mobile-card a { color: var(--ui-rose); overflow-wrap: anywhere; }
+.chroma-mobile-empty { color: var(--ui-muted); text-align: center; padding: 2rem 1rem; }
+.chroma-login-page { min-height: 100dvh; background: var(--ui-canvas-wash); color: var(--ui-ink); }
+.chroma-login-card { width: min(100%, 420px); padding: 2.25rem; }
+.chroma-login-theme { position: absolute; top: 1rem; right: 1rem; }
+body.chroma-login-page { display: flex; justify-content: center; align-items: center; margin: 0; padding: 1rem; }
+.glass-box.chroma-login-card { background: var(--ui-surface); border: 1px solid var(--ui-line); border-radius: 16px; box-shadow: 0 18px 48px var(--ui-shadow); backdrop-filter: none; }
+.glass-box.chroma-login-card::before { display: none; animation: none; }
+.chroma-login-input.input-cyber { display: block; width: 100%; background: var(--ui-canvas); border: 1px solid var(--ui-line); border-radius: 9px; color: var(--ui-ink); min-height: 48px; padding: .7rem .85rem; box-shadow: none; transition: border-color .15s; }
+.chroma-login-input.input-cyber:focus { border-color: var(--ui-rose); outline: 2px solid var(--ui-plum); outline-offset: 1px; box-shadow: none; }
+.chroma-login-submit.btn-cyber { border-radius: 9px; background: var(--ui-rose); color: var(--ui-canvas); box-shadow: none; transition: background-color .15s; }
+[data-theme="light"] .chroma-login-submit.btn-cyber { color: #fff; }
+.chroma-login-submit.btn-cyber:hover { background: var(--ui-plum); box-shadow: none; transform: none; }
+.chroma-login-submit.btn-cyber:active { transform: none; }
 
-[data-theme="light"] ::-webkit-scrollbar-track { background: oklch(96.8% .007 247.896); }
-[data-theme="light"] ::-webkit-scrollbar-thumb { background: oklch(86.9% .022 252.894); }
-[data-theme="light"] ::-webkit-scrollbar-thumb:hover { background: #a20fd8; }
-
-/* @layer components, from web/input.css */
-[data-theme="light"] .neon-text { text-shadow: none; }
-[data-theme="light"] .glass-header {
-  background: rgb(255 255 255 / .82);
-  border-bottom: 1px solid rgb(162 15 216 / .22);
-  box-shadow: 0 1px 3px rgb(15 23 42 / .08);
+@media (max-width: 900px) {
+  .chroma-profile-form { grid-template-columns: minmax(0, 1fr); }
+  .chroma-profile-form .chroma-schedule-control { width: min(100%, 23rem); }
+  .chroma-home-grid { grid-template-columns: 1fr; }
+  .chroma-home-times { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+  .chroma-time-item + .chroma-time-item { border-top: 0; border-left: 1px solid var(--ui-line); padding-left: 1rem; }
+  .chroma-nav-layout, .chroma-nav-actions { flex-wrap: wrap; }
 }
-
-/* web/login.html <style>. Its block is entirely hardcoded, and .input-cyber:focus
-   is (0,2,0) so it needs the (0,3,0) form. */
-[data-theme="light"] body.login-page {
-  background-color: oklch(96.8% .007 247.896);
-  background-image:
-    radial-gradient(circle at 50% 50%, rgb(162 15 216 / .06) 0%, transparent 50%),
-    linear-gradient(rgb(15 23 42 / .05) 1px, transparent 1px),
-    linear-gradient(90deg, rgb(15 23 42 / .05) 1px, transparent 1px);
-  color: oklch(27.9% .041 260.031);
+@media (max-width: 640px) {
+  body { background: var(--ui-canvas-wash-mobile); }
+  .chroma-topbar { position: static; }
+  .chroma-nav-layout { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: .3rem; min-height: 0; padding-top: .6rem; }
+  .chroma-nav-layout > div:first-child { grid-column: 1 / 5; grid-row: 1; }
+  .chroma-nav-actions { display: contents; }
+  #nav-btn-home { grid-column: 1 / 3; grid-row: 2; }
+  #nav-btn-profiles { grid-column: 3 / 5; grid-row: 2; }
+  #nav-btn-findings { grid-column: 5 / 7; grid-row: 2; }
+  #nav-btn-theme { grid-column: 5; grid-row: 1; justify-self: end; margin-left: 0; }
+  #nav-btn-logout { grid-column: 6; grid-row: 1; justify-self: end; white-space: nowrap; font-size: .67rem; }
+  .chroma-nav-tab { min-height: 44px; padding: .65rem .2rem; }
+  .chroma-nav-actions .chroma-divider { display: none; }
+  .chroma-app-main { padding: 1rem; }
+  .chroma-page-header { align-items: stretch; }
+  .chroma-page-header .chroma-profile-picker { width: 100%; max-width: none; }
+  .chroma-home-times { grid-template-columns: 1fr; gap: 0; }
+  .chroma-time-item + .chroma-time-item { border-left: 0; border-top: 1px solid var(--ui-line); padding-left: 0; }
+  .chroma-home-hero { padding: 1.2rem; }
+  .chroma-home-values { margin: 1.2rem 0; }
+  .chroma-home-total { font-size: 3.55rem; }
+  .chroma-home-response { font-size: 1.3rem; }
+  .chroma-panel { padding: 1rem; }
+  .chroma-desktop-table { display: none !important; }
+  .chroma-mobile-list { display: block; }
+  .chroma-findings-section { min-height: 0; flex-grow: 0; }
+  .chroma-findings-scroll { overflow: visible; }
+  .chroma-filter-details { display: block; width: 100%; }
+  .chroma-filter-details summary { color: var(--ui-rose); font-size: .75rem; font-weight: 750; padding: .45rem 0; }
+  .chroma-filter-options { display: none; }
+  .chroma-filter-details[open] + .chroma-filter-options { display: flex; }
+  .chroma-controls-panel { gap: .8rem; }
+  #controls-bar > .h-5.w-px { display: none; }
+  #controls-bar > div:first-child, #controls-bar > div:nth-child(3) { width: 100%; }
+  #controls-bar > div:first-child > label, #controls-bar > div:nth-child(3) > label { white-space: nowrap; min-width: 4.3rem; }
+  .chroma-controls-panel .chroma-control-select { width: min(100%, 20rem); }
+  #controls-bar .chroma-control-select { flex: 1; min-width: 0; }
+  .chroma-controls-panel .chroma-control-select select { width: 100%; }
+  #select-sort { padding-right: 2.2rem; text-overflow: ellipsis; white-space: nowrap; }
+  .chroma-profile-form { display: grid; grid-template-columns: 1fr; gap: 1rem; }
+  .chroma-profile-form > * { width: 100%; min-width: 0; }
+  .chroma-profile-form .chroma-schedule-control { display: grid; width: 100%; height: auto; grid-template-columns: auto minmax(0, 1fr); gap: .2rem; }
+  .chroma-schedule-control > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .chroma-schedule-control > :nth-child(2) { grid-column: 2; grid-row: 1; justify-self: start; }
+  .chroma-schedule-control > :nth-child(3) { grid-column: 1; grid-row: 2; }
+  .chroma-schedule-control > :nth-child(4) { grid-column: 2; grid-row: 2; }
+  .chroma-schedule-time { min-width: 0; justify-content: space-between; }
+  .chroma-schedule-time select { min-width: 0; padding: .35rem .1rem; font-size: .76rem; }
+  .chroma-schedule-control span { padding-inline: .2rem; }
+  .chroma-profile-form button[type="submit"] { width: 100%; }
+  .chroma-modal { padding: 1rem; }
+  .chroma-modal select { min-height: 44px; }
+  #edit-schedule-domain { max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+  .chroma-login-card { padding: 1.5rem; }
+  #sub-dashboard > .glass-header { flex-wrap: wrap; gap: .75rem; padding: 1rem; }
+  #sub-dashboard > .glass-header > div:first-child { flex-wrap: wrap; gap: .7rem; min-width: 0; }
+  #sub-dashboard > .glass-header > div:first-child > div:last-child { min-width: 0; overflow-wrap: anywhere; }
+  #sub-dash-title { min-width: 0; overflow-wrap: anywhere; word-break: break-word; }
+  #sub-dashboard > .flex-grow.overflow-auto { overflow: visible; padding: 1rem; }
+  #pager { padding: .8rem; }
+  #pager > div { flex-wrap: wrap; }
+  .chroma-finding-panel { overflow: visible; }
 }
-[data-theme="light"] .glass-box {
-  background: rgb(255 255 255 / .9);
-  border: 1px solid rgb(162 15 216 / .18);
-  box-shadow: 0 10px 40px rgb(15 23 42 / .12);
+@media (max-width: 390px) {
+  .chroma-mobile-card dl { grid-template-columns: 1fr; gap: .15rem; }
+  .chroma-mobile-card dd { margin-bottom: .45rem; }
+  .chroma-home-hero-top span:last-child { display: none; }
 }
-[data-theme="light"] .glass-box::before {
-  background: linear-gradient(90deg, transparent, #a20fd8, transparent);
+@media (max-height: 500px) and (orientation: landscape) {
+  .chroma-topbar { position: static; }
+  .chroma-table thead { position: static !important; }
+  .chroma-app-main { padding-top: .75rem; }
+  .chroma-panel, .chroma-home-hero { padding: 1rem; }
 }
-[data-theme="light"] .neon-glow { text-shadow: none; }
-[data-theme="light"] .input-cyber {
-  background: #ffffff;
-  border: 1px solid oklch(86.9% .022 252.894);
-  color: oklch(27.9% .041 260.031);
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-pulse, .animate-spin, .animate-ping { animation: none !important; }
+  * { scroll-behavior: auto !important; }
 }
-[data-theme="light"] .input-cyber:focus {
-  border-color: #a20fd8;
-  box-shadow: 0 0 0 3px rgb(162 15 216 / .14);
-}
-[data-theme="light"] .btn-cyber:hover { box-shadow: 0 4px 14px rgb(162 15 216 / .3); }
-
-/* ------------------------------------------------------- the toggle itself --- */
-
-/* Only one of the two icons is ever shown, swapped from CSS so the button needs
-   no per-theme class juggling in JS. */
-[data-theme="light"] .theme-icon-moon { display: none; }
-[data-theme="dark"] .theme-icon-sun { display: none; }

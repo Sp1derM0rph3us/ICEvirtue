@@ -23,6 +23,10 @@ const hostCorrelationV1 = "2026_07_host_correlation_v1"
 // baseline is the last time the previous version observed them.
 const subdomainLastChangedV1 = "2026_09_subdomain_last_changed_v1"
 
+// timestampsUTCV1 rewrites mixed-offset legacy values to a single UTC storage
+// representation. It leaves the instant unchanged, including for soft-deleted rows.
+const timestampsUTCV1 = "2026_09_timestamps_utc_v1"
+
 // backfillBatch is how many rows one transaction converts.
 //
 // It is also the crash-loss unit, which is why it is not much larger: a batch is
@@ -56,7 +60,99 @@ func RunDataMigrations() error {
 	if err := runHostCorrelationMigration(); err != nil {
 		return err
 	}
-	return runSubdomainLastChangedMigration()
+	if err := runSubdomainLastChangedMigration(); err != nil {
+		return err
+	}
+	return runTimestampsUTCMigration()
+}
+
+func runTimestampsUTCMigration() error {
+	applied, err := migrationApplied(timestampsUTCV1)
+	if err != nil || applied {
+		return err
+	}
+	if err := normalizeProfileLastScanUTC(); err != nil {
+		return err
+	}
+	if err := normalizeSubdomainLastChangedUTC(); err != nil {
+		return err
+	}
+	// RFC3339Nano omits trailing fractional zeros. Plain TEXT ordering can put
+	// 12:00:00Z after 12:00:00.500Z, so order these fields by parsed instant.
+	// Expression indexes keep the overview and existing recent-sort queries fast.
+	if err := DB.Exec(`CREATE INDEX IF NOT EXISTS idx_sub_changed_instant
+		ON subdomains(profile_id, julianday(last_changed)) WHERE deleted_at IS NULL`).Error; err != nil {
+		return fmt.Errorf("indexing asset change instants: %w", err)
+	}
+	if err := DB.Exec(`CREATE INDEX IF NOT EXISTS idx_profile_scan_instant
+		ON profiles(julianday(last_scan)) WHERE deleted_at IS NULL`).Error; err != nil {
+		return fmt.Errorf("indexing profile scan instants: %w", err)
+	}
+	return markMigrationApplied(timestampsUTCV1)
+}
+
+func normalizeProfileLastScanUTC() error {
+	type row struct {
+		ID       string
+		LastScan time.Time
+	}
+	var cursor string
+	for {
+		var rows []row
+		if err := DB.Table("profiles").Select("id, last_scan").
+			Where("id > ?", cursor).Order("id").Limit(backfillBatch).Scan(&rows).Error; err != nil {
+			return fmt.Errorf("reading profile scan timestamps: %w", err)
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			for _, r := range rows {
+				if r.LastScan.IsZero() {
+					continue
+				}
+				if err := tx.Exec("UPDATE profiles SET last_scan = ? WHERE id = ?", r.LastScan.UTC(), r.ID).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("normalizing profile scan timestamps: %w", err)
+		}
+		cursor = rows[len(rows)-1].ID
+	}
+}
+
+func normalizeSubdomainLastChangedUTC() error {
+	type row struct {
+		ID          uint
+		LastChanged time.Time
+	}
+	var cursor uint
+	for {
+		var rows []row
+		if err := DB.Table("subdomains").Select("id, last_changed").
+			Where("id > ?", cursor).Order("id").Limit(backfillBatch).Scan(&rows).Error; err != nil {
+			return fmt.Errorf("reading asset change timestamps: %w", err)
+		}
+		if len(rows) == 0 {
+			return nil
+		}
+		if err := DB.Transaction(func(tx *gorm.DB) error {
+			for _, r := range rows {
+				if r.LastChanged.IsZero() {
+					continue
+				}
+				if err := tx.Exec("UPDATE subdomains SET last_changed = ? WHERE id = ?", r.LastChanged.UTC(), r.ID).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		}); err != nil {
+			return fmt.Errorf("normalizing asset change timestamps: %w", err)
+		}
+		cursor = rows[len(rows)-1].ID
+	}
 }
 
 func runHostCorrelationMigration() error {

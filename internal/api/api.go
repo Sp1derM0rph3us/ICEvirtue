@@ -141,6 +141,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 				r.Delete("/", a.deleteProfile)
 				r.Put("/schedule", a.editProfileSchedule)
 				r.Post("/scan", forceScanProfile)
+				r.Get("/overview", getProfileOverview)
 				r.Get("/subdomains", getProfileSubdomains)
 				r.Get("/secrets", getProfileSecrets)
 				r.Get("/hosts", getProfileHosts)

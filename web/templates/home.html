@@ -25,70 +25,6 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/output.css">
-    <style>
-        /* Everything in output.css sits inside a cascade layer, so the unlayered rules
-           in this block outrank all of it without needing !important. */
-
-        .tab-active { border-bottom: 2px solid #bc13fe; color: #bc13fe; text-shadow: 0 0 8px rgba(188, 19, 254, 0.4); }
-        .tab-inactive { color: #62748e; }
-        .tab-inactive:hover { color: #bc13fe; }
-
-        .animate-fade-in { animation: fadeIn 0.4s ease-out; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
-
-        /* The CRT scanline and flicker overlays are removed. They are deleted from
-           web/input.css, but output.css cannot be rebuilt here (no npm), so this
-           neutralises the compiled @layer base rules until it is. Harmless no-op
-           after a rebuild.
-
-           Beyond being dark-mode-only, body::before animated opacity at 6.7Hz on a
-           permanently promoted full-viewport layer, and both overlays painted at
-           z-index 9998/9999 -- above the modal at z-100, whose corners they darkened. */
-        body::before, body::after { display: none !important; content: none !important; }
-
-        /* Guard the remaining animations. No motion-reduce: variant is compiled, so
-           this has to be hand-written. */
-        @media (prefers-reduced-motion: reduce) {
-            .animate-fade-in, .animate-pulse, .animate-spin, .animate-ping { animation: none; }
-            * { scroll-behavior: auto; }
-        }
-
-        /* hidden must beat every other display utility it is paired with. It happens to
-           today because output.css emits the display group alphabetically and .hidden
-           lands after .flex, which is too fragile to rely on. */
-        .hidden { display: none; }
-
-        /* A disabled pager button. Written by hand because disabled:opacity-30 is not in
-           the compiled stylesheet -- only disabled:cursor-not-allowed is -- and adding a
-           class needs a Tailwind rebuild that this environment cannot do. */
-        #pager button:disabled { opacity: 0.3; }
-        #pager button:disabled:hover { border-color: var(--color-slate-800); color: var(--color-slate-500); }
-
-        /* This is a single, viewport-positioned tooltip shared by every Findings
-           badge. Keeping it outside the scrolling table prevents clipping. */
-        #severity-tooltip {
-            position: fixed;
-            z-index: 60;
-            transform: translate(-50%, -100%);
-            pointer-events: none;
-            min-width: 11rem;
-            max-width: min(20rem, calc(100vw - 2rem));
-        }
-        .findings-summary-badge:hover, .findings-summary-badge:focus {
-            border-color: #fb7185;
-            outline: 1px solid rgba(251, 113, 133, 0.7);
-            outline-offset: 2px;
-        }
-
-        /* Scrollbar */
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #000000; }
-        ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 3px; }
-        ::-webkit-scrollbar-thumb:hover { background: #bc13fe; }
-    </style>
-    <!-- Last in <head>, and after the </style> above: that block is unlayered too,
-         so theme.css needs both the later source position and the
-         [data-theme="light"] prefix to outrank it. -->
     <link rel="stylesheet" href="/static/css/theme.css">
 </head>
 <body class="min-h-screen flex flex-col font-sans">
@@ -97,60 +33,117 @@
          nav. With it on the nav, the centred container started 16px inside a box that
          was itself 32px narrower than <main>, so the logo sat 24px left of the content
          cards below it. Same max-width and same padding on both now line them up. -->
-    <nav class="glass-header sticky top-0 z-50 py-4 shrink-0 transition-all">
-        <div class="max-w-7xl mx-auto px-6 flex justify-between items-center">
+    <nav class="glass-header chroma-topbar sticky top-0 z-50 shrink-0" aria-label="Main navigation">
+        <div id="main-nav-layout" class="chroma-nav-layout max-w-7xl mx-auto px-6 flex justify-between items-center">
             <div class="flex items-center gap-3">
-                <svg class="w-8 h-8 text-accent drop-shadow-[0_0_8px_rgba(188,19,254,0.6)]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
-                <h1 class="text-2xl font-bold tracking-tighter text-white neon-text uppercase italic">ICEvirtue</h1>
+                <span class="chroma-brand-mark" aria-hidden="true"></span>
+                <span class="chroma-brand">ICEVIRTUE</span>
             </div>
-            <div class="flex gap-8 font-sans text-xs font-bold items-center uppercase tracking-[0.2em]">
-                <button id="nav-btn-targets" class="tab-active pb-1 transition-all hover:text-accent" onclick="switchView('targets')">Targets</button>
-                <button id="nav-btn-discoveries" class="tab-inactive pb-1 transition-all hover:text-accent" onclick="switchView('discoveries')">Discoveries</button>
-                <div class="h-4 w-px bg-slate-800 mx-2"></div>
+            <div id="main-nav-actions" class="chroma-nav-actions flex font-sans items-center">
+                <button id="nav-btn-home" class="chroma-nav-tab tab-active" onclick="switchView('home')" aria-current="page">Home</button>
+                <button id="nav-btn-profiles" class="chroma-nav-tab tab-inactive" onclick="switchView('profiles')">Profiles</button>
+                <button id="nav-btn-findings" class="chroma-nav-tab tab-inactive" onclick="switchView('findings')">Findings</button>
+                <div class="chroma-divider h-4 w-px bg-slate-800 mx-2"></div>
                 <!-- Both icons ship in the markup and theme.css shows exactly one, so
                      toggling the theme needs no class juggling in JS. -->
-                <button id="nav-btn-theme" class="flex items-center gap-2 text-slate-500 hover:text-accent transition-all border border-slate-800 rounded-sm px-3 py-2 bg-black" onclick="toggleTheme()" title="Toggle light / dark">
+                <button id="nav-btn-theme" class="chroma-theme-button flex items-center" onclick="toggleTheme()" aria-label="Toggle light and dark theme" title="Toggle light / dark">
                     <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
                     <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
                 </button>
-                <button id="nav-btn-logout" class="text-rose-500/80 hover:text-rose-400 transition-all font-black" onclick="logout()">[ TERMINATE SESSION ]</button>
+                <button id="nav-btn-logout" class="chroma-logout" onclick="logout()">Sign out</button>
             </div>
         </div>
     </nav>
 
-    <!-- flex flex-col is what lets the Discoveries panel claim the leftover viewport
+    <!-- flex flex-col is what lets the Findings panel claim the leftover viewport
          height. Without it main was a plain block, so the section's height:100% had no
          definite parent height to resolve against, the panel was sized by its content,
          and its internal overflow-auto never engaged: the whole page scrolled and the
          sticky table header never stuck. -->
-    <main class="flex-grow flex flex-col p-6 max-w-7xl mx-auto w-full">
-        
-        <section id="view-targets" class="space-y-8 animate-fade-in block">
+    <main class="chroma-app-main flex-grow flex flex-col px-6 max-w-7xl mx-auto w-full">
+
+        <section id="view-home" class="animate-fade-in">
+            <div class="chroma-page-header chroma-home-header">
+                <div>
+                    <span class="chroma-eyebrow">External reconnaissance / overview</span>
+                    <h1 class="chroma-page-title">Surface overview</h1>
+                    <p class="chroma-subtitle">Identified assets and findings requiring attention.</p>
+                </div>
+                <div class="chroma-profile-picker w-full max-w-xs">
+                    <label for="select-home-profile" class="chroma-field-label">Profile</label>
+                    <select id="select-home-profile" onchange="onHomeProfileChanged()" class="chroma-select w-full"></select>
+                </div>
+            </div>
+            <span id="home-scan-badge" class="chroma-status hidden mb-3"><span class="chroma-status-dot"></span>Scan in progress</span>
+
+            <div id="home-empty" class="chroma-surface hidden px-8 py-12 text-center">
+                <h2 class="text-lg font-bold text-white mb-2">No profiles yet</h2>
+                <p class="text-sm text-slate-500 mb-5">Create a profile to see its reconnaissance overview.</p>
+                <button type="button" onclick="switchView('profiles')" class="chroma-button mt-2">Open Profiles</button>
+            </div>
+            <div id="home-loading" class="chroma-surface hidden px-8 py-10 text-center text-sm" role="status">Loading profile overview…</div>
+            <div id="home-error" class="chroma-surface hidden px-8 py-10 text-center" role="alert">
+                <p id="home-error-text" class="text-rose-500 text-sm mb-4">Could not load the profile overview.</p>
+                <button type="button" onclick="refreshProfiles().then(() => loadHomeOverview())" class="text-accent text-sm font-bold hover:text-white">Retry</button>
+            </div>
+
+            <div id="home-content" class="hidden">
+                <div class="chroma-home-grid">
+                    <div class="chroma-home-hero">
+                        <div class="chroma-home-hero-top"><span>Total identified assets</span><span>Profile inventory</span></div>
+                        <div class="chroma-home-values">
+                            <div><p id="home-asset-total" class="chroma-home-total tabular-nums">0</p><span class="chroma-home-total-label">Nodes in this profile</span></div>
+                            <div class="chroma-home-response"><span id="home-response-ratio">0 of 0</span><small>HTTP response observed</small></div>
+                        </div>
+                        <div id="home-response-track" class="overview-track" role="img" aria-label="No assets identified"></div>
+                        <div class="overview-legend mt-3 text-xs chroma-muted">
+                            <span class="overview-key" style="--key-color: var(--ui-rose)"><b id="home-observed-count">0</b> response recorded</span>
+                            <span class="overview-key" style="--key-color: var(--ui-track)"><b id="home-unobserved-count">0</b> no response recorded</span>
+                        </div>
+                        <p class="text-xs chroma-muted mt-2">Observed at least once; not necessarily during the latest scan.</p>
+                    </div>
+                    <div class="chroma-surface chroma-home-times">
+                        <div class="chroma-time-item"><span class="chroma-time-label">Last scan · UTC</span><span id="home-last-scan" class="chroma-time-value">Never</span><span id="home-last-scan-status" class="chroma-time-detail">No scan recorded</span></div>
+                        <div class="chroma-time-item"><span class="chroma-time-label">Last identified change · UTC</span><span id="home-last-change" class="chroma-time-value">Never</span><span class="chroma-time-detail">Latest tracked asset diff</span></div>
+                    </div>
+                </div>
+                <div class="chroma-home-grid chroma-home-lower">
+                    <div class="chroma-surface chroma-panel">
+                        <div class="chroma-panel-heading"><h2>Priority findings</h2><small>Critical and high · newest first</small></div>
+                        <ol id="home-priority-findings" class="list-none"></ol>
+                        <p id="home-priority-empty" class="hidden text-sm chroma-muted py-5">No Critical or High findings identified.</p>
+                    </div>
+                    <div class="chroma-side">
+                        <div class="chroma-surface chroma-panel">
+                            <div class="chroma-panel-heading"><h2>Findings by severity</h2><small>Exact counts</small></div>
+                            <div id="home-severity-track" class="overview-track" role="img" aria-label="No findings identified"></div>
+                            <div id="home-severity-legend" class="overview-legend mt-4 text-xs chroma-muted"></div>
+                        </div>
+                        <div class="chroma-surface chroma-panel">
+                            <div class="chroma-panel-heading"><h2>WAF detection</h2><small>Future capability</small></div>
+                            <p class="text-sm font-bold chroma-accent">In progress</p>
+                            <p class="text-xs chroma-muted mt-2">Detected WAF technologies will appear here once scanning supports them.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- The internal ID stays stable because event handlers and tests use it; this
+             is the user-facing Profiles section. -->
+        <section id="view-targets" class="hidden space-y-5 animate-fade-in block">
+            <div class="chroma-page-header"><div><span class="chroma-eyebrow">Reconnaissance / configuration</span><h1 class="chroma-page-title">Profiles</h1><p class="chroma-subtitle">Manage target domains and their scan schedules.</p></div></div>
             
-            <div class="bg-card p-8 rounded-md border border-slate-800 relative overflow-hidden group">
-                <div class="absolute top-0 left-0 w-1 h-full bg-accent opacity-50 group-hover:opacity-100 transition-opacity"></div>
-                <h2 class="text-xs font-sans font-black mb-8 text-accent uppercase tracking-[0.25em] flex items-center gap-2">
-                    <span class="w-2.5 h-2.5 bg-accent rounded-full animate-pulse shadow-[0_0_10px_#bc13fe]"></span>
-                    Initialize New Target
-                </h2>
-                <!-- flex-wrap is load-bearing. The schedule control is w-max and so
-                     cannot shrink, and the card clips with overflow-hidden, so on a
-                     narrow viewport the submit button used to be cut off entirely --
-                     and because body has overflow-x:hidden, which propagates to the
-                     viewport, there was no horizontal scroll to reach it. It was
-                     unclickable below roughly 940px; only Enter submitted the form.
-                     Wrapping puts it on its own line instead.
-                     The paddings make all three controls exactly 60px tall: they were
-                     58/60/58, leaving a 2px ragged top edge across three bordered
-                     boxes sitting side by side. -->
-                <form id="form-add-target" class="flex flex-wrap gap-8 items-end">
+            <div class="chroma-form-panel p-6">
+                <h2 class="chroma-section-title mb-5">Create profile</h2>
+                <form id="form-add-target" class="chroma-profile-form flex flex-wrap gap-5 items-end">
                     <div class="flex-grow">
-                        <label class="block text-xs font-sans font-bold text-slate-500 mb-2 uppercase tracking-widest">Interface Node (Domain)</label>
-                        <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="TARGET_DOMAIN.RUN" class="w-full bg-black border border-slate-800 rounded-sm px-4 py-[19px] text-white font-mono text-sm focus:border-accent focus:ring-1 focus:ring-accent/30 transition-all outline-none placeholder:text-slate-800">
+                        <label for="input-domain" class="chroma-field-label">Target domain</label>
+                        <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="example.com" class="chroma-input w-full font-mono text-sm">
                     </div>
                     <div class="w-auto">
-                        <label class="block text-xs font-sans font-bold text-slate-500 mb-2 uppercase tracking-widest">Recurrence Cycle</label>
-                        <div class="flex items-center gap-2 bg-black border border-slate-800 rounded-sm p-2 focus-within:border-accent/50 w-max h-[60px] transition-all">
+                        <label class="chroma-field-label">Scan schedule</label>
+                        <div class="chroma-schedule-control flex items-center gap-2 bg-black border border-slate-800 rounded-sm p-2 focus-within:border-accent/50 w-max h-[60px] transition-all">
                             <span class="text-slate-600 font-sans text-xs font-bold pl-3 uppercase">Every</span>
                             <select id="sched-freq" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
                                 <option value="day">Day</option>
@@ -159,50 +152,51 @@
                                 <option value="year">Year</option>
                             </select>
                             <span class="text-slate-600 font-sans text-xs font-bold pl-2 uppercase">At</span>
-                            <select id="sched-hour" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
-                                <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
-                            </select>
-                            <span class="text-accent font-bold">:</span>
-                            <select id="sched-min" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors"></select>
-                            <select id="sched-ampm" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
-                                <option value="AM">AM</option>
-                                <option value="PM">PM</option>
-                            </select>
+                            <div class="chroma-schedule-time flex items-center gap-1">
+                                <select id="sched-hour" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
+                                    <option value="01">01</option><option value="02">02</option><option value="03">03</option><option value="04">04</option><option value="05">05</option><option value="06">06</option><option value="07">07</option><option value="08">08</option><option value="09">09</option><option value="10">10</option><option value="11">11</option><option value="12">12</option>
+                                </select>
+                                <span class="text-accent font-bold">:</span>
+                                <select id="sched-min" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors"></select>
+                                <select id="sched-ampm" class="bg-transparent text-accent font-mono font-bold border-none rounded p-2 text-sm outline-none cursor-pointer hover:text-white transition-colors">
+                                    <option value="AM">AM</option>
+                                    <option value="PM">PM</option>
+                                </select>
+                            </div>
                         </div>
                     </div>
                     <div>
-                        <button type="submit" class="bg-accent hover:bg-[#d000ff] text-black font-sans font-black text-sm uppercase tracking-tighter py-5 px-10 rounded-sm transition-all shadow-[0_0_15px_rgba(188,19,254,0.3)] hover:shadow-[0_0_25px_rgba(188,19,254,0.5)] active:scale-95">
-                            Establish Link
+                        <button type="submit" class="chroma-button text-sm">
+                            Add profile
                         </button>
                     </div>
                 </form>
             </div>
 
-            <div class="bg-card rounded-md shadow-md border border-slate-900 overflow-hidden">
+            <div class="chroma-list-panel overflow-hidden">
                 <div class="p-6 border-b border-slate-900 flex justify-between items-center bg-black/60">
-                    <h2 class="text-sm font-sans font-black text-slate-400 uppercase tracking-[0.2em] flex items-center gap-2">
-                        <svg class="w-5 h-5 text-accent" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"></path></svg>
-                        Scanning Profiles Table
-                    </h2>
-                    <span class="text-[11px] font-sans font-black border border-slate-800 text-slate-500 px-4 py-1.5 rounded-sm uppercase tracking-widest" id="target-count">0 Active Nodes</span>
+                    <h2 class="chroma-section-title">Configured profiles</h2>
+                    <span class="text-[11px] font-sans font-black border border-slate-800 text-slate-500 px-4 py-1.5 rounded-sm uppercase tracking-widest" id="target-count">0 profiles</span>
                 </div>
                 <div class="overflow-x-auto">
-                    <table class="w-full text-left border-collapse font-sans text-sm">
+                    <table class="chroma-table chroma-profile-table chroma-desktop-table w-full text-left font-sans text-sm">
+                        <colgroup><col><col><col><col><col><col></colgroup>
                         <thead>
                             <tr class="bg-black/90 text-slate-600 uppercase tracking-widest border-b border-slate-900">
                                 <th class="p-5 font-black w-24">ID</th>
-                                <th class="p-5 font-black">Endpoint Trace</th>
-                                <th class="p-5 font-black">Sync Logic</th>
-                                <th class="p-5 font-black">Operational Status</th>
+                                <th class="p-5 font-black">Target domain</th>
+                                <th class="p-5 font-black">Schedule</th>
+                                <th class="p-5 font-black">Status</th>
                                 <th class="p-5 font-black">Last Run</th>
-                                <th class="p-5 font-black text-right">Node Protocol</th>
+                                <th class="p-5 font-black text-right">Actions</th>
                             </tr>
                         </thead>
                         <tbody id="targets-tbody" class="divide-y divide-slate-950">
                         </tbody>
                     </table>
+                    <ul id="targets-mobile" class="chroma-mobile-list list-none p-3" aria-label="Configured profiles"></ul>
                     <div id="targets-empty" class="hidden p-12 text-center text-slate-700 font-sans font-bold uppercase tracking-widest italic text-sm">
-                        No active nodes configured in the matrix. Establish link above.
+                        No profiles yet. Add a target domain above to get started.
                     </div>
                 </div>
             </div>
@@ -210,13 +204,15 @@
 
         <!-- flex-grow, not h-full: height:100% resolved against main's auto height and
              was a no-op, so this section never claimed the leftover viewport space. -->
-        <section id="view-discoveries" class="hidden space-y-6 animate-fade-in flex flex-col flex-grow">
+        <!-- The internal ID stays stable because the Findings controls depend on it. -->
+        <section id="view-discoveries" class="chroma-findings-section hidden space-y-4 animate-fade-in flex flex-col flex-grow">
+            <div class="chroma-page-header"><div><span class="chroma-eyebrow">Reconnaissance / evidence</span><h1 class="chroma-page-title">Findings</h1><p class="chroma-subtitle">Explore identified nodes and observations.</p></div></div>
 
-            <div class="flex items-center justify-between gap-6 p-4 bg-card rounded-md border border-slate-900 shadow-sm shrink-0">
+            <div class="chroma-controls-panel flex flex-wrap items-center justify-between gap-6 p-4 shrink-0">
                 <div class="flex-grow max-w-md">
-                    <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mb-2">Target Data Stream</label>
+                    <label for="select-profile" class="chroma-field-label">Profile</label>
                     <div class="relative group">
-                        <select id="select-profile" onchange="onProfileChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer">
+                        <select id="select-profile" onchange="onProfileChanged()" class="chroma-select w-full font-mono text-sm appearance-none">
                         </select>
                         <div class="pointer-events-none absolute inset-y-0 right-0 flex items-center px-3 text-accent/60 group-hover:text-accent">
                             <svg class="fill-current h-5 w-5" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20"><path d="M9.293 12.95l.707.707L15.657 8l-1.414-1.414L10 10.828 5.757 6.586 4.343 8z"/></svg>
@@ -234,8 +230,8 @@
                     </button>
 
                     <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5">
-                        <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all">Nodes</button>
-                        <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Credentials</button>
+                        <button id="disc-tab-subs" onclick="switchDiscTab('subs')" class="chroma-tab" aria-selected="true">Nodes</button>
+                        <button id="disc-tab-secs" onclick="switchDiscTab('secs')" class="chroma-tab" aria-selected="false">Credentials</button>
                     </div>
                 </div>
             </div>
@@ -245,10 +241,10 @@
                  min-height was 400px, which on a 1366x768 laptop left 171px of actual
                  table: 73% of the viewport was controls. Merging them into one wrapping
                  bar and trimming the paddings recovers ~115px. -->
-            <div id="controls-bar" class="flex flex-wrap items-center gap-4 p-4 bg-card rounded-md border border-slate-900 shadow-sm shrink-0">
+            <div id="controls-bar" class="chroma-controls-panel flex flex-wrap items-center gap-4 p-4 shrink-0">
                 <div class="flex items-center gap-3">
-                    <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Sort Matrix:</span>
-                    <div class="relative w-64 group">
+                    <label for="select-sort" class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Sort by</label>
+                    <div class="chroma-control-select relative w-64 group">
                         <select id="select-sort" onchange="onSortChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-sans text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
                             <option value="name-asc">Alphabetical: A &rarr; Z</option>
                             <option value="name-desc">Alphabetical: Z &rarr; A</option>
@@ -268,8 +264,8 @@
                 <div class="h-5 w-px bg-slate-800"></div>
 
                 <div class="flex items-center gap-3">
-                    <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Per Page:</span>
-                    <div class="relative w-24 group">
+                    <label for="select-size" class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Per page</label>
+                    <div class="chroma-control-select relative w-24 group">
                         <select id="select-size" onchange="onPageSizeChanged()" class="w-full bg-black border border-slate-800 rounded-sm p-3 text-accent font-mono text-sm appearance-none focus:border-accent/60 outline-none transition-all cursor-pointer font-bold">
                             <option value="25">25</option>
                             <option value="50">50</option>
@@ -285,12 +281,13 @@
 
                 <div class="h-5 w-px bg-slate-800"></div>
 
-                <div class="flex flex-wrap items-center gap-2.5">
-                <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mr-1">Filter Matrix:</span>
+                <details class="chroma-filter-details"><summary id="mobile-filter-summary">Filters · All nodes</summary></details>
+                <div class="chroma-filter-options flex flex-wrap items-center gap-2.5">
+                <span class="text-xs font-sans font-bold text-slate-500 uppercase tracking-widest mr-1">Filters</span>
                 <button onclick="toggleFilter('ip')" id="filter-btn-ip" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">IP Addr</button>
                 <button onclick="toggleFilter('subdomain')" id="filter-btn-subdomain" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Nodes</button>
-                <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Vulns</button>
-                <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Ops Info</button>
+                <button onclick="toggleFilter('vuln-critical')" id="filter-btn-vuln-critical" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Critical / high</button>
+                <button onclick="toggleFilter('vuln-info')" id="filter-btn-vuln-info" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Info findings</button>
                 <button onclick="toggleFilter('secrets')" id="filter-btn-secrets" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Credentials</button>
                 <button onclick="toggleFilter('status-2xx-3xx')" id="filter-btn-status-2xx-3xx" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">2xx/3xx</button>
                 <button onclick="toggleFilter('status-403')" id="filter-btn-status-403" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">403 Block</button>
@@ -304,18 +301,19 @@
                  chain needs no min-h-0 -- convenient, since min-height:0 is not in the
                  compiled stylesheet at all. min-h-[140px] only floors the empty state;
                  400px used to force page scroll on a short viewport. -->
-            <div class="flex-grow bg-card rounded-md shadow-md border border-slate-900 overflow-hidden flex flex-col min-h-[140px]">
+            <div class="chroma-finding-panel flex-grow overflow-hidden flex flex-col min-h-[140px]">
                 
                 <div id="loader" class="hidden flex-grow flex items-center justify-center p-12">
                     <svg class="animate-spin h-10 w-10 text-accent" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
                 </div>
 
                 <div id="empty-state" class="flex-grow flex items-center justify-center text-slate-600 font-mono text-xs p-12 text-center uppercase tracking-widest italic">
-                    Node selection required... Link established profile from data stream above.
+                    Select a profile to explore its findings.
                 </div>
 
-                <div id="table-subs" class="hidden flex-grow overflow-auto relative">
-                    <table class="w-full text-left border-collapse font-sans text-sm">
+                <div id="table-subs" class="chroma-findings-scroll hidden flex-grow overflow-auto relative">
+                    <table class="chroma-table chroma-node-table chroma-desktop-table w-full text-left font-sans text-sm">
+                        <colgroup><col><col><col><col><col><col></colgroup>
                         <!-- The bottom border lives on the th, not the thead: under
                              border-collapse the table paints the borders and a sticky
                              thead's own border-bottom is dropped, so rows scrolled up
@@ -323,35 +321,35 @@
                         <thead class="sticky top-0 bg-black/95 backdrop-blur shadow-sm z-10">
                             <tr class="text-slate-500 uppercase tracking-widest">
                                 <th class="p-5 font-black w-24 border-b border-slate-800">ID</th>
-                                <th class="p-5 font-black border-b border-slate-800">Node Endpoint</th>
-                                <th class="p-5 font-black text-center border-b border-slate-800">Protocol Code</th>
+                                <th class="p-5 font-black border-b border-slate-800">Node</th>
+                                <th class="p-5 font-black text-center border-b border-slate-800">HTTP status</th>
                                 <th class="p-5 font-black text-center border-b border-slate-800">Observations</th>
-                                <th class="p-5 font-black text-right border-b border-slate-800">Initiated</th>
+                                <th class="p-5 font-black text-right border-b border-slate-800">First seen</th>
                                 <th class="p-5 font-black text-right border-b border-slate-800">Last Sync</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-subs" class="divide-y divide-slate-900 text-slate-300">
                         </tbody>
                     </table>
+                    <ul id="subs-mobile" class="chroma-mobile-list list-none p-3" aria-label="Nodes"></ul>
                 </div>
 
-                <div id="table-secs" class="hidden flex-grow overflow-auto relative">
-                    <table class="w-full text-left border-collapse font-sans text-sm">
+                <div id="table-secs" class="chroma-findings-scroll hidden flex-grow overflow-auto relative">
+                    <table class="chroma-table chroma-desktop-table w-full text-left font-sans text-sm">
                         <thead class="sticky top-0 bg-black/95 backdrop-blur shadow-sm z-10">
                             <tr class="text-slate-500 uppercase tracking-widest">
-                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Extraction Type</th>
-                                <th class="p-5 font-black w-1/2 border-b border-slate-800">Secret Fragment</th>
-                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Source Origin</th>
+                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Type</th>
+                                <th class="p-5 font-black w-1/2 border-b border-slate-800">Value</th>
+                                <th class="p-5 font-black w-1/4 border-b border-slate-800">Source</th>
                             </tr>
                         </thead>
                         <tbody id="tbody-secs" class="divide-y divide-slate-900 text-slate-300">
                         </tbody>
                     </table>
+                    <ul id="secs-mobile" class="chroma-mobile-list list-none p-3" aria-label="Credentials"></ul>
                 </div>
 
-                </div>
-
-                <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full bg-black/60">
+                <div id="sub-dashboard" class="hidden flex-grow flex flex-col relative w-full bg-card">
                     <!-- Sub-dashboard Header. It stays visible because it is the
                          non-shrinking first child of a flex column whose sibling
                          scrolls, not because of position:sticky -- the scrollport is
@@ -361,22 +359,22 @@
                          and leaving this header a duller grey than the nav. -->
                     <div class="p-6 flex justify-between items-center glass-header shrink-0 z-20">
                         <div class="flex items-center gap-6">
-                            <button onclick="closeSubDashboard()" class="text-slate-500 hover:text-accent transition-all flex items-center gap-2 text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 hover:border-accent hover:bg-accent/5 px-4 py-2 rounded-sm bg-black">
+                            <button onclick="closeSubDashboard()" class="chroma-button-secondary flex items-center gap-2 text-xs">
                                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
-                                Back To Matrix
+                                Back to nodes
                             </button>
                             <div class="h-8 w-px bg-slate-800"></div>
                             <div>
-                                <h3 id="sub-dash-title" class="text-lg font-sans font-black text-white uppercase tracking-[0.25em] italic flex items-center gap-3">
-                                    Subdomain
+                                <h3 id="sub-dash-title" class="text-lg font-sans font-bold text-white flex items-center gap-3">
+                                    Node
                                 </h3>
                                 <div id="sub-dash-ip" class="text-xs text-accent font-mono font-bold mt-1 tracking-tighter uppercase opacity-90">IP: Unknown Node</div>
                             </div>
                         </div>
-                        <div class="bg-black border border-slate-900 p-1.5 rounded-sm flex gap-1.5 shadow-inner">
-                            <button id="sub-tab-vulns" onclick="switchSubDashboardTab('vulns')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all">Vulns</button>
-                            <button id="sub-tab-dirs" onclick="switchSubDashboardTab('dirs')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Dirs</button>
-                            <button id="sub-tab-secs" onclick="switchSubDashboardTab('secs')" class="px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all">Creds</button>
+                        <div class="bg-black border border-slate-900 p-1.5 rounded-md flex gap-1.5">
+                            <button id="sub-tab-vulns" onclick="switchSubDashboardTab('vulns')" class="chroma-tab" aria-selected="true">Findings</button>
+                            <button id="sub-tab-dirs" onclick="switchSubDashboardTab('dirs')" class="chroma-tab" aria-selected="false">Directories</button>
+                            <button id="sub-tab-secs" onclick="switchSubDashboardTab('secs')" class="chroma-tab" aria-selected="false">Credentials</button>
                         </div>
                     </div>
 
@@ -385,12 +383,12 @@
                         
                         <!-- Vulnerabilities Tab -->
                         <div id="sub-content-vulns" class="block">
-                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                            <table class="chroma-table chroma-desktop-table w-full text-left bg-card font-sans">
                                 <thead class="bg-black border-b border-slate-900">
                                     <tr class="text-slate-500 text-xs uppercase tracking-widest">
                                         <th class="p-5 font-black w-40">Risk Level</th>
-                                        <th class="p-5 font-black">Vuln Identifier</th>
-                                        <th class="p-5 font-black">Link ID</th>
+                                        <th class="p-5 font-black">Finding</th>
+                                        <th class="p-5 font-black">Template ID</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-sub-vulns" class="divide-y divide-slate-950 text-slate-300 text-sm">
@@ -400,11 +398,11 @@
 
                         <!-- Directories Tab -->
                         <div id="sub-content-dirs" class="hidden">
-                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                            <table class="chroma-table chroma-desktop-table w-full text-left bg-card font-sans">
                                 <thead class="bg-black border-b border-slate-900">
                                     <tr class="text-slate-500 text-xs uppercase tracking-widest">
-                                        <th class="p-5 font-black w-40">Protocol Response</th>
-                                        <th class="p-5 font-black">Route Fragment</th>
+                                        <th class="p-5 font-black w-40">HTTP status</th>
+                                        <th class="p-5 font-black">Directory URL</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-sub-dirs" class="divide-y divide-slate-950 text-slate-300 text-sm">
@@ -414,18 +412,20 @@
 
                         <!-- Secrets Tab -->
                         <div id="sub-content-secs" class="hidden">
-                            <table class="w-full text-left border-collapse bg-card rounded-sm overflow-hidden border border-slate-900 shadow font-sans">
+                            <table class="chroma-table chroma-desktop-table w-full text-left bg-card font-sans">
                                 <thead class="bg-black border-b border-slate-900">
                                     <tr class="text-slate-500 text-xs uppercase tracking-widest">
-                                        <th class="p-5 font-black w-1/4">Data Type</th>
-                                        <th class="p-5 font-black w-1/2">Data Fragment</th>
-                                        <th class="p-5 font-black w-1/4">Origin Trace</th>
+                                        <th class="p-5 font-black w-1/4">Type</th>
+                                        <th class="p-5 font-black w-1/2">Value</th>
+                                        <th class="p-5 font-black w-1/4">Source</th>
                                     </tr>
                                 </thead>
                                 <tbody id="tbody-sub-secs" class="divide-y divide-slate-950 text-slate-300 text-sm">
                                 </tbody>
                             </table>
                         </div>
+
+                        <ul id="node-mobile" class="chroma-mobile-list list-none" aria-label="Node observations"></ul>
 
                     </div>
                 </div>
@@ -442,32 +442,32 @@
                         <button onclick="goToPage(viewState.page + 1)" data-pager="next" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">Next &rsaquo;</button>
                         <button onclick="goToPage(pageMeta.total_pages)" data-pager="last" class="px-3 py-1.5 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest border border-slate-800 text-slate-500 bg-black hover:border-accent hover:text-accent transition-all disabled:cursor-not-allowed select-none">Last &raquo;</button>
                     </div>
-            </div>
+                    </div>
+                </div>
         </section>
 
     </main>
 
-    <div id="severity-tooltip" role="tooltip" class="hidden rounded-sm border border-slate-700 bg-black px-3 py-2 text-left shadow-lg shadow-black/60">
+    <div id="severity-tooltip" role="tooltip" class="chroma-severity-tooltip hidden px-3 py-2 text-left">
         <div class="text-[10px] font-sans font-black uppercase tracking-widest text-slate-500">Nuclei findings</div>
         <div id="severity-tooltip-content" class="mt-2 text-xs text-slate-300"></div>
     </div>
 
     <!-- Edit Schedule Modal -->
-    <div id="modal-edit-schedule" class="fixed inset-0 bg-black/80 backdrop-blur-md hidden items-center justify-center z-[100] animate-fade-in px-4">
+    <div id="modal-edit-schedule" class="chroma-modal-scrim fixed inset-0 hidden items-center justify-center z-[100] animate-fade-in px-4">
         <!-- Tightened from p-10/mb-10/space-y-10/mt-16. The button row's mt-16 collapsed
              with space-y-10's 40px margin to 64px, then pt-6 added 24 more: 88px of dead
              air, 22% of a modal holding a single field. -->
-        <div class="bg-card w-full max-w-lg p-6 rounded-md shadow-[0_0_60px_rgba(0,0,0,0.9)] border border-slate-800 relative group overflow-hidden">
-            <div class="absolute top-0 left-0 w-full h-1 bg-accent/40"></div>
-            <div class="absolute top-0 left-0 w-1.5 h-full bg-accent/40"></div>
-            <h3 class="text-xs font-sans font-black text-accent uppercase tracking-[0.3em] mb-3 drop-shadow-[0_0_12px_rgba(188,19,254,0.5)]">Re-Schedule Cycle</h3>
-            <p id="edit-schedule-domain" class="text-[11px] font-mono font-bold text-slate-500 mb-8 uppercase tracking-widest bg-black border border-slate-900 px-4 py-2 w-max italic"></p>
+        <div class="chroma-surface chroma-modal w-full max-w-lg p-6 relative">
+            <h3 class="chroma-section-title mb-3">Edit scan schedule</h3>
+            <p id="edit-schedule-domain" class="text-[11px] font-mono font-bold text-slate-500 mb-3 uppercase tracking-widest bg-black border border-slate-900 px-4 py-2 w-max italic"></p>
+            <p id="edit-schedule-hint" class="hidden text-xs chroma-muted mb-5">This profile uses an interval or custom cron schedule. Choose a calendar schedule below to replace it.</p>
 
             <form id="form-edit-schedule" class="space-y-6">
                 <input type="hidden" id="edit-schedule-id">
 
                 <div class="space-y-5">
-                    <label class="block text-xs font-sans font-bold text-slate-500 uppercase tracking-widest">Interface Frequency</label>
+                    <label class="chroma-field-label">Schedule</label>
                     <!-- flex-wrap: the four selects have a ~412px min-content width against
                          432px of inner room, so on a phone-width viewport the AM/PM select
                          was clipped off by the card's overflow-hidden. -->
@@ -493,8 +493,8 @@
                 </div>
 
                 <div class="flex justify-end gap-6 pt-6 border-t border-slate-900">
-                    <button type="button" onclick="closeEditModal()" class="px-8 py-3 rounded-sm text-xs font-sans font-black uppercase text-slate-600 hover:text-slate-300 hover:bg-slate-900 transition-all tracking-widest">Disconnect</button>
-                    <button type="submit" id="btn-save-schedule" class="bg-accent hover:bg-[#d000ff] text-black font-sans font-black text-xs uppercase tracking-tighter py-3 px-10 rounded-sm transition-all shadow-md hover:shadow-[0_0_20px_rgba(188,19,254,0.5)]">Save Cycle</button>
+                    <button type="button" onclick="closeEditModal()" class="chroma-button-secondary">Cancel</button>
+                    <button type="submit" id="btn-save-schedule" class="chroma-button">Save schedule</button>
                 </div>
             </form>
         </div>
@@ -517,6 +517,7 @@
         // and profile in particular is interpolated into a fetch path, so a crafted value
         // would otherwise choose which endpoint gets called.
         const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+        const NAV_VIEWS = ['home', 'profiles', 'findings'];
         const TABS = ['subs', 'secs'];
         const SUB_TABS = ['vulns', 'dirs', 'secs'];
         const SORTS = ['name-asc', 'name-desc', 'findings-desc', 'findings-asc',
@@ -535,21 +536,23 @@
         // openSubDashboard reset them to small, pill-shaped, lowercase, grey buttons
         // with no neon hover, so returning from a node sub-dashboard silently
         // reskinned the whole filter bar until the next click or a page reload.
-        const PILL_BASE = 'filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest';
-        const PILL_INACTIVE = 'bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent';
-        const PILL_ACTIVE = 'bg-accent text-black border-accent shadow-[0_0_15px_rgba(188,19,254,0.4)]';
+        const PILL_BASE = 'filter-pill chroma-filter-pill';
+        const PILL_INACTIVE = '';
+        const PILL_ACTIVE = '';
 
         // Same reason: switchView reassigned these wholesale and dropped
         // hover:text-accent and transition-all from the markup's own classes.
-        const NAV_TAB_ACTIVE = 'tab-active pb-1 transition-all hover:text-accent';
-        const NAV_TAB_INACTIVE = 'tab-inactive pb-1 transition-all hover:text-accent';
+        const NAV_TAB_ACTIVE = 'chroma-nav-tab tab-active';
+        const NAV_TAB_INACTIVE = 'chroma-nav-tab tab-inactive';
 
         // viewState is the single description of what the operator is looking at, and it
         // round-trips through the query string so a refresh, a bookmark or a shared link
         // lands on the same page. Everything in it has been validated by readViewState.
         let viewState = {
+            view: 'home',     // selected top-level navigation view
+            homeProfile: null, // independent of the Findings profile and node context
             profile: null,
-            tab: 'subs',      // which top-level Discoveries tab
+            tab: 'subs',      // which top-level Findings tab
             node: null,       // the sub-dashboard's host, or null
             nodeTab: 'vulns', // which sub-dashboard tab
             page: 1,
@@ -562,11 +565,14 @@
         // on the page that was actually served -- it clamps size and pulls an out-of-range
         // page back into the set -- so the pager renders from this, not from viewState.
         let pageMeta = { page: 1, size: DEFAULT_SIZE.subs, total_rows: 0, total_pages: 1 };
+        let scheduleTrigger = null;
 
         // The rows currently on screen, and nothing else. This replaces window.cachedData,
         // which held every subdomain, host, vulnerability, directory and secret in the
         // profile so the browser could correlate them itself.
         let currentRows = [];
+        let profileRows = [];
+        const mobileLayout = window.matchMedia('(max-width: 640px)');
 
         // Counts accumulated from SSE while a scan runs, shown as a badge rather than
         // acted on. The old handler refetched the whole profile eight seconds after each
@@ -586,6 +592,167 @@
         // while the first was still going, and five parallel chains plus the EventSource
         // is exactly the six-socket per-origin limit browsers impose.
         let inFlight = null;
+        let homeOverviewRequest = 0;
+        let profileIndexReady = false;
+
+        const HOME_SEVERITY_COLORS = {
+            critical: 'var(--ui-coral)', high: 'var(--ui-amber)', medium: 'var(--ui-plum)',
+            low: 'var(--ui-teal)', info: 'var(--ui-blue)', unknown: 'var(--ui-muted)',
+        };
+
+        function overviewUTC(raw) {
+            if (!raw) return 'Never';
+            const date = new Date(raw);
+            if (Number.isNaN(date.getTime()) || date.getUTCFullYear() < 2000) return 'Never';
+            return `${date.toISOString().slice(0, 19).replace('T', ' ')} UTC`;
+        }
+
+        function renderOverviewBar(id, parts, label) {
+            const track = document.getElementById(id);
+            track.replaceChildren();
+            track.setAttribute('aria-label', label);
+            const total = parts.reduce((sum, part) => sum + part.count, 0);
+            if (!total) return;
+            for (const part of parts) {
+                if (!part.count) continue;
+                const segment = document.createElement('span');
+                segment.style.width = `${part.count / total * 100}%`;
+                segment.style.backgroundColor = part.color;
+                segment.title = `${part.label}: ${part.count.toLocaleString()}`;
+                track.appendChild(segment);
+            }
+        }
+
+        function openHomeFinding(host) {
+            viewState.profile = viewState.homeProfile;
+            document.getElementById('select-profile').value = viewState.profile;
+            currentRows = [];
+            pendingNewFindings = {};
+            severitySummaryCache = new Map();
+            hideSeverityTooltip();
+            renderNewFindingsBadge();
+            switchDiscTab('subs', false);
+            switchView('findings', false);
+            openSubDashboard(host, host);
+        }
+
+        function renderHomeOverview(data) {
+            document.getElementById('home-asset-total').textContent = data.assets.total.toLocaleString();
+            document.getElementById('home-last-scan').textContent = overviewUTC(data.profile.last_scan_utc);
+            document.getElementById('home-last-scan-status').textContent =
+                data.profile.last_scan_status || 'No scan recorded';
+            document.getElementById('home-last-change').textContent =
+                overviewUTC(data.last_identified_change_utc);
+            document.getElementById('home-scan-badge').classList.toggle('hidden', !data.profile.is_scanning);
+
+            const observed = data.assets.http_observed;
+            const total = data.assets.total;
+            const unobserved = total - observed;
+            document.getElementById('home-response-ratio').textContent =
+                `${observed.toLocaleString()} / ${total.toLocaleString()}`;
+            document.getElementById('home-observed-count').textContent = observed.toLocaleString();
+            document.getElementById('home-unobserved-count').textContent = unobserved.toLocaleString();
+            renderOverviewBar('home-response-track', [
+                {label: 'HTTP response observed', count: observed, color: 'var(--ui-rose)'},
+                {label: 'No HTTP response recorded', count: unobserved, color: 'var(--ui-track)'},
+            ], `${observed} of ${total} assets have an HTTP response recorded`);
+
+            const severities = data.finding_severities || [];
+            const findingTotal = severities.reduce((sum, item) => sum + item.count, 0);
+            renderOverviewBar('home-severity-track', severities.map(item => ({
+                label: item.severity, count: item.count,
+                color: HOME_SEVERITY_COLORS[item.severity] || HOME_SEVERITY_COLORS.unknown,
+            })), findingTotal ? severities.filter(item => item.count)
+                .map(item => `${item.count} ${item.severity}`).join(', ') : 'No findings identified');
+            const legend = document.getElementById('home-severity-legend');
+            legend.replaceChildren();
+            if (!findingTotal) {
+                legend.textContent = 'No Nuclei findings identified.';
+            } else {
+                for (const item of severities.filter(item => item.count)) {
+                    const key = document.createElement('span');
+                    key.className = 'overview-key';
+                    key.style.setProperty('--key-color', HOME_SEVERITY_COLORS[item.severity] || HOME_SEVERITY_COLORS.unknown);
+                    key.textContent = `${item.severity.charAt(0).toUpperCase() + item.severity.slice(1)} ${item.count.toLocaleString()}`;
+                    legend.appendChild(key);
+                }
+            }
+
+            const list = document.getElementById('home-priority-findings');
+            list.replaceChildren();
+            const findings = data.priority_findings || [];
+            document.getElementById('home-priority-empty').classList.toggle('hidden', findings.length > 0);
+            for (const finding of findings) {
+                const row = document.createElement('li');
+                row.className = 'overview-priority-item py-3 flex flex-wrap items-start gap-x-4 gap-y-2';
+                const badge = document.createElement('span');
+                badge.className = finding.severity === 'critical'
+                    ? 'chroma-priority-badge chroma-priority-badge--critical'
+                    : 'chroma-priority-badge chroma-priority-badge--high';
+                badge.textContent = finding.severity;
+                row.appendChild(badge);
+                const details = document.createElement('div');
+                details.className = 'min-w-0 flex-1';
+                const title = finding.host && finding.has_asset ? document.createElement('button') : document.createElement('p');
+                title.className = finding.host && finding.has_asset
+                    ? 'text-left text-sm font-bold text-white hover:text-accent break-words'
+                    : 'text-sm font-bold text-white break-words';
+                title.textContent = finding.name || 'Unnamed finding';
+                if (finding.host && finding.has_asset) {
+                    title.type = 'button';
+                    title.addEventListener('click', () => openHomeFinding(finding.host));
+                }
+                details.appendChild(title);
+                const asset = document.createElement('p');
+                asset.className = 'font-mono text-xs chroma-accent break-all mt-1';
+                asset.textContent = finding.host || finding.url || 'Unattributed finding';
+                details.appendChild(asset);
+                const seen = document.createElement('p');
+                seen.className = 'text-xs text-slate-500 mt-1';
+                seen.textContent = `Last observed: ${overviewUTC(finding.last_seen_utc)}`;
+                details.appendChild(seen);
+                row.appendChild(details);
+                list.appendChild(row);
+            }
+        }
+
+        async function loadHomeOverview() {
+            const id = viewState.homeProfile;
+            const request = ++homeOverviewRequest;
+            if (!profileIndexReady) {
+                document.getElementById('home-empty').classList.add('hidden');
+                document.getElementById('home-content').classList.add('hidden');
+                document.getElementById('home-loading').classList.add('hidden');
+                document.getElementById('home-error-text').textContent = 'Could not load profiles. Please retry.';
+                document.getElementById('home-error').classList.remove('hidden');
+                return;
+            }
+            document.getElementById('home-empty').classList.toggle('hidden', !!id);
+            document.getElementById('home-content').classList.add('hidden');
+            document.getElementById('home-error').classList.add('hidden');
+            document.getElementById('home-loading').classList.toggle('hidden', !id);
+            document.getElementById('home-scan-badge').classList.add('hidden');
+            if (!id) return;
+            try {
+                const data = await apiJSON(`/api/profiles/${encodeURIComponent(id)}/overview`);
+                if (request !== homeOverviewRequest || id !== viewState.homeProfile || viewState.view !== 'home') return;
+                renderHomeOverview(data);
+                document.getElementById('home-content').classList.remove('hidden');
+            } catch (err) {
+                if (request !== homeOverviewRequest || id !== viewState.homeProfile || viewState.view !== 'home') return;
+                document.getElementById('home-error-text').textContent = `Could not load the profile overview: ${err.message}`;
+                document.getElementById('home-error').classList.remove('hidden');
+            } finally {
+                if (request === homeOverviewRequest) document.getElementById('home-loading').classList.add('hidden');
+            }
+        }
+
+        function onHomeProfileChanged() {
+            const select = document.getElementById('select-home-profile');
+            viewState.homeProfile = UUID_RE.test(select.value) ? select.value : null;
+            writeViewState();
+            loadHomeOverview();
+        }
 
         // esc renders untrusted text into an HTML context.
         //
@@ -711,7 +878,9 @@
         // give and leave the pager describing a page that was never served.
         function readViewState() {
             const q = new URLSearchParams(location.search);
+            const requestedView = q.get('view');
             const profile = q.get('profile');
+            const homeProfile = q.get('home_profile');
             const tab = q.get('tab');
             const nodeTab = q.get('nodetab');
             const sort = q.get('sort');
@@ -724,6 +893,13 @@
             };
 
             viewState.profile = UUID_RE.test(profile || '') ? profile : null;
+            viewState.homeProfile = UUID_RE.test(homeProfile || '') ? homeProfile : null;
+            // Links from before top-level navigation state existed have no view. A
+            // discovery context in one of those links must keep opening Findings rather
+            // than silently landing on the new Home placeholder.
+            viewState.view = NAV_VIEWS.includes(requestedView)
+                ? requestedView
+                : (viewState.profile ? 'findings' : 'home');
             viewState.tab = TABS.includes(tab) ? tab : 'subs';
             viewState.nodeTab = SUB_TABS.includes(nodeTab) ? nodeTab : 'vulns';
             viewState.sort = SORTS.includes(sort) ? sort : 'name-asc';
@@ -740,7 +916,12 @@
         // every pill the operator tried instead of leaving the app.
         function writeViewState() {
             const q = new URLSearchParams();
+            // A plain root URL stays clean and opens Home. Once a Findings context is
+            // present, write Home explicitly so returning there does not look like a
+            // pre-navigation legacy link and reopen Findings on refresh.
+            if (viewState.view !== 'home' || viewState.profile) q.set('view', viewState.view);
             if (viewState.profile) q.set('profile', viewState.profile);
+            if (viewState.homeProfile) q.set('home_profile', viewState.homeProfile);
             if (viewState.tab !== 'subs') q.set('tab', viewState.tab);
             if (viewState.node) {
                 q.set('node', viewState.node);
@@ -783,17 +964,25 @@
         }
         populateMinutes();
 
-        function switchView(view) {
-            document.getElementById('view-targets').classList.toggle('hidden', view !== 'targets');
-            document.getElementById('view-discoveries').classList.toggle('hidden', view !== 'discoveries');
-            const btnT = document.getElementById('nav-btn-targets');
-            const btnD = document.getElementById('nav-btn-discoveries');
-            if (view === 'targets') {
-                btnT.className = NAV_TAB_ACTIVE;
-                btnD.className = NAV_TAB_INACTIVE;
-            } else {
-                btnD.className = NAV_TAB_ACTIVE;
-                btnT.className = NAV_TAB_INACTIVE;
+        function switchView(view, loadFindings = true) {
+            viewState.view = NAV_VIEWS.includes(view) ? view : 'home';
+            if (viewState.view !== 'home') homeOverviewRequest++;
+
+            document.getElementById('view-home').classList.toggle('hidden', viewState.view !== 'home');
+            document.getElementById('view-targets').classList.toggle('hidden', viewState.view !== 'profiles');
+            document.getElementById('view-discoveries').classList.toggle('hidden', viewState.view !== 'findings');
+
+            NAV_VIEWS.forEach(name => {
+                const button = document.getElementById(`nav-btn-${name}`);
+                button.className = name === viewState.view ? NAV_TAB_ACTIVE : NAV_TAB_INACTIVE;
+                if (name === viewState.view) button.setAttribute('aria-current', 'page');
+                else button.removeAttribute('aria-current');
+            });
+            writeViewState();
+
+            if (viewState.view === 'home') loadHomeOverview();
+
+            if (viewState.view === 'findings' && loadFindings) {
                 const select = document.getElementById('select-profile');
                 if (!viewState.profile && select.options.length > 0) {
                     select.value = select.options[0].value;
@@ -831,7 +1020,7 @@
                 // picker and the count all come from the server, so they cannot drift.
                 await refreshProfiles();
             } catch (err) {
-                alert("Failed to add target: " + err.message);
+                alert("Failed to add profile: " + err.message);
             } finally {
                 btn.innerText = originalText;
                 btn.disabled = false;
@@ -858,18 +1047,41 @@
             return `${status} · ${ago}`;
         }
 
+        // The stored value is the scheduler's source of truth. Only its label is
+        // prettified; an @every interval has no fixed time of day to display.
+        function scheduleLabel(raw) {
+            const value = String(raw || '').trim();
+            const calendar = /^every (day|week|month|year) at (\d{1,2}):(\d{2})$/i.exec(value);
+            if (calendar) return `Every ${calendar[1].toLowerCase()} at ${calendar[2].padStart(2, '0')}:${calendar[3]}`;
+            const interval = /^@every\s+(\d+)(h|m|s)$/i.exec(value);
+            if (interval) {
+                const n = Number(interval[1]);
+                const unit = interval[2].toLowerCase();
+                if (unit === 'h' && n % 24 === 0) {
+                    const days = n / 24;
+                    return `Every ${days} ${days === 1 ? 'day' : 'days'} (interval)`;
+                }
+                const unitName = unit === 'h' ? 'hour' : unit === 'm' ? 'minute' : 'second';
+                return `Every ${n} ${unitName}${n === 1 ? '' : 's'} (interval)`;
+            }
+            return value || 'Not scheduled';
+        }
+
         // Builds one row of the targets table and returns it. Both the add-target
         // handler and refreshProfiles go through here so the markup lives in one place.
         function buildTargetRow(p, animate) {
             const tr = document.createElement('tr');
             tr.id = `row-profile-${p.ID}`;
-            tr.className = "hover:bg-accent/[0.04] transition-colors group border-l-4 border-l-transparent hover:border-l-accent bg-black/10"
+            tr.className = "group"
                 + (animate ? " animate-fade-in" : "");
             const statusHtml = p.IsScanning ?
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-emerald-950/40 text-emerald-400 border border-emerald-500/30"><span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#4ade80]"></span>Active Scan</span>` :
-                `<span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-sm text-[10px] font-sans font-black uppercase tracking-widest bg-accent/10 text-accent border border-accent/20">Hibernation</span>`;
+                `<span class="chroma-status"><span class="chroma-status-dot"></span>Scanning</span>` :
+                `<span class="chroma-status chroma-status--idle">Idle</span>`;
             const id = esc(p.ID);
+            const shortID = esc(String(p.ID).slice(0, 6));
             const domain = esc(p.Domain);
+            const schedule = esc(String(p.Schedule || ''));
+            const scheduleText = esc(scheduleLabel(p.Schedule));
 
             // The row's controls carry their arguments in data-* attributes and are
             // dispatched by one delegated listener per table. Interpolating a domain
@@ -877,31 +1089,64 @@
             // literal, a context HTML escaping cannot make safe.
             let actionHtml = '';
             if (!p.IsScanning) {
-                actionHtml += `<button data-action="scan" data-id="${id}" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-accent/40 text-accent hover:bg-accent hover:text-black px-4 py-2 rounded-sm transition-all shadow-[0_0_10px_rgba(188,19,254,0.2)] hover:shadow-[0_0_20px_rgba(188,19,254,0.4)]">Initiate</button> `;
+                actionHtml += `<button data-action="scan" data-id="${id}" class="chroma-button-secondary">Run scan</button> `;
             }
-            actionHtml += `<button data-action="delete" data-id="${id}" data-domain="${domain}" class="text-[10px] font-sans font-black uppercase tracking-[0.2em] border border-rose-900/40 text-rose-500/60 hover:border-rose-600 hover:text-white px-4 py-2 rounded-sm transition-all hover:bg-rose-950/40">Purge</button>`;
+            actionHtml += `<button data-action="delete" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-button-danger">Delete</button>`;
 
             const halted = (p.LastScanStatus || '').startsWith('halted');
             const lastRunClass = halted ? "text-rose-500/80" : "text-slate-500";
 
             tr.innerHTML = `
-                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter">#${id}</td>
+                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter"><span title="${id}" aria-label="Profile ID ${id}">${shortID}</span></td>
                 <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${domain}</td>
-                <td class="p-5 text-slate-500 group/sched relative">
-                    <code id="schedule-text-${id}" class="bg-black border border-slate-900 px-3 py-1.5 rounded-sm text-xs font-mono text-accent/80 tracking-tighter">${esc(p.Schedule)}</code>
-                    <button data-action="edit-schedule" data-id="${id}" data-domain="${domain}" class="opacity-0 group-hover/sched:opacity-100 transition-opacity ml-3 text-accent hover:text-white" title="Edit Schedule">
+                <td class="p-5 text-slate-500">
+                    <div class="chroma-profile-schedule">
+                    <span id="schedule-text-${id}" data-schedule="${schedule}" title="Stored schedule: ${schedule}" class="chroma-schedule-label">${scheduleText}</span>
+                    <button data-action="edit-schedule" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-edit-schedule" aria-label="Edit schedule for ${domain}" title="Edit schedule">
                         <svg class="w-4 h-4 inline" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z"></path></svg>
                     </button>
+                    </div>
                 </td>
                 <td class="p-5">${statusHtml}</td>
                 <td class="p-5 font-mono text-xs tracking-tighter ${lastRunClass}" id="last-run-${id}"></td>
-                <td class="p-5 opacity-30 group-hover:opacity-100 transition-opacity"><div class="flex gap-4 justify-end">${actionHtml}</div></td>
+                <td class="p-5"><div class="flex flex-wrap gap-2 justify-end">${actionHtml}</div></td>
             `;
 
             // textContent, not innerHTML: the status comes from the engine.
             tr.querySelector(`#last-run-${id}`).textContent = lastRunText(p);
 
             return tr;
+        }
+
+        function buildTargetCard(p) {
+            const li = document.createElement('li');
+            const id = esc(p.ID);
+            const domain = esc(p.Domain);
+            const schedule = esc(String(p.Schedule || ''));
+            li.id = `row-profile-${p.ID}`;
+            li.className = 'chroma-mobile-card';
+            li.innerHTML = `<h3>${domain}</h3>
+                <dl><dt>Schedule</dt><dd><span id="schedule-text-${id}" data-schedule="${schedule}" title="Stored schedule: ${schedule}">${esc(scheduleLabel(p.Schedule))}</span></dd>
+                    <dt>Status</dt><dd>${p.IsScanning ? 'Scanning' : 'Idle'}</dd>
+                    <dt>Last run</dt><dd class="${(p.LastScanStatus || '').startsWith('halted') ? 'text-rose-500' : ''}"></dd></dl>
+                <div class="chroma-mobile-actions">
+                    <button type="button" data-action="edit-schedule" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary">Edit schedule</button>
+                    ${p.IsScanning ? '' : `<button type="button" data-action="scan" data-id="${id}" class="chroma-button-secondary">Run scan</button>`}
+                    <button type="button" data-action="delete" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-button-danger">Delete</button>
+                </div>`;
+            li.querySelector('dl dd:last-child').textContent = lastRunText(p);
+            return li;
+        }
+
+        function renderProfileRows() {
+            const tbody = document.getElementById('targets-tbody');
+            const mobile = document.getElementById('targets-mobile');
+            tbody.replaceChildren();
+            mobile.replaceChildren();
+            const frag = document.createDocumentFragment();
+            profileRows.forEach(p => frag.appendChild(mobileLayout.matches ? buildTargetCard(p) : buildTargetRow(p, false)));
+            (mobileLayout.matches ? mobile : tbody).appendChild(frag);
+            document.getElementById('targets-empty').classList.toggle('hidden', profileRows.length > 0);
         }
 
         // refreshProfiles fills the targets table from the paginated endpoint, and the
@@ -919,16 +1164,9 @@
                     apiJSON('/api/profiles/index'),
                 ]);
 
-                const tbody = document.getElementById('targets-tbody');
-                tbody.innerHTML = '';
-
                 const rows = table.data || [];
-                document.getElementById('targets-empty').classList.toggle('hidden', rows.length > 0);
-                if (rows.length) {
-                    const frag = document.createDocumentFragment();
-                    rows.forEach(p => frag.appendChild(buildTargetRow(p, false)));
-                    tbody.appendChild(frag);
-                }
+                profileRows = rows;
+                renderProfileRows();
 
                 const select = document.getElementById('select-profile');
                 select.innerHTML = '';
@@ -942,12 +1180,30 @@
                 });
                 if (viewState.profile) select.value = viewState.profile;
 
+                const homeSelect = document.getElementById('select-home-profile');
+                homeSelect.replaceChildren();
+                (options || []).forEach(o => {
+                    const opt = document.createElement('option');
+                    opt.value = o.id;
+                    opt.textContent = o.domain;
+                    homeSelect.appendChild(opt);
+                });
+                if (!options || !options.some(o => o.id === viewState.homeProfile)) {
+                    viewState.homeProfile = options && options.length ? options[0].id : null;
+                }
+                homeSelect.disabled = !viewState.homeProfile;
+                if (viewState.homeProfile) homeSelect.value = viewState.homeProfile;
+                writeViewState();
+                profileIndexReady = true;
+
                 const countBadge = document.getElementById('target-count');
                 if (countBadge) {
-                    countBadge.innerText = `${table.page ? table.page.total_rows : rows.length} Active Nodes`;
+                    const count = table.page ? table.page.total_rows : rows.length;
+                    countBadge.innerText = `${count} ${count === 1 ? 'profile' : 'profiles'}`;
                 }
             } catch (err) {
                 console.error("Error refreshing profiles:", err);
+                profileIndexReady = false;
             }
         }
 
@@ -972,7 +1228,8 @@
             try {
                 const res = await api(`/api/profiles/${id}`, { method: 'DELETE' });
                 if (!res.ok) throw new Error(await res.text());
-                document.getElementById(`row-profile-${id}`).remove();
+                profileRows = profileRows.filter(p => String(p.ID) !== String(id));
+                renderProfileRows();
                 const select = document.getElementById('select-profile');
                 const wasSelected = (viewState.profile === id);
                 Array.from(select.options).forEach(opt => { if (opt.value == id) opt.remove(); });
@@ -980,20 +1237,21 @@
                     select.value = select.options.length > 0 ? select.options[0].value : "";
                     onProfileChanged();
                 }
-                if (document.getElementById('targets-tbody').children.length === 0) {
-                    document.getElementById('targets-empty').classList.remove('hidden');
-                }
+                await refreshProfiles();
             } catch (err) {
-                alert("Failed to delete target: " + err.message);
+                alert("Failed to delete profile: " + err.message);
             }
         }
 
         function editSchedule(id, domain) {
+            scheduleTrigger = document.activeElement;
             document.getElementById('edit-schedule-id').value = id;
             document.getElementById('edit-schedule-domain').innerText = `Target: ${domain}`;
-            const scheduleText = document.getElementById(`schedule-text-${id}`).innerText;
-            const regex = /every (\w+) at (\d{2}):(\d{2})/i;
+            document.getElementById('form-edit-schedule').reset();
+            const scheduleText = document.getElementById(`schedule-text-${id}`).dataset.schedule;
+            const regex = /^every (day|week|month|year) at (\d{1,2}):(\d{2})$/i;
             const match = scheduleText.match(regex);
+            document.getElementById('edit-schedule-hint').classList.toggle('hidden', !!match);
             if (match) {
                 const freq = match[1].toLowerCase();
                 let hour24 = parseInt(match[2], 10);
@@ -1010,6 +1268,7 @@
             const modal = document.getElementById('modal-edit-schedule');
             modal.classList.remove('hidden');
             modal.classList.add('flex');
+            document.getElementById('edit-sched-freq').focus();
         }
 
         function closeEditModal() {
@@ -1017,6 +1276,8 @@
             modal.classList.add('hidden');
             modal.classList.remove('flex');
             document.getElementById('form-edit-schedule').reset();
+            if (scheduleTrigger && scheduleTrigger.isConnected) scheduleTrigger.focus();
+            scheduleTrigger = null;
         }
 
         document.getElementById('form-edit-schedule').addEventListener('submit', async (e) => {
@@ -1042,7 +1303,13 @@
                 if (!res.ok) throw new Error(await res.text());
                 const data = await res.json();
                 const codeEl = document.getElementById(`schedule-text-${id}`);
-                if (codeEl) codeEl.innerText = data.schedule;
+                if (codeEl) {
+                    codeEl.dataset.schedule = data.schedule;
+                    codeEl.title = `Stored schedule: ${data.schedule}`;
+                    codeEl.textContent = scheduleLabel(data.schedule);
+                }
+                const profile = profileRows.find(p => String(p.ID) === String(id));
+                if (profile) profile.Schedule = data.schedule;
                 closeEditModal();
             } catch (err) {
                 alert("Failed to update schedule: " + err.message);
@@ -1068,11 +1335,12 @@
         function resetFilterPills(active = null) {
             document.querySelectorAll('.filter-pill').forEach(b => {
                 b.className = `${PILL_BASE} ${PILL_INACTIVE}`;
+                b.setAttribute('aria-pressed', String(b.id === `filter-btn-${active}`));
             });
-            if (!active) return;
-
-            const btn = document.getElementById(`filter-btn-${active}`);
-            if (btn) btn.className = `${PILL_BASE} ${PILL_ACTIVE}`;
+            const chosen = active ? document.getElementById(`filter-btn-${active}`) : null;
+            if (chosen) chosen.className = `${PILL_BASE} ${PILL_ACTIVE}`;
+            document.getElementById('mobile-filter-summary').textContent =
+                chosen ? `Filter · ${chosen.textContent.trim()}` : 'Filters · All nodes';
         }
 
         function toggleFilter(filter) {
@@ -1142,8 +1410,12 @@
         function placeSeverityTooltip(badge) {
             const tooltip = document.getElementById('severity-tooltip');
             const rect = badge.getBoundingClientRect();
-            tooltip.style.left = `${Math.max(16, Math.min(window.innerWidth - 16, rect.left + rect.width / 2))}px`;
-            tooltip.style.top = `${Math.max(8, rect.top - 8)}px`;
+            const halfWidth = Math.min(tooltip.offsetWidth || 176, window.innerWidth - 32) / 2;
+            const center = Math.max(halfWidth + 16, Math.min(window.innerWidth - halfWidth - 16, rect.left + rect.width / 2));
+            const fitsAbove = rect.top >= (tooltip.offsetHeight || 90) + 16;
+            tooltip.style.left = `${center}px`;
+            tooltip.style.top = `${fitsAbove ? rect.top - 8 : rect.bottom + 8}px`;
+            tooltip.style.transform = fitsAbove ? 'translate(-50%, -100%)' : 'translate(-50%, 0)';
         }
 
         function severityClass(severity) {
@@ -1167,6 +1439,7 @@
 
         function openSeverityTooltip(badge) {
             if (!badge || !viewState.profile) return;
+            if (severityTooltipBadge === badge && !document.getElementById('severity-tooltip').classList.contains('hidden')) return;
             clearTimeout(severityTooltipTimer);
             severityTooltipTimer = null;
             if (severityTooltipBadge && severityTooltipBadge !== badge) severityTooltipBadge.setAttribute('aria-expanded', 'false');
@@ -1179,8 +1452,8 @@
             const cacheKey = `${viewState.profile}:${host}`;
             const request = ++severityTooltipRequest;
 
-            placeSeverityTooltip(badge);
             tooltip.classList.remove('hidden');
+            placeSeverityTooltip(badge);
 
             const cached = severitySummaryCache.get(cacheKey);
             if (cached) {
@@ -1222,7 +1495,7 @@
 
             let statusHtml;
             if (s.status_code == null) {
-                statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest bg-black text-slate-800 border-slate-900">DEAD</span>`;
+                statusHtml = `<span class="chroma-status chroma-status--idle">No response</span>`;
             } else {
                 const code = s.status_code;
                 let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
@@ -1237,9 +1510,9 @@
             if (!s.vuln_count && !s.dir_count && !s.secret_count) {
                 findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
             } else {
-                if (s.vuln_count > 0) findingsHtml += `<button type="button" data-action="show-severity-summary" data-host="${esc(s.host)}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-rose-500/10 text-rose-500 border border-rose-500/20">${countLabel(s.vuln_count)} Findings</button> `;
-                if (s.dir_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/10 text-accent border border-accent/20">${countLabel(s.dir_count)} Dir</span> `;
-                if (s.secret_count > 0) findingsHtml += `<span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-sm text-[10px] font-sans font-black uppercase tracking-tighter bg-accent/20 text-accent border border-accent/30">${countLabel(s.secret_count)} Cred</span>`;
+                if (s.vuln_count > 0) findingsHtml += `<button type="button" data-action="show-severity-summary" data-host="${esc(s.host)}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-finding-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-sans font-black">${countLabel(s.vuln_count)} Findings</button> `;
+                if (s.dir_count > 0) findingsHtml += `<span class="chroma-status chroma-status--idle">${countLabel(s.dir_count)} directories</span> `;
+                if (s.secret_count > 0) findingsHtml += `<span class="chroma-status chroma-status--idle">${countLabel(s.secret_count)} credentials</span>`;
             }
 
             // A node can only be opened when it has a correlation key. Without one there
@@ -1257,10 +1530,10 @@
                 <td class="p-5 text-center"><div class="flex items-center justify-center gap-1.5 flex-wrap">${findingsHtml}</div></td>
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter"><span>${esc(firstSeen)}</span></td>
                 <td class="p-5 text-right text-xs text-slate-500 font-sans font-bold tracking-tighter">
-                    <div class="flex justify-end items-center gap-3">
+                    <div class="chroma-node-last flex justify-end items-center gap-2">
                         <span>${esc(lastChanged)}</span>
-                        <a href="${esc(safeURL('http://' + s.domain))}" target="_blank" rel="noopener noreferrer" class="opacity-0 group-hover:opacity-100 transition-opacity bg-black border border-slate-800 hover:border-accent hover:text-accent text-slate-500 p-2 rounded-sm">
-                            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
+                        <a href="${esc(safeURL('http://' + s.domain))}" target="_blank" rel="noopener noreferrer" class="chroma-node-open" aria-label="Open ${domain} in a browser" title="Open ${domain} in a browser">
+                            <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
                         </a>
                     </div>
                 </td>
@@ -1274,7 +1547,7 @@
             tr.innerHTML = `
                 <td class="${pad} font-sans"><span class="px-3 py-1.5 bg-accent/10 text-accent border border-accent/30 rounded-sm text-[10px] font-sans font-black tracking-widest uppercase">${esc(s.SecretType)}</span></td>
                 <td class="${pad} font-mono text-sm text-slate-200 break-all select-all font-bold tracking-tight">${esc(s.SecretValue)}</td>
-                <td class="${pad} text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors uppercase tracking-tighter ${urlWidth}" title="${esc(s.SourceURL)}">Trace Source &rarr;</a></td>
+                <td class="${pad} text-xs font-sans font-bold"><a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors ${urlWidth}" title="${esc(s.SourceURL)}">Open source &rarr;</a></td>
             `;
             return tr;
         }
@@ -1282,7 +1555,7 @@
         function buildVulnRow(v) {
             const severity = String(v.Severity || '').toLowerCase();
             let sevClass = 'bg-slate-900 text-slate-600 border-slate-800';
-            if (severity === 'critical') sevClass = 'bg-rose-950/40 text-rose-500 border-rose-900/50 shadow-[0_0_8px_rgba(244,63,94,0.2)]';
+            if (severity === 'critical') sevClass = 'bg-rose-950/40 text-rose-500 border-rose-900/50';
             else if (severity === 'high') sevClass = 'bg-orange-950/40 text-orange-400 border-orange-900/50';
             else if (severity === 'medium') sevClass = 'bg-amber-950/40 text-amber-500 border-amber-900/50';
             else if (severity === 'low') sevClass = 'bg-emerald-950/40 text-emerald-500 border-emerald-900/50';
@@ -1310,6 +1583,87 @@
                 <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors break-all">${esc(d.DirURL)}</a></td>
             `;
             return tr;
+        }
+
+        function mobileCard(title, fields, actions = '') {
+            const li = document.createElement('li');
+            li.className = 'chroma-mobile-card';
+            li.innerHTML = `<h3>${title}</h3><dl>${fields.map(([label, value]) =>
+                `<dt>${label}</dt><dd>${value}</dd>`).join('')}</dl>${actions ? `<div class="chroma-mobile-actions">${actions}</div>` : ''}`;
+            return li;
+        }
+
+        function buildSubCard(s) {
+            const domain = esc(s.domain);
+            const host = esc(s.host || '');
+            const title = s.host
+                ? `<button type="button" data-action="open-node" data-domain="${host}" data-label="${domain}" class="chroma-accent text-left">${domain}</button>`
+                : domain;
+            const status = s.status_code == null ? 'No response recorded' : esc(s.status_code);
+            const badges = [
+                s.vuln_count > 0 ? `<button type="button" data-action="show-severity-summary" data-host="${host}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-finding-badge px-2 py-1">${countLabel(s.vuln_count)} Findings</button>` : '',
+                s.dir_count > 0 ? `<span class="chroma-status chroma-status--idle">${countLabel(s.dir_count)} directories</span>` : '',
+                s.secret_count > 0 ? `<span class="chroma-status chroma-status--idle">${countLabel(s.secret_count)} credentials</span>` : '',
+            ].filter(Boolean).join(' ');
+            const actions = s.host
+                ? `<button type="button" data-action="open-node" data-domain="${host}" data-label="${domain}" class="chroma-button-secondary">Open node</button>`
+                : '';
+            return mobileCard(title, [
+                ['HTTP status', status],
+                ['Observations', badges || 'None recorded'],
+                ['First seen', esc(new Date(s.first_seen).toLocaleDateString())],
+                ['Last sync', esc(new Date(s.last_changed).toLocaleDateString())],
+            ], actions);
+        }
+
+        function buildSecretCard(s) {
+            return mobileCard(esc(s.SecretType || 'Credential'), [
+                ['Value', `<span class="select-all font-mono">${esc(s.SecretValue)}</span>`],
+                ['Source', `<a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer">${esc(s.SourceURL || 'Unknown')}</a>`],
+            ]);
+        }
+
+        function buildVulnCard(v) {
+            const severity = String(v.Severity || 'Unknown').toLowerCase();
+            const level = severity === 'critical' ? 'chroma-priority-badge--critical'
+                : severity === 'high' ? 'chroma-priority-badge--high' : '';
+            return mobileCard(esc(v.Name || 'Unnamed finding'), [
+                ['Severity', `<span class="chroma-priority-badge ${level}">${esc(v.Severity || 'Unknown')}</span>`],
+                ['Template', `<code>${esc(v.TemplateID)}</code>`],
+            ]);
+        }
+
+        function buildDirCard(d) {
+            return mobileCard(esc(d.DirURL), [
+                ['HTTP status', esc(d.StatusCode)],
+                ['URL', `<a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer">Open directory URL</a>`],
+            ]);
+        }
+
+        function renderRows(tbodyId, mobileId, rows, tableBuilder, cardBuilder, colspan, emptyMessage) {
+            const mobile = document.getElementById(mobileId);
+            mobile.replaceChildren();
+            if (mobileLayout.matches) {
+                document.getElementById(tbodyId).replaceChildren();
+                if (!rows.length) {
+                    const item = document.createElement('li');
+                    item.className = 'chroma-mobile-empty';
+                    item.textContent = emptyMessage;
+                    mobile.appendChild(item);
+                    return;
+                }
+                const frag = document.createDocumentFragment();
+                rows.forEach(row => frag.appendChild(cardBuilder(row)));
+                mobile.appendChild(frag);
+            } else {
+                fillTable(tbodyId, rows, tableBuilder, colspan, emptyMessage);
+            }
+        }
+
+        function clearInactiveResultRows() {
+            ['tbody-subs', 'tbody-secs', 'tbody-sub-vulns', 'tbody-sub-dirs', 'tbody-sub-secs',
+                'subs-mobile', 'secs-mobile', 'node-mobile'].forEach(id =>
+                document.getElementById(id).replaceChildren());
         }
 
         function fillTable(tbodyId, rows, build, colspan, emptyMessage) {
@@ -1441,17 +1795,21 @@
         }
 
         function showLoadError(err) {
+            clearInactiveResultRows();
             const message = `Could not load ${activeView()}: ${err.message}`;
             const target = viewState.node
                 ? `tbody-sub-${viewState.nodeTab}`
                 : (viewState.tab === 'secs' ? 'tbody-secs' : 'tbody-subs');
             const colspan = target === 'tbody-sub-dirs' ? 2 : 3;
-            fillTable(target, [], () => null, target === 'tbody-subs' ? 6 : colspan, message);
+            const mobile = viewState.node ? 'node-mobile' : (viewState.tab === 'secs' ? 'secs-mobile' : 'subs-mobile');
+            renderRows(target, mobile, [], () => null, () => null,
+                target === 'tbody-subs' ? 6 : colspan, message);
             document.getElementById('pager').classList.add('hidden');
         }
 
         function renderCurrentView() {
             showEmptyState(false);
+            clearInactiveResultRows();
 
             const tSubs = document.getElementById('table-subs');
             const tSecs = document.getElementById('table-secs');
@@ -1464,11 +1822,11 @@
 
                 if (view === 'subs') {
                     const message = viewState.filter
-                        ? 'No nodes match the active filter matrix.'
-                        : 'No nodes detected in stream.';
-                    fillTable('tbody-subs', currentRows, buildSubRow, 6, message);
+                        ? 'No nodes match the active filter.'
+                        : 'No nodes found yet.';
+                    renderRows('tbody-subs', 'subs-mobile', currentRows, buildSubRow, buildSubCard, 6, message);
                 } else {
-                    fillTable('tbody-secs', currentRows, s => buildSecretRow(s), 3, 'No secrets found yet.');
+                    renderRows('tbody-secs', 'secs-mobile', currentRows, s => buildSecretRow(s), buildSecretCard, 3, 'No credentials found yet.');
                 }
             } else {
                 tSubs.classList.add('hidden');
@@ -1486,16 +1844,16 @@
             sub.classList.add('flex');
 
             document.getElementById('sub-dash-title').innerHTML =
-                `<span class="bg-accent/20 text-accent border border-accent/40 px-3 py-1 rounded-sm text-[11px] font-sans font-black uppercase tracking-[0.2em] mr-3 shadow-[0_0_10px_rgba(188,19,254,0.3)]">NODE</span> ${esc(viewState.node)}`;
+                `<span class="chroma-status chroma-status--idle mr-2">Node</span> ${esc(viewState.node)}`;
 
             switchSubDashboardTab(viewState.nodeTab, false);
 
             if (viewState.nodeTab === 'vulns') {
-                fillTable('tbody-sub-vulns', currentRows, buildVulnRow, 3, 'No vulnerabilities detected in this node.');
+                renderRows('tbody-sub-vulns', 'node-mobile', currentRows, buildVulnRow, buildVulnCard, 3, 'No findings detected in this node.');
             } else if (viewState.nodeTab === 'dirs') {
-                fillTable('tbody-sub-dirs', currentRows, buildDirRow, 2, 'Node isolation... No route fragments discovered.');
+                renderRows('tbody-sub-dirs', 'node-mobile', currentRows, buildDirRow, buildDirCard, 2, 'No directories discovered in this node.');
             } else {
-                fillTable('tbody-sub-secs', currentRows, s => buildSecretRow(s, 'p-4'), 3, 'Extraction void... No credentials located.');
+                renderRows('tbody-sub-secs', 'node-mobile', currentRows, s => buildSecretRow(s, 'p-4'), buildSecretCard, 3, 'No credentials found in this node.');
             }
         }
 
@@ -1518,7 +1876,7 @@
 
         // ---------------------------------------------------------------- navigation
 
-        function switchDiscTab(tab) {
+        function switchDiscTab(tab, load = true) {
             viewState.tab = TABS.includes(tab) ? tab : 'subs';
             viewState.node = null;
             viewState.page = 1;
@@ -1526,13 +1884,12 @@
 
             const btnS = document.getElementById('disc-tab-subs');
             const btnC = document.getElementById('disc-tab-secs');
-            const activeClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest bg-accent text-black shadow-[0_0_15px_rgba(188,19,254,0.4)] transition-all";
-            const inactiveClass = "px-6 py-2.5 rounded-sm text-xs font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
-            if (viewState.tab === 'subs') { btnS.className = activeClass; btnC.className = inactiveClass; }
-            else { btnC.className = activeClass; btnS.className = inactiveClass; }
+            btnS.className = btnC.className = 'chroma-tab';
+            btnS.setAttribute('aria-selected', String(viewState.tab === 'subs'));
+            btnC.setAttribute('aria-selected', String(viewState.tab === 'secs'));
 
             syncSizeSelect();
-            loadCurrentView();
+            if (load) loadCurrentView();
         }
 
         function openSubDashboard(host, label) {
@@ -1564,10 +1921,10 @@
         function switchSubDashboardTab(tab, load = true) {
             viewState.nodeTab = SUB_TABS.includes(tab) ? tab : 'vulns';
 
-            const activeClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest bg-accent text-black shadow transition-all";
-            const inactiveClass = "px-5 py-2 rounded-sm text-[11px] font-sans font-black uppercase tracking-widest text-slate-500 hover:text-accent transition-all";
             SUB_TABS.forEach(t => {
-                document.getElementById(`sub-tab-${t}`).className = t === viewState.nodeTab ? activeClass : inactiveClass;
+                const button = document.getElementById(`sub-tab-${t}`);
+                button.className = 'chroma-tab';
+                button.setAttribute('aria-selected', String(t === viewState.nodeTab));
                 const content = document.getElementById(`sub-content-${t}`);
                 content.classList.toggle('hidden', t !== viewState.nodeTab);
                 content.classList.toggle('block', t === viewState.nodeTab);
@@ -1636,43 +1993,56 @@
         // One delegated listener per generated table, replacing the inline onclick
         // handlers those rows used to carry. Registered on the tbody rather than the
         // rows, so it survives the innerHTML='' that every re-render does.
-        document.getElementById('targets-tbody').addEventListener('click', (e) => {
+        const handleProfileAction = (e) => {
             const btn = e.target.closest('[data-action]');
             if (!btn) return;
             const { action, id, domain } = btn.dataset;
             if (action === 'scan') forceScan(id);
             else if (action === 'delete') deleteTarget(id, domain);
             else if (action === 'edit-schedule') editSchedule(id, domain);
-        });
+        };
+        ['targets-tbody', 'targets-mobile'].forEach(id =>
+            document.getElementById(id).addEventListener('click', handleProfileAction));
 
-        document.getElementById('tbody-subs').addEventListener('click', (e) => {
+        document.getElementById('view-discoveries').addEventListener('click', (e) => {
             const btn = e.target.closest('[data-action="open-node"]');
             if (btn) openSubDashboard(btn.dataset.domain, btn.dataset.label);
+            const badge = e.target.closest('[data-action="show-severity-summary"]');
+            if (badge) openSeverityTooltip(badge);
         });
 
         // Delegation survives table redraws. pointerover/out are used because their
         // mouseenter/leave counterparts do not bubble from generated badges.
-        document.getElementById('tbody-subs').addEventListener('pointerover', (e) => {
+        document.getElementById('view-discoveries').addEventListener('pointerover', (e) => {
             const badge = e.target.closest('[data-action="show-severity-summary"]');
             if (!badge || (e.relatedTarget && badge.contains(e.relatedTarget))) return;
             scheduleSeverityTooltip(badge);
         });
-        document.getElementById('tbody-subs').addEventListener('pointerout', (e) => {
+        document.getElementById('view-discoveries').addEventListener('pointerout', (e) => {
             const badge = e.target.closest('[data-action="show-severity-summary"]');
             if (!badge || (e.relatedTarget && badge.contains(e.relatedTarget))) return;
             hideSeverityTooltip();
         });
-        document.getElementById('tbody-subs').addEventListener('focusin', (e) => {
+        document.getElementById('view-discoveries').addEventListener('focusin', (e) => {
             const badge = e.target.closest('[data-action="show-severity-summary"]');
             if (badge) openSeverityTooltip(badge);
         });
-        document.getElementById('tbody-subs').addEventListener('focusout', (e) => {
+        document.getElementById('view-discoveries').addEventListener('focusout', (e) => {
             if (e.target.closest('[data-action="show-severity-summary"]')) hideSeverityTooltip();
         });
         document.getElementById('table-subs').addEventListener('scroll', hideSeverityTooltip, { passive: true });
+        window.addEventListener('scroll', hideSeverityTooltip, { passive: true });
         window.addEventListener('resize', hideSeverityTooltip, { passive: true });
         document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') hideSeverityTooltip();
+            if (e.key === 'Escape') {
+                hideSeverityTooltip();
+                if (!document.getElementById('modal-edit-schedule').classList.contains('hidden')) closeEditModal();
+            }
+        });
+
+        mobileLayout.addEventListener('change', () => {
+            renderProfileRows();
+            if (viewState.view === 'findings' && viewState.profile) renderCurrentView();
         });
 
         const sse = new EventSource('/api/events');
@@ -1681,7 +2051,9 @@
             try {
                 const data = JSON.parse(event.data);
                 if (data.type === 'profile_update') {
-                    refreshProfiles();
+                    refreshProfiles().then(() => {
+                        if (viewState.view === 'home') loadHomeOverview();
+                    });
                     return;
                 }
                 if (data.type !== 'discovery_update' || data.profile_id !== viewState.profile) return;
@@ -1725,10 +2097,15 @@
             syncSizeSelect();
 
             refreshProfiles().then(() => {
-                if (viewState.profile) {
-                    switchView('discoveries');
-                    if (viewState.node) loadNodeAddresses();
-                    loadCurrentView();
+                // A deep link into a node needs its address and its scoped page. The
+                // normal Findings activation loads a page itself, so suppress that one
+                // only while restoring a node link to avoid two competing requests.
+                switchView(viewState.view, !viewState.node);
+                if (viewState.view === 'findings' && viewState.profile) {
+                    if (viewState.node) {
+                        loadNodeAddresses();
+                        loadCurrentView();
+                    }
                 }
             });
         });

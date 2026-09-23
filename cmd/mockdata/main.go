@@ -76,7 +76,7 @@ func prepareDatabase(path string, reset bool) error {
 }
 
 func seedPrimaryProfile(now time.Time) {
-	profile := createProfile("acme.example.com", "full")
+	profile := createProfile("acme.example.com", "full", "every day at 09:00")
 
 	app := createAsset(profile, "app.acme.example.com", now.AddDate(0, 0, -45), now.AddDate(0, 0, -1), now)
 	api := createAsset(profile, "api.acme.example.com", now.AddDate(0, 0, -30), now.AddDate(0, 0, -4), now)
@@ -108,7 +108,7 @@ func seedPrimaryProfile(now time.Time) {
 }
 
 func seedSecondaryProfile(now time.Time) {
-	profile := createProfile("globex.example.net", "passive")
+	profile := createProfile("globex.example.net", "passive", "every week at 10:00")
 	portal := createAsset(profile, "portal.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -3), now)
 	createAsset(profile, "assets.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -15), now)
 	createHost(profile, "https://portal.globex.example.net", "198.51.100.20", "Globex partner portal", "Caddy", 200)
@@ -116,8 +116,8 @@ func seedSecondaryProfile(now time.Time) {
 	createDirectory(profile, portal, "https://portal.globex.example.net", "https://portal.globex.example.net/health", 200)
 }
 
-func createProfile(domain, mode string) models.Profile {
-	profile := models.Profile{Domain: domain, Mode: mode, Schedule: "@every 8760h", Enabled: true}
+func createProfile(domain, mode, schedule string) models.Profile {
+	profile := models.Profile{Domain: domain, Mode: mode, Schedule: schedule, Enabled: true}
 	if err := database.DB.Create(&profile).Error; err != nil {
 		log.Fatalf("creating profile %s: %v", domain, err)
 	}

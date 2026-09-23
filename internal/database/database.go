@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"gorm.io/gorm"
@@ -32,6 +33,7 @@ func InitDatabase(dbPath string) error {
 
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
 		Logger: newLogger,
+		NowFunc: func() time.Time { return time.Now().UTC() },
 		// Translate driver errors into gorm's own sentinels, so a unique-index violation
 		// can be recognised with errors.Is rather than by matching a message string. It
 		// is what lets createProfile answer 409 instead of surfacing a raw driver error

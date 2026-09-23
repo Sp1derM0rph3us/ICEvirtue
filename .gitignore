@@ -45,3 +45,8 @@ resume.cfg
 .config/
 resume.txt
 .dit/
+
+# Testing related folders
+node_modules/
+playwright-report/
+test-results/

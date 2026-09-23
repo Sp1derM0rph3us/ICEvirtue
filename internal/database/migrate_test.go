@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -166,6 +167,65 @@ func TestRunDataMigrationsIsIdempotent(t *testing.T) {
 	DB.Model(&models.SchemaMigration{}).Where("version = ?", hostCorrelationV1).Count(&markers)
 	if markers != 1 {
 		t.Errorf("the migration ledger holds %d row(s) for %s, want 1", markers, hostCorrelationV1)
+	}
+}
+
+func TestTimestampMigrationPreservesInstantsAndIsIdempotent(t *testing.T) {
+	id := newMigrateEnv(t)
+	legacyScan := "2026-03-01T10:30:00-03:00"
+	legacyChange := "2026-03-01T09:15:00-03:00"
+	if err := DB.Exec("UPDATE profiles SET last_scan = ?, last_scan_status = 'completed' WHERE id = ?", legacyScan, id).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := DB.Exec(`INSERT INTO subdomains (profile_id, domain, first_seen, last_seen, last_changed)
+		VALUES (?, 'a.example.com', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, ?)`, id, legacyChange).Error; err != nil {
+		t.Fatal(err)
+	}
+	never := &models.Profile{Domain: "never.example.com"}
+	if err := DB.Create(never).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	if err := RunDataMigrations(); err != nil {
+		t.Fatalf("first migration: %v", err)
+	}
+	var profile models.Profile
+	if err := DB.First(&profile, "id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	wantScan := time.Date(2026, 3, 1, 13, 30, 0, 0, time.UTC)
+	if !profile.LastScan.Equal(wantScan) || profile.LastScan.Location() != time.UTC {
+		t.Errorf("migrated scan = %v, want %v in UTC", profile.LastScan, wantScan)
+	}
+	var sub models.Subdomain
+	if err := DB.First(&sub, "profile_id = ?", id).Error; err != nil {
+		t.Fatal(err)
+	}
+	wantChange := time.Date(2026, 3, 1, 12, 15, 0, 0, time.UTC)
+	if !sub.LastChanged.Equal(wantChange) || sub.LastChanged.Location() != time.UTC {
+		t.Errorf("migrated change = %v, want %v in UTC", sub.LastChanged, wantChange)
+	}
+	var neverRow models.Profile
+	if err := DB.First(&neverRow, "id = ?", never.ID).Error; err != nil {
+		t.Fatal(err)
+	}
+	if !neverRow.LastScan.IsZero() {
+		t.Errorf("never-scanned profile gained timestamp %v", neverRow.LastScan)
+	}
+	var firstScan, firstChange string
+	DB.Raw("SELECT last_scan FROM profiles WHERE id = ?", id).Scan(&firstScan)
+	DB.Raw("SELECT last_changed FROM subdomains WHERE id = ?", sub.ID).Scan(&firstChange)
+	if !strings.HasSuffix(firstScan, "Z") || !strings.HasSuffix(firstChange, "Z") {
+		t.Errorf("timestamps were not stored with UTC offsets: scan=%q change=%q", firstScan, firstChange)
+	}
+	if err := RunDataMigrations(); err != nil {
+		t.Fatalf("second migration: %v", err)
+	}
+	var secondScan, secondChange string
+	DB.Raw("SELECT last_scan FROM profiles WHERE id = ?", id).Scan(&secondScan)
+	DB.Raw("SELECT last_changed FROM subdomains WHERE id = ?", sub.ID).Scan(&secondChange)
+	if firstScan != secondScan || firstChange != secondChange {
+		t.Errorf("second migration rewrote timestamps: %q/%q -> %q/%q", firstScan, firstChange, secondScan, secondChange)
 	}
 }
 

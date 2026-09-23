@@ -111,7 +111,7 @@ func OrchestrateScan(profile *models.Profile) {
 	defer func() {
 		database.DB.Model(&p).Updates(map[string]interface{}{
 			"is_scanning":      false,
-			"last_scan":        time.Now(),
+			"last_scan":        time.Now().UTC(),
 			"last_scan_status": status.summary(),
 		})
 		events.Broadcast("profile_update", p.ID.String(), nil)
@@ -382,7 +382,7 @@ func touchAsset(profileID *uuid.UUID, host *string) {
 	}
 	database.DB.Model(&models.Subdomain{}).
 		Where("profile_id = ? AND host = ?", *profileID, *host).
-		Update("last_changed", gorm.Expr("CURRENT_TIMESTAMP"))
+		UpdateColumn("last_changed", time.Now().UTC())
 }
 
 func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {

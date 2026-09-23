@@ -148,8 +148,8 @@ var subdomainSorts = map[string]string{
 	"name-desc":     "subdomains.domain DESC, subdomains.id DESC",
 	"first-asc":     "subdomains.id ASC",
 	"first-desc":    "subdomains.id DESC",
-	"update-asc":    "subdomains.last_changed ASC, subdomains.id ASC",
-	"update-desc":   "subdomains.last_changed DESC, subdomains.id DESC",
+	"update-asc":    "julianday(subdomains.last_changed) ASC, subdomains.id ASC",
+	"update-desc":   "julianday(subdomains.last_changed) DESC, subdomains.id DESC",
 	"findings-desc": "",
 	"findings-asc":  "",
 }

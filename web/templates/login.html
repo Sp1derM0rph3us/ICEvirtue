@@ -16,171 +16,56 @@
     </script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ICEVIRTUE // ACCESS-POINT</title>
+    <title>Sign in · ICEvirtue</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
-    <!-- Was https://cdn.tailwindcss.com with a v3-shaped inline config. Replaced by
-         the same compiled stylesheet the dashboard uses: it already contains every
-         utility class this page needs (Tailwind's source detection scanned this file
-         when output.css was built), it removes a third-party CDN dependency from a
-         security tool, and it makes the login screen work with no network at all.
-         Two intentional consequences: the mono font is now really Space Mono -- the
-         old config declared 'Space+Mono', which is not a valid family name, so it had
-         been silently falling back to generic monospace -- and the slate shades shift
-         about one step, since v4's ramp is OKLCH-derived rather than sRGB. -->
     <link rel="stylesheet" href="/static/css/output.css">
-    <style>
-        /* output.css still carries the compiled CRT overlays in @layer base even
-           though they are gone from input.css, and this page had never inherited
-           them. Neutralise them here too, or migrating to the shared stylesheet
-           would hand the login screen a flickering scanline it never had. */
-        body::before, body::after { display: none !important; content: none !important; }
-
-        @media (prefers-reduced-motion: reduce) {
-            .glass-box::before, .animate-pulse-fast, .animate-ping, .animate-pulse { animation: none; }
-        }
-
-        body {
-            background-color: #000000;
-            background-image:
-                radial-gradient(circle at 50% 50%, rgba(188, 19, 254, 0.05) 0%, transparent 50%),
-                linear-gradient(rgba(18, 18, 18, 0.2) 1px, transparent 1px),
-                linear-gradient(90deg, rgba(18, 18, 18, 0.2) 1px, transparent 1px);
-            background-size: 100% 100%, 30px 30px, 30px 30px;
-            color: #e2e8f0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            overflow-y: auto;
-        }
-
-        .glass-box {
-            background: rgba(10, 10, 10, 0.8);
-            backdrop-filter: blur(12px);
-            border: 1px solid rgba(188, 19, 254, 0.1);
-            position: relative;
-        }
-
-        .glass-box::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, #bc13fe, transparent);
-            animation: scan-line 3s linear infinite;
-        }
-
-        @keyframes scan-line {
-            0% { transform: translateY(0); opacity: 0; }
-            50% { opacity: 1; }
-            100% { transform: translateY(400px); opacity: 0; }
-        }
-
-        .neon-glow {
-            text-shadow: 0 0 10px rgba(188, 19, 254, 0.8), 0 0 20px rgba(188, 19, 254, 0.4);
-        }
-
-        .input-cyber {
-            background: rgba(0, 0, 0, 0.6);
-            border: 1px solid #1e293b;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-
-        .input-cyber:focus {
-            border-color: #bc13fe;
-            box-shadow: 0 0 15px rgba(188, 19, 254, 0.2);
-            outline: none;
-        }
-
-        .btn-cyber {
-            position: relative;
-            overflow: hidden;
-            transition: all 0.3s ease;
-        }
-
-        .btn-cyber:hover {
-            box-shadow: 0 0 25px rgba(188, 19, 254, 0.5);
-            transform: translateY(-1px);
-        }
-
-        .btn-cyber:active {
-            transform: translateY(1px);
-        }
-
-        @keyframes pulse-fast {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .animate-pulse-fast {
-            animation: pulse-fast 0.8s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-        }
-    </style>
-    <!-- After </style>: that block is unlayered too, so theme.css needs the later
-         source position as well as its [data-theme="light"] prefix. -->
     <link rel="stylesheet" href="/static/css/theme.css">
 </head>
-<!-- login-page is what theme.css hooks to override this page's hand-written body
-     rule, which is otherwise identical in specificity. -->
-<body class="font-sans login-page">
+<body class="font-sans chroma-login-page">
 
 <!-- animate-fade-in removed: it was never defined in this page and there are no
      fadeIn keyframes in output.css either, so it has always been a no-op here. -->
-<div class="glass-box w-full max-w-[420px] p-12 rounded-sm shadow-[0_0_100px_rgba(0,0,0,1)] border-l-[3px] border-l-accent">
-    <div class="mb-12">
-        <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] font-mono font-black text-accent tracking-[0.4em] uppercase opacity-80">System Auth</span>
-            <span class="text-[10px] font-mono text-slate-700 tracking-widest uppercase">v0.0.3</span>
-        </div>
-        <h1 class="text-4xl font-sans font-black text-white italic uppercase tracking-tighter neon-glow leading-none">
-            ICEVIRTUE
-        </h1>
-        <p class="text-[11px] font-mono text-slate-500 mt-3 uppercase tracking-widest font-bold">Encrypted Access Point</p>
+<div class="glass-box chroma-login-card relative">
+    <button type="button" id="login-theme-toggle" class="chroma-login-theme chroma-theme-button flex items-center" onclick="toggleTheme()" aria-label="Toggle light and dark theme" title="Toggle light / dark">
+        <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+        <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+    </button>
+    <div class="mb-9">
+        <span class="chroma-eyebrow">Operator access</span>
+        <div class="flex items-center gap-3 mt-2"><span class="chroma-brand-mark" aria-hidden="true"></span><h1 class="chroma-brand text-2xl">ICEVIRTUE</h1></div>
+        <p class="chroma-subtitle mt-3">Sign in to your reconnaissance workspace.</p>
     </div>
 
-    <div id="error-msg" class="hidden mb-8 p-4 bg-rose-500/10 border border-rose-500/30 text-rose-500 text-[11px] font-mono font-bold uppercase tracking-widest text-center animate-pulse">
-        Access Denied: Terminal Sync Failed
+    <div id="error-msg" class="chroma-status chroma-status--error hidden mb-5 p-3 w-full" role="alert">
+        Sign in failed. Check your credentials.
     </div>
 
-    <form id="login-form" class="space-y-8">
-        <div class="space-y-2">
-            <label class="block text-[10px] font-sans font-black text-slate-500 uppercase tracking-[0.2em]">Operator ID</label>
+    <form id="login-form" class="space-y-5">
+        <div>
+            <label for="username" class="chroma-field-label">Username</label>
             <input type="text" id="username" placeholder="Username" required autocomplete="username"
-                   class="input-cyber w-full p-4 font-mono font-bold text-sm text-slate-200 uppercase tracking-widest">
+                   class="input-cyber chroma-login-input text-sm">
         </div>
         
-        <div class="space-y-2">
-            <label class="block text-[10px] font-sans font-black text-slate-500 uppercase tracking-[0.2em]">Password</label>
+        <div>
+            <label for="password" class="chroma-field-label">Password</label>
             <input type="password" id="password" placeholder="••••••••" required autocomplete="current-password"
-                   class="input-cyber w-full p-4 font-mono font-bold text-sm text-slate-200 tracking-widest">
+                   class="input-cyber chroma-login-input text-sm">
         </div>
 
         <button type="submit" id="submit-btn" 
-                class="btn-cyber w-full bg-accent hover:bg-[#d000ff] text-black font-sans font-[900] text-xs uppercase tracking-[0.3em] py-5 transition-all shadow-lg flex items-center justify-center gap-3">
-            Establish Link
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="3" d="M14 5l7 7m0 0l-7 7m7-7H3"></path></svg>
+                class="btn-cyber chroma-login-submit w-full text-sm font-bold py-3 flex items-center justify-center">
+            Sign in
         </button>
 
-        <div id="spinner" class="hidden py-4">
-            <div class="flex items-center justify-center gap-4 text-accent animate-pulse-fast">
-                <span class="text-[10px] font-mono font-black tracking-widest uppercase">Synchronizing Neural Link...</span>
-                <div class="w-8 h-px bg-accent"></div>
+        <div id="spinner" class="hidden py-3" role="status">
+            <div class="flex items-center justify-center gap-3 chroma-accent">
+                <span class="text-sm font-medium">Signing in…</span>
             </div>
         </div>
     </form>
-
-    <div class="mt-16 pt-8 border-t border-slate-900 flex justify-between items-center opacity-40 hover:opacity-100 transition-opacity">
-        <span class="text-[9px] font-mono text-slate-600 uppercase tracking-widest">Awaiting Command...</span>
-        <div class="flex gap-4">
-            <div class="w-1 h-1 bg-accent rounded-full animate-ping"></div>
-            <div class="w-1 h-1 bg-accent/40 rounded-full"></div>
-            <div class="w-1 h-1 bg-accent/20 rounded-full"></div>
-        </div>
-    </div>
 </div>
 
 <script>
@@ -190,6 +75,12 @@
     // is a value proved to be a query string.
     const RETURN_KEY = 'icevirtue-return';
     const SAFE_QUERY = /^\?[^/\\:#]*$/;
+
+    function toggleTheme() {
+        const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+        document.documentElement.dataset.theme = next;
+        try { localStorage.setItem('icevirtue-theme', next); } catch (e) {}
+    }
 
     function returnTarget() {
         let q = '';
@@ -222,13 +113,13 @@
             if (res.ok) {
                 window.location.replace(returnTarget()); 
             } else {
-                errorMsg.textContent = "AUTH FAILURE // INVALID CREDENTIALS"; 
+                errorMsg.textContent = 'Sign in failed. Check your credentials.';
                 errorMsg.classList.remove('hidden');
                 submitBtn.classList.remove('hidden');
                 spinner.classList.add('hidden');
             }
         } catch (err) {
-            errorMsg.textContent = "UPLINK ERROR // CONNECTION REFUSED";
+            errorMsg.textContent = 'Connection unavailable. Please try again.';
             errorMsg.classList.remove('hidden');
             submitBtn.classList.remove('hidden');
             spinner.classList.add('hidden');
