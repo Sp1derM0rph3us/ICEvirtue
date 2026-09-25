@@ -1,9 +1,10 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
@@ -45,14 +46,16 @@ func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vuln
 
 	outb, err := runTool("nuclei", args, stdin, timeoutNuclei)
 
-	return parseNucleiOutput(outb, profile.ID), err
+	defer outb.Close()
+	results, parseErr := parseNucleiOutput(outb, profile.ID)
+	return results, errors.Join(err, parseErr)
 }
 
 // parseNucleiOutput reads nuclei's JSONL, skipping unparseable lines so a
 // truncated final line from a killed process does not discard the run.
-func parseNucleiOutput(out *bytes.Buffer, profileID uuid.UUID) []models.Vulnerability {
+func parseNucleiOutput(out io.Reader, profileID uuid.UUID) ([]models.Vulnerability, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	var vulnerabilities []models.Vulnerability
@@ -85,5 +88,5 @@ func parseNucleiOutput(out *bytes.Buffer, profileID uuid.UUID) []models.Vulnerab
 		log.Printf("[-] Stopped reading nuclei output early: %v", err)
 	}
 
-	return vulnerabilities
+	return vulnerabilities, scanner.Err()
 }

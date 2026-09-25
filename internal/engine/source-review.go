@@ -1,10 +1,10 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"os"
@@ -150,12 +150,14 @@ func validateJSURLs(profile *models.Profile, urls []string) ([]string, error) {
 		allowed[candidate] = true
 	}
 	var live []string
-	for _, candidate := range parsePlainURLs(outb) {
+	defer outb.Close()
+	parsed, parseErr := parsePlainURLs(outb)
+	for _, candidate := range parsed {
 		if allowed[candidate] {
 			live = append(live, candidate)
 		}
 	}
-	return live, err
+	return live, errors.Join(err, parseErr)
 }
 
 // collectKatana crawls the live hosts and keeps the JS endpoints it finds.
@@ -165,6 +167,7 @@ func collectKatana(profile *models.Profile, hostURLs []string) ([]string, error)
 	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
 	outb, err := runTool("katana", []string{"-silent", "-j", "-d", "2"}, stdin, timeoutKatana)
 
+	defer outb.Close()
 	var urls []string
 	scanner := newLineScanner(outb)
 	for scanner.Scan() {
@@ -177,7 +180,7 @@ func collectKatana(profile *models.Profile, hostURLs []string) ([]string, error)
 		}
 	}
 
-	return urls, err
+	return urls, errors.Join(err, scanner.Err())
 }
 
 // collectSubjs scrapes script references straight out of the live hosts.
@@ -187,7 +190,9 @@ func collectSubjs(profile *models.Profile, hostURLs []string) ([]string, error) 
 	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
 	outb, err := runTool("subjs", nil, stdin, timeoutSubjs)
 
-	return parsePlainURLs(outb), err
+	defer outb.Close()
+	urls, parseErr := parsePlainURLs(outb)
+	return urls, errors.Join(err, parseErr)
 }
 
 // scanWithMantra looks for secrets in the given JS files.
@@ -211,6 +216,7 @@ func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFi
 	// -s suppresses the banner. Mantra has no JSON flag; findings are text lines.
 	outb, runErr := runTool("mantra", []string{"-s"}, stdin, timeoutMantra)
 
+	defer outb.Close()
 	var secrets []models.SecretFinding
 	var malformed, requestErrors int
 	scanner := newLineScanner(outb)
@@ -298,7 +304,7 @@ func scanWithSecretHoundSources(profile *models.Profile, jsURLs []string, archiv
 		return nil, err
 	}
 
-	_, runErr := runTool("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, nil, timeoutSecretHound)
+	runErr := runToolToFiles("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, timeoutSecretHound)
 	data, readErr := os.ReadFile(outputPath)
 	if readErr != nil {
 		return nil, errors.Join(runErr, fmt.Errorf("reading SecretHound JSON: %w", readErr))
@@ -354,9 +360,9 @@ func validHTTPURL(raw string) bool {
 }
 
 // parsePlainURLs reads one URL per line, which is what httpx -silent and subjs emit.
-func parsePlainURLs(out *bytes.Buffer) []string {
+func parsePlainURLs(out io.Reader) ([]string, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	var urls []string
@@ -367,7 +373,7 @@ func parsePlainURLs(out *bytes.Buffer) []string {
 		}
 	}
 
-	return urls
+	return urls, scanner.Err()
 }
 
 // Retain each SecretHound source; its result takes precedence over a Mantra

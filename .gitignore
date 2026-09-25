@@ -40,9 +40,13 @@ test_*
 tmp_*
 ICEvirtue
 resume.cfg
-.agent/ # ffs
+# ffs
+.agent/
 .claude/
 .config/
+# Superdesign design workspace: init context, design-system.md, HTML mockups,
+# and local resume.json (draft ids). Regenerable tool state, not product code.
+.superdesign/
 resume.txt
 .dit/
 

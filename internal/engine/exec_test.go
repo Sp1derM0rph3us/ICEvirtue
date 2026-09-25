@@ -1,6 +1,7 @@
 package engine
 
 import (
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -164,7 +165,8 @@ func TestRunToolMissingBinaryNamesToolAndPath(t *testing.T) {
 
 	t.Setenv("PATH", "/nonexistent-bin-dir")
 
-	_, err := runTool("definitely-not-a-real-tool", nil, nil, time.Minute)
+	out, err := runTool("definitely-not-a-real-tool", nil, nil, time.Minute)
+	defer out.Close()
 	if err == nil {
 		t.Fatal("expected an error for a binary that is not on PATH")
 	}
@@ -182,7 +184,8 @@ func TestRunToolSurfacesStdoutOnFailure(t *testing.T) {
 	resetToolHome(t)
 	ToolHome = t.TempDir()
 
-	_, err := runTool("sh", []string{"-c", "echo open subfinder/config.yaml: no such file or directory; exit 1"}, nil, time.Minute)
+	out, err := runTool("sh", []string{"-c", "echo open subfinder/config.yaml: no such file or directory; exit 1"}, nil, time.Minute)
+	defer out.Close()
 	if err == nil {
 		t.Fatal("expected an error for a command that exits 1")
 	}
@@ -203,7 +206,8 @@ func TestRunToolSurfacesStderrOnFailure(t *testing.T) {
 	resetToolHome(t)
 	ToolHome = t.TempDir()
 
-	_, err := runTool("sh", []string{"-c", "echo boom >&2; exit 2"}, nil, time.Minute)
+	out, err := runTool("sh", []string{"-c", "echo boom >&2; exit 2"}, nil, time.Minute)
+	defer out.Close()
 	if err == nil {
 		t.Fatal("expected an error for a command that exits 2")
 	}
@@ -221,7 +225,8 @@ func TestRunToolReportsTimeoutRatherThanSignalKilled(t *testing.T) {
 	ToolHome = t.TempDir()
 
 	start := time.Now()
-	_, err := runTool("sh", []string{"-c", "sleep 30"}, nil, 100*time.Millisecond)
+	out, err := runTool("sh", []string{"-c", "sleep 30"}, nil, 100*time.Millisecond)
+	defer out.Close()
 	elapsed := time.Since(start)
 
 	if err == nil {
@@ -240,10 +245,11 @@ func TestRunToolReturnsStdoutOnSuccess(t *testing.T) {
 	ToolHome = t.TempDir()
 
 	out, err := runTool("sh", []string{"-c", "echo first; echo second"}, nil, time.Minute)
+	defer out.Close()
 	if err != nil {
 		t.Fatalf("runTool: %v", err)
 	}
-	if got, want := out.String(), "first\nsecond\n"; got != want {
+	if got, want := readToolOutput(t, out), "first\nsecond\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
 }
@@ -253,10 +259,11 @@ func TestRunToolPassesStdin(t *testing.T) {
 	ToolHome = t.TempDir()
 
 	out, err := runTool("cat", nil, strings.NewReader("piped\n"), time.Minute)
+	defer out.Close()
 	if err != nil {
 		t.Fatalf("runTool: %v", err)
 	}
-	if got, want := out.String(), "piped\n"; got != want {
+	if got, want := readToolOutput(t, out), "piped\n"; got != want {
 		t.Errorf("stdout = %q, want %q", got, want)
 	}
 }
@@ -271,10 +278,11 @@ func TestRunToolGivesChildAWritableHome(t *testing.T) {
 	t.Setenv("HOME", "")
 
 	out, err := runTool("sh", []string{"-c", `printf '%s' "$HOME"`}, nil, time.Minute)
+	defer out.Close()
 	if err != nil {
 		t.Fatalf("runTool: %v", err)
 	}
-	if got := out.String(); got != want {
+	if got := readToolOutput(t, out); got != want {
 		t.Errorf("child saw HOME=%q, want %q", got, want)
 	}
 }
@@ -370,4 +378,13 @@ func TestSystemdDirsSplitsColonSeparatedList(t *testing.T) {
 	if got := systemdDirs("CACHE_DIRECTORY"); got != nil {
 		t.Errorf("systemdDirs() = %v, want nil for an unset value", got)
 	}
+}
+
+func readToolOutput(t *testing.T, out io.Reader) string {
+	t.Helper()
+	data, err := io.ReadAll(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(data)
 }

@@ -1,17 +1,43 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
+	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
+
+const DefaultWAFProcessTimeout = 30 * time.Second
+
+var wafProcessTimeout atomic.Int64
+
+func init() {
+	wafProcessTimeout.Store(int64(DefaultWAFProcessTimeout))
+}
+
+// GetWAFProcessTimeout reads the per-process limit. A WAF batch snapshots it
+// once, so a future configuration change applies to the next batch.
+func GetWAFProcessTimeout() time.Duration {
+	return time.Duration(wafProcessTimeout.Load())
+}
+
+// SetWAFProcessTimeout is the single validated entry point for the CLI flag
+// and any future settings interface.
+func SetWAFProcessTimeout(timeout time.Duration) error {
+	if timeout <= 0 {
+		return fmt.Errorf("WAF process timeout must be greater than zero")
+	}
+	wafProcessTimeout.Store(int64(timeout))
+	return nil
+}
 
 // wafObservation is emitted only when WAFW00F produced a valid result. A failed
 // invocation must not overwrite the last successful observation with "none".
@@ -26,12 +52,20 @@ type wafw00fRecord struct {
 	Firewall string `json:"firewall"`
 }
 
-func parseWAFW00FOutput(out *bytes.Buffer) (string, error) {
+func parseWAFW00FOutput(out io.Reader) (string, error) {
 	if out == nil {
 		return "", errors.New("empty WAFW00F output")
 	}
 	var records []wafw00fRecord
-	if err := json.Unmarshal(out.Bytes(), &records); err != nil {
+	decoder := json.NewDecoder(out)
+	if err := decoder.Decode(&records); err != nil {
+		return "", fmt.Errorf("invalid WAFW00F JSON: %w", err)
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			err = errors.New("additional JSON value")
+		}
 		return "", fmt.Errorf("invalid WAFW00F JSON: %w", err)
 	}
 	if len(records) != 1 {
@@ -54,14 +88,15 @@ func parseWAFW00FOutput(out *bytes.Buffer) (string, error) {
 	return name, nil
 }
 
-func detectWAF(endpoint string) (string, error) {
+func detectWAF(endpoint string, processTimeout time.Duration) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("invalid HTTP endpoint for WAF detection")
 	}
 	// WAFW00F's default is first prioritized product match. -r prevents a
 	// redirect from silently probing a different, possibly out-of-scope host.
-	out, err := runTool("wafw00f", []string{"-r", "--no-colors", "-o", "-", "-f", "json", endpoint}, nil, timeoutWAFW00F)
+	out, err := runTool("wafw00f", []string{"-r", "--no-colors", "-o", "-", "-f", "json", endpoint}, nil, processTimeout)
+	defer out.Close()
 	if err != nil {
 		return "", err
 	}
@@ -78,6 +113,7 @@ func RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
 	if _, err := resolveTool("wafw00f"); err != nil {
 		return nil, err
 	}
+	processTimeout := GetWAFProcessTimeout()
 	const workers = 4
 	type result struct {
 		index int
@@ -92,7 +128,7 @@ func RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				name, err := detectWAF(hosts[index].URL)
+				name, err := detectWAF(hosts[index].URL, processTimeout)
 				results <- result{index: index, name: name, err: err}
 			}
 		}()

@@ -34,7 +34,6 @@ const (
 	timeoutAmass       = 60 * time.Minute
 	timeoutDnsx        = 30 * time.Minute
 	timeoutHttpx       = 30 * time.Minute
-	timeoutWAFW00F     = 90 * time.Second
 	timeoutNuclei      = 120 * time.Minute
 	timeoutWaymore     = 60 * time.Minute
 	timeoutKatana      = 45 * time.Minute
@@ -181,12 +180,12 @@ func toolEnv() []string {
 	return append(env, "HOME="+home, "XDG_CONFIG_HOME="+filepath.Join(home, ".config"))
 }
 
-// runTool executes an external recon tool and returns its stdout.
+// runTool executes an external recon tool and returns a temporary stdout reader that the caller must close.
 //
-// The returned buffer is always non-nil, INCLUDING when the error is non-nil.
+// The returned reader is always non-nil, INCLUDING when the error is non-nil.
 // Callers are expected to parse it either way: a tool that streamed thousands of
 // results and then exited non-zero, or that was killed partway through by its
-// timeout, has still produced everything in that buffer, and throwing it away
+// timeout, has still produced everything in that output, and throwing it away
 // loses most of a long enumeration run.
 //
 // On failure the error names the resolved binary, its arguments, the exit code,
@@ -194,7 +193,7 @@ func toolEnv() []string {
 // last part matters: several of these tools print fatal startup errors to
 // stdout rather than stderr, so reporting stderr alone leaves the operator
 // staring at an empty message.
-func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (*bytes.Buffer, error) {
+func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (io.ReadCloser, error) {
 	return runToolWithCapture(name, args, stdin, timeout, true)
 }
 
@@ -205,10 +204,10 @@ func runToolToFiles(name string, args []string, timeout time.Duration) error {
 	return err
 }
 
-func runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (*bytes.Buffer, error) {
+func runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (io.ReadCloser, error) {
 	path, err := resolveTool(name)
 	if err != nil {
-		return &bytes.Buffer{}, err
+		return io.NopCloser(strings.NewReader("")), err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
@@ -235,42 +234,118 @@ func runToolWithCapture(name string, args []string, stdin io.Reader, timeout tim
 
 	outb := &cappedBuffer{limit: maxStreamCapture}
 	errb := &cappedBuffer{limit: maxStreamCapture}
-	var stdout bytes.Buffer
+	var stdout io.ReadCloser = io.NopCloser(strings.NewReader(""))
+	var output *toolOutput
+	if captureStdout {
+		file, err := os.CreateTemp("", "icevirtue-output-*")
+		if err != nil {
+			return stdout, fmt.Errorf("%s output file: %w", name, err)
+		}
+		output = &toolOutput{File: file}
+		stdout = output
+	}
 	cmd.Stdout = outb
 	if captureStdout {
-		cmd.Stdout = io.MultiWriter(&stdout, outb)
+		cmd.Stdout = io.MultiWriter(outb, output)
 	}
 	cmd.Stderr = errb
 
 	start := time.Now()
 	runErr := cmd.Run()
 	elapsed := time.Since(start).Round(time.Millisecond)
+	if output != nil {
+		runErr = errors.Join(runErr, output.writeErr)
+		if _, err := output.Seek(0, io.SeekStart); err != nil {
+			runErr = errors.Join(runErr, fmt.Errorf("rewinding output: %w", err))
+			output.Close()
+			stdout = io.NopCloser(strings.NewReader(""))
+		}
+	}
 
 	if runErr != nil {
 		reason := runErr.Error()
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			reason = fmt.Sprintf("timed out after %s", timeout)
+			reason = fmt.Sprintf("timed out after %s: %v", timeout, runErr)
 		}
 
-		return &stdout, fmt.Errorf("%s failed after %s (%s)\n  path:   %s\n  args:   %s\n  HOME:   %s\n  stderr: %s\n  stdout: %s",
+		return stdout, fmt.Errorf("%s failed after %s (%s)\n  path:   %s\n  args:   %s\n  HOME:   %s\n  stderr: %s\n  stdout: %s",
 			name, elapsed, reason, path, strings.Join(args, " "), resolveToolHome(),
 			describeStream(errb.String()), describeStream(outb.String()))
 	}
 
-	return &stdout, nil
+	return stdout, nil
 }
 
-// newLineScanner returns a scanner sized for the long JSON lines some of these
-// tools emit. bufio's 64KiB default silently stops the scan on a longer line,
-// which would drop every remaining result rather than just the oversized one.
-func newLineScanner(out *bytes.Buffer) *bufio.Scanner {
-	if out == nil {
-		out = &bytes.Buffer{}
-	}
+// toolOutput owns the temporary stdout file until parsing finishes.
+type toolOutput struct {
+	*os.File
+	writeErr error
+}
 
-	scanner := bufio.NewScanner(out)
-	scanner.Buffer(make([]byte, 0, 64*1024), 1024*1024)
-	return scanner
+func (o *toolOutput) Write(p []byte) (int, error) {
+	n, err := o.File.Write(p)
+	if err != nil {
+		o.writeErr = fmt.Errorf("writing tool output: %w", err)
+	}
+	return n, err
+}
+
+func (o *toolOutput) Close() error {
+	err := errors.Join(o.File.Close(), os.Remove(o.Name()))
+	if err != nil {
+		log.Printf("[-] Cleaning up tool output: %v", err)
+	}
+	return err
+}
+
+// lineReader reuses storage sized for the largest line seen, without retaining
+// the complete output or imposing an arbitrary record size limit.
+type lineReader struct {
+	reader  *bufio.Reader
+	line    []byte
+	scratch []byte
+	err     error
+}
+
+func newLineScanner(out io.Reader) *lineReader {
+	if out == nil {
+		out = strings.NewReader("")
+	}
+	return &lineReader{reader: bufio.NewReaderSize(out, 64*1024)}
+}
+func (s *lineReader) Scan() bool {
+	if s.err != nil {
+		return false
+	}
+	s.scratch = s.scratch[:0]
+	for {
+		fragment, err := s.reader.ReadSlice('\n')
+		if len(s.scratch) == 0 && err != bufio.ErrBufferFull {
+			s.line = fragment
+		} else {
+			s.scratch = append(s.scratch, fragment...)
+			s.line = s.scratch
+		}
+		if err == bufio.ErrBufferFull {
+			continue
+		}
+		s.err = err
+		break
+	}
+	if len(s.line) == 0 {
+		return false
+	}
+	s.line = bytes.TrimSuffix(s.line, []byte("\n"))
+	s.line = bytes.TrimSuffix(s.line, []byte("\r"))
+	return true
+}
+func (s *lineReader) Bytes() []byte { return s.line }
+func (s *lineReader) Text() string  { return string(s.line) }
+func (s *lineReader) Err() error {
+	if errors.Is(s.err, io.EOF) {
+		return nil
+	}
+	return s.err
 }
 
 // PreflightTools logs which external tools the current flags require and which

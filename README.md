@@ -14,7 +14,7 @@ The application follows a continuous reconnaissance workflow separated into five
 
 **Stage 01, Basic Recon.** ICEvirtue runs [Subfinder](https://github.com/projectdiscovery/subfinder) for passive subdomain discovery. In Full Mode it also passes `-all` to Subfinder and runs [Amass](https://github.com/owasp-amass/amass), unless you started the engine with `--skip-amass`. If you supplied `--dnsx-list`, it additionally runs [DNSX](https://github.com/projectdiscovery/dnsx) once per wordlist for active DNS bruteforcing. Results from all three sources are merged and de-duplicated before anything else happens.
 
-**Stage 02, Web Validation.** Every discovered name is probed with [HTTPX](https://github.com/projectdiscovery/httpx) to collect status code, page title, web server, resolved IPs and Web Application Firewall brand. Every HTTP-responsive endpoint then undergoes active [WAFW00F](https://github.com/EnableSecurity/wafw00f) detection, regardless of status code. The first prioritized product match is saved; a generic-only match is shown as **Unknown WAF**, and a successful probe with no match as **No WAF detected**. Failed WAF probes preserve the last successful observation. WAFW00F probes do not follow redirects, to avoid scanning a different host. All subdomains are saved to the profile whether they are alive or not, but only hosts answering `200`, `301`, `302` or `307` are carried forward to later stages.
+**Stage 02, Web Validation.** Every discovered name is probed with [HTTPX](https://github.com/projectdiscovery/httpx) to collect status code, page title, web server, resolved IPs and Web Application Firewall brand. Every HTTP-responsive endpoint then undergoes active [WAFW00F](https://github.com/EnableSecurity/wafw00f) detection, regardless of status code. Each WAFW00F process has a 30-second wall-clock limit by default; timed-out endpoints do not delay the next worker job. The first prioritized product match is saved; a generic-only match is shown as **Unknown WAF**, and a successful probe with no match as **No WAF detected**. Failed WAF probes preserve the last successful observation. WAFW00F probes do not follow redirects, to avoid scanning a different host. All subdomains are saved to the profile whether they are alive or not, but only hosts answering `200`, `301`, `302` or `307` are carried forward to later stages.
 
 **Stage 03, Directory and File Fuzzing.** If you supplied `--directory-list`, a built-in concurrent fuzzer walks the carried-forward hosts. You can pass several wordlists and the engine merges and de-duplicates them, so overlapping lists cost you nothing. Requests do not follow redirects, and a path is recorded when it answers `200`, `301`, `302`, `403` or `405`. Without `--directory-list` the stage is skipped.
 
@@ -227,6 +227,7 @@ Two stages are opt-in rather than opt-out. Leaving out `--dnsx-list` skips activ
 | `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
 | `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
 | `--verbose` | `false` | Log every individual finding as it is diffed, marking each as new or already known, instead of only the per-stage totals. |
+| `--waf-process-timeout` | `30s` | Maximum wall-clock time for each WAFW00F process. Accepts Go duration values such as `45s` or `1m`; does not change WAFW00F's per-request timeout. |
 | `--web-dir` | `web` | Directory holding the dashboard's `templates/` and `static/` folders. |
 | `--wide-targets` | `false` | Widen which hosts reach stages 03 to 05. See below. |
 
@@ -417,6 +418,24 @@ When an external tool does fail, the log entry names the resolved binary, the ex
 Every tool also has a wall clock budget, and one that exceeds it is killed along with any child processes it spawned. The log says `timed out after` with the budget that was hit, so a hung tool cannot leave a profile stuck in the scanning state forever. A tool killed this way keeps whatever it had already emitted, marked `PARTIAL` in the stage summary, rather than losing the run.
 
 If the dashboard shows a `halted:` status, the reason is in the status itself and the matching log block explains it in full. `halted: no subdomains found from any source` almost always means the target domain is wrong. `halted: no host answered HTTP` means discovery worked but nothing is reachable, which is worth checking your egress and DNS for before you blame the target.
+
+### Tool output storage
+
+ICEvirtue writes captured tool stdout to private temporary files and parses it
+sequentially after each process exits, including usable output from failed or
+timed-out tools. Files are closed and removed after parsing. Stdout and stderr
+diagnostic excerpts remain capped at 64 KiB each. SecretHound and Waymore write
+their findings to explicit files, so their console output is retained only for
+diagnostics.
+
+Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR`
+to a writable, disk-backed directory with sufficient free space to move output
+storage away from RAM; a tmpfs-backed `/tmp` still consumes memory. Disk I/O can
+increase scan time, disk exhaustion causes reported tool errors, and abrupt
+application termination can leave temporary files behind. There is no output
+size cutoff: heap use still depends on the largest record, accumulated findings,
+and deduplication state. SecretHound's JSON results are still loaded as an array.
+
 
 ## Disclaimer
 

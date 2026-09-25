@@ -1,8 +1,9 @@
 package engine
 
 import (
-	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -19,17 +20,19 @@ func RunDnsx(profile *models.Profile, wordlistPath string) ([]string, error) {
 
 	log.Printf("[*] [Target: %s] Running dnsx with wordlist: %s", profile.Domain, wordlistPath)
 
-	args := []string{"-silent", "-d", profile.Domain, "-w", wordlistPath, "-resp-only"}
+	args := []string{"-silent", "-d", profile.Domain, "-w", wordlistPath}
 
 	outb, err := runTool("dnsx", args, nil, timeoutDnsx)
 
-	return parseDnsxOutput(outb), err
+	defer outb.Close()
+	results, parseErr := parseDnsxOutput(outb)
+	return results, errors.Join(err, parseErr)
 }
 
 // parseDnsxOutput reads dnsx's plain one-name-per-line output.
-func parseDnsxOutput(out *bytes.Buffer) []string {
+func parseDnsxOutput(out io.Reader) ([]string, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	unique := make(map[string]bool)
@@ -48,5 +51,5 @@ func parseDnsxOutput(out *bytes.Buffer) []string {
 		log.Printf("[-] Stopped reading dnsx output early: %v", err)
 	}
 
-	return results
+	return results, scanner.Err()
 }

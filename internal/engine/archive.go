@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/url"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -125,24 +126,24 @@ func readWaymoreIndex(dir, domain string) (map[string][]archiveEvidence, error) 
 	if err != nil {
 		return result, err
 	}
-	byHash := make(map[string][]string)
+	byName := make(map[string]string)
 	for _, entry := range files {
 		if !entry.Type().IsRegular() {
 			continue
 		}
 		name := entry.Name()
 		if hash, _, ok := strings.Cut(name, "."); ok && archiveHashPattern.MatchString(hash) {
-			byHash[hash] = append(byHash[hash], filepath.Join(dir, name))
+			byName[name] = filepath.Join(dir, name)
 		}
 	}
-	path := filepath.Join(dir, "waymore_index.txt")
-	f, err := os.Open(path)
+	indexPath := filepath.Join(dir, "waymore_index.txt")
+	f, err := os.Open(indexPath)
 	if os.IsNotExist(err) {
 		f, err = os.Open(filepath.Join(dir, "index.txt"))
 	}
 	if os.IsNotExist(err) {
-		if len(byHash) > 0 {
-			return result, fmt.Errorf("waymore saved %d response hash(es) without a capture index", len(byHash))
+		if len(byName) > 0 {
+			return result, fmt.Errorf("waymore saved %d response file(s) without a capture index", len(byName))
 		}
 		return result, nil
 	}
@@ -159,7 +160,7 @@ func readWaymoreIndex(dir, domain string) (map[string][]archiveEvidence, error) 
 			continue
 		}
 		hash, rest, ok := strings.Cut(line, ",")
-		if !ok || !archiveHashPattern.MatchString(hash) || len(byHash[hash]) != 1 {
+		if !ok || !archiveHashPattern.MatchString(hash) {
 			bad++
 			continue
 		}
@@ -173,7 +174,28 @@ func readWaymoreIndex(dir, domain string) (map[string][]archiveEvidence, error) 
 			bad++
 			continue
 		}
-		file := byHash[hash][0]
+		// Waymore preserves URL extension case and escapes when naming files.
+		// Python's urlparse also separates parameters from the final path segment.
+		u, _ := url.Parse(ref.OriginalURL) // validated above
+		base := path.Base(u.EscapedPath())
+		base, _, _ = strings.Cut(base, ";")
+		ext := path.Ext(base)
+		// An encoded or otherwise nonstandard extension may trigger Waymore's
+		// MIME fallback; the index lacks the MIME needed to reconstruct that name.
+		knownExtension := false
+		for _, allowed := range jsExtensions {
+			if strings.ToLower(ext) == allowed {
+				knownExtension = true
+				break
+			}
+		}
+		file, exists := byName[hash+ext]
+		if !knownExtension || !exists {
+			bad++
+			continue
+		}
+		// Same-hash, same-extension overwrites in Waymore cannot be detected
+		// from its index, which records neither a strong digest nor a filename.
 		duplicate := false
 		for _, existing := range result[file] {
 			if existing.OriginalURL == ref.OriginalURL {

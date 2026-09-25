@@ -1,11 +1,72 @@
 package engine
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestWaymoreIndexMatchesExactFilenames(t *testing.T) {
+	for _, identical := range []bool{true, false} {
+		t.Run(fmt.Sprintf("identical_bodies_%t", identical), func(t *testing.T) {
+			dir := t.TempDir()
+			bodies := map[string]string{"123.js": "first", "123.json": "second", "456.JS": "upper", "789.js": "escaped path"}
+			if identical {
+				bodies["123.json"] = bodies["123.js"]
+			}
+			for name, body := range bodies {
+				if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0600); err != nil {
+					t.Fatal(err)
+				}
+			}
+			// Several original URLs may map to the same file. Query extensions
+			// must not affect matching; escaped dots must not become literal dots.
+			records := []struct{ hash, original, file string }{
+				{"123", "https://a.example.com/app.js?format=.json", "123.js"},
+				{"123", "https://b.example.com/copy.js", "123.js"},
+				{"123", "https://a.example.com/data.json", "123.json"},
+				{"456", "https://a.example.com/app.JS", "456.JS"},
+				{"789", "https://a.example.com/a%20b.js", "789.js"},
+				{"123", "https://a.example.com/missing.ts", ""},
+				{"456", "https://a.example.com/app.js", ""},
+				{"789", "https://a.example.com/app%2Ejs", ""},
+				{"999", "https://a.example.com/missing.js", ""},
+			}
+			var lines []string
+			want := make(map[string][]archiveEvidence)
+			for _, record := range records {
+				archive := "https://web.archive.org/web/20200101000000/" + record.original
+				lines = append(lines, record.hash+","+archive+" ,2026-01-01 00:00:00")
+				if record.file != "" {
+					file := filepath.Join(dir, record.file)
+					want[file] = append(want[file], archiveEvidence{OriginalURL: record.original, ArchiveURL: archive})
+				}
+			}
+			if err := os.WriteFile(filepath.Join(dir, "waymore_index.txt"), []byte(strings.Join(lines, "\n")), 0600); err != nil {
+				t.Fatal(err)
+			}
+			got, err := readWaymoreIndex(dir, "example.com")
+			if err == nil || !strings.Contains(err.Error(), "4 invalid or unmappable") {
+				t.Fatalf("mapping error = %v", err)
+			}
+			if len(got) != len(want) {
+				t.Fatalf("mapped files = %+v, want %+v", got, want)
+			}
+			for file, refs := range want {
+				if len(got[file]) != len(refs) {
+					t.Fatalf("evidence for %s = %+v, want %+v", file, got[file], refs)
+				}
+				for i, ref := range refs {
+					if got[file][i] != ref {
+						t.Fatalf("evidence for %s = %+v, want %+v", file, got[file], refs)
+					}
+				}
+			}
+		})
+	}
+}
 
 func TestWaymoreCollectsPartialOutputAndMapsCaptures(t *testing.T) {
 	profile, bin := newPipelineEnv(t, "passive")
@@ -90,6 +151,12 @@ while IFS= read -r line; do
   esac
 done < "$input"
 test "$count" -eq 2 && test -f "$local" || exit 12
+# Irrelevant progress output must not be retained as scanner input.
+i=0
+while [ "$i" -lt 5000 ]; do
+  printf '%s\n' 'SecretHound diagnostic output that is not a finding'
+  i=$((i + 1))
+done
 printf '[{"type":"aws","value":"live","source_url":"%s"},{"type":"aws","value":"old","source_url":"file://%s"}]\n' "$live" "$local" > "$output"
 `)
 	refs := map[string][]archiveEvidence{archivedPath: {

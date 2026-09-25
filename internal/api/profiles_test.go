@@ -1,6 +1,7 @@
 package api
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -14,6 +15,57 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
+
+func TestCreateProfileValidatesMode(t *testing.T) {
+	newAPIEnv(t)
+	initAuth(t)
+	h := newServerWithUsers(t)
+	cookie := sessionCookie(t, time.Hour)
+	for i, tc := range []struct {
+		name, field, want string
+	}{
+		{"omitted", "", "full"},
+		{"empty", `,"mode":""`, "full"},
+		{"full", `,"mode":"full"`, "full"},
+		{"passive", `,"mode":"passive"`, "passive"},
+		{"unknown", `,"mode":"aggressive"`, ""},
+		{"mixed-case", `,"mode":"Full"`, ""},
+		{"leading-space", `,"mode":" passive"`, ""},
+		{"trailing-space", `,"mode":"full "`, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			domain := fmt.Sprintf("mode-%d.example.com", i)
+			body := fmt.Sprintf(`{"domain":%q,"schedule":"every day at 03:00"%s}`, domain, tc.field)
+			rec := postJSON(t, h, "/api/profiles", body, cookie)
+			var rows []models.Profile
+			if err := database.DB.Where("domain = ?", domain).Find(&rows).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.want == "" {
+				if rec.Code != http.StatusBadRequest || strings.TrimSpace(rec.Body.String()) != "invalid mode: expected full or passive" {
+					t.Fatalf("invalid mode response = %d %s", rec.Code, rec.Body.String())
+				}
+				if len(rows) != 0 {
+					t.Fatal("invalid mode was persisted")
+				}
+				return
+			}
+			if rec.Code != http.StatusCreated {
+				t.Fatalf("create = %d %s", rec.Code, rec.Body.String())
+			}
+			if len(rows) != 1 || rows[0].Mode != tc.want {
+				t.Fatalf("stored profile = %+v, want mode %s", rows, tc.want)
+			}
+			var returned models.Profile
+			if err := json.Unmarshal(rec.Body.Bytes(), &returned); err != nil {
+				t.Fatal(err)
+			}
+			if returned.Mode != tc.want {
+				t.Fatalf("response mode = %s, want %s", returned.Mode, tc.want)
+			}
+		})
+	}
+}
 
 // TestConcurrentCreateYieldsOneCreatedAndTheRest409 is the regression test for the
 // duplicate-domain TOCTOU. The pre-check let two requests both find nothing and both

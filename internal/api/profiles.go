@@ -106,8 +106,13 @@ func (a *API) createProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if req.Mode == "" {
+	switch req.Mode {
+	case "":
 		req.Mode = "full"
+	case "full", "passive":
+	default:
+		http.Error(w, "invalid mode: expected full or passive", http.StatusBadRequest)
+		return
 	}
 
 	profile := models.Profile{

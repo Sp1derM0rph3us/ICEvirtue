@@ -43,6 +43,7 @@ func main() {
 	flag.StringVar(&engine.WaymoreConfig, "waymore-config", "", "Optional Waymore config.yml containing provider API keys and filters")
 
 	var apiPort int
+	var wafProcessTimeout time.Duration
 	var dbPath string
 	var jwtSecretPath string
 	var webDir string
@@ -56,9 +57,13 @@ func main() {
 	flag.BoolVar(&secureCookies, "secure-cookies", false,
 		"Mark the session cookie Secure. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. Leaving it off over plain HTTP is required, because a browser accepts a Secure cookie and then never sends it back.")
 	flag.DurationVar(&sessionTTL, "session-ttl", auth.DefaultSessionTTL, "How long a dashboard session lasts before it has to be re-established")
+	flag.DurationVar(&wafProcessTimeout, "waf-process-timeout", engine.DefaultWAFProcessTimeout, "Maximum wall-clock time for each wafw00f process (default 30s)")
 	flag.Var(&trustedOrigins, "trusted-origin",
 		"An Origin to accept on state-changing requests in addition to the request's own host. Repeatable. Needed when a reverse proxy rewrites Host, because otherwise every write is refused with 403.")
 	flag.Parse()
+	if err := engine.SetWAFProcessTimeout(wafProcessTimeout); err != nil {
+		log.Fatalf("[-] Invalid WAF process timeout: %v", err)
+	}
 
 	engine.PreflightTools()
 

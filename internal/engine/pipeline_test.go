@@ -348,7 +348,13 @@ func TestDnsxRunsOncePerWordlist(t *testing.T) {
 
 	fakeTool(t, binDir, "subfinder", jsonlEmitter(0))
 	// Each invocation emits a name derived from the wordlist it was handed.
-	fakeTool(t, binDir, "dnsx", `for a in "$@"; do case "$a" in *small.txt) echo small.example.com;; *big.txt) echo big.example.com;; esac; done`)
+	fakeTool(t, binDir, "dnsx", `
+test "$1" = -silent && test "$2" = -d && test "$3" = example.com && test "$4" = -w || exit 9
+for a in "$@"; do
+  test "$a" != -resp-only || exit 10
+  case "$a" in *small.txt) echo small.example.com;; *big.txt) echo big.example.com;; esac
+done
+`)
 
 	subdomains, report := stageDiscovery(profile)
 

@@ -1,9 +1,10 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
 	"strings"
 
@@ -39,14 +40,16 @@ func RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost,
 
 	outb, err := runTool("httpx", args, stdin, timeoutHttpx)
 
-	return parseHttpxOutput(outb, profile.ID), err
+	defer outb.Close()
+	results, parseErr := parseHttpxOutput(outb, profile.ID)
+	return results, errors.Join(err, parseErr)
 }
 
 // parseHttpxOutput reads httpx's JSONL, skipping unparseable lines so a
 // truncated final line from a killed process does not discard the run.
-func parseHttpxOutput(out *bytes.Buffer, profileID uuid.UUID) []models.AliveHost {
+func parseHttpxOutput(out io.Reader, profileID uuid.UUID) ([]models.AliveHost, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	var aliveHosts []models.AliveHost
@@ -77,5 +80,5 @@ func parseHttpxOutput(out *bytes.Buffer, profileID uuid.UUID) []models.AliveHost
 		log.Printf("[-] Stopped reading httpx output early: %v", err)
 	}
 
-	return aliveHosts
+	return aliveHosts, scanner.Err()
 }

@@ -1,8 +1,9 @@
 package engine
 
 import (
-	"bytes"
 	"encoding/json"
+	"errors"
+	"io"
 	"log"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -29,15 +30,17 @@ func RunSubfinder(profile *models.Profile) ([]string, error) {
 
 	outb, err := runTool("subfinder", args, nil, timeoutSubfinder)
 
-	return parseSubfinderOutput(outb), err
+	defer outb.Close()
+	results, parseErr := parseSubfinderOutput(outb)
+	return results, errors.Join(err, parseErr)
 }
 
 // parseSubfinderOutput reads subfinder's JSONL. Unparseable lines are counted and
 // skipped rather than aborting, because a process killed mid-write leaves a
 // truncated final line that must not discard the rest of the run.
-func parseSubfinderOutput(out *bytes.Buffer) []string {
+func parseSubfinderOutput(out io.Reader) ([]string, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	unique := make(map[string]bool)
@@ -65,5 +68,5 @@ func parseSubfinderOutput(out *bytes.Buffer) []string {
 		log.Printf("[-] Stopped reading subfinder output early: %v", err)
 	}
 
-	return results
+	return results, scanner.Err()
 }

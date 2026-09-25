@@ -18,6 +18,9 @@ func TestParseWAFW00FOutput(t *testing.T) {
 		{"generic", `[{"url":"https://a.example.com","detected":true,"firewall":"Generic"}]`, "Unknown WAF", false},
 		{"none", `[{"url":"https://a.example.com","detected":false,"firewall":"None"}]`, "none", false},
 		{"empty", `[]`, "", true},
+		{"trailing JSON", `[{"detected":false,"firewall":"None"}] {}`, "", true},
+		{"trailing garbage", `[{"detected":false,"firewall":"None"}] junk`, "", true},
+		{"trailing whitespace", "[{\"detected\":false,\"firewall\":\"None\"}]\n ", "none", false},
 		{"truncated", `[{`, "", true},
 		{"inconsistent", `[{"detected":false,"firewall":"Cloudflare"}]`, "", true},
 	}

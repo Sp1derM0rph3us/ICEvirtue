@@ -23,7 +23,7 @@
     <title>ICEvirtue Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,wght@0,100..900;1,100..900&family=Space+Mono:ital,wght@0,400;0,700;1,400;1,700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/output.css">
     <link rel="stylesheet" href="/static/css/theme.css">
 </head>
@@ -37,7 +37,10 @@
         <div id="main-nav-layout" class="chroma-nav-layout max-w-7xl mx-auto px-6 flex justify-between items-center">
             <div class="flex items-center gap-3">
                 <span class="chroma-brand-mark" aria-hidden="true"></span>
-                <span class="chroma-brand">ICEVIRTUE</span>
+                <span class="chroma-brand-wrap">
+                    <span class="chroma-brand">ICEVIRTUE</span>
+                    <span class="chroma-brand-sub">Red Team Continuous Monitoring System</span>
+                </span>
             </div>
             <div id="main-nav-actions" class="chroma-nav-actions flex font-sans items-center">
                 <button id="nav-btn-home" class="chroma-nav-tab tab-active" onclick="switchView('home')" aria-current="page">Home</button>
@@ -74,7 +77,6 @@
                     <select id="select-home-profile" onchange="onHomeProfileChanged()" class="chroma-select w-full"></select>
                 </div>
             </div>
-            <span id="home-scan-badge" class="chroma-status hidden mb-3"><span class="chroma-status-dot"></span>Scan in progress</span>
 
             <div id="home-empty" class="chroma-surface hidden px-8 py-12 text-center">
                 <h2 class="text-lg font-bold text-white mb-2">No profiles yet</h2>
@@ -88,48 +90,56 @@
             </div>
 
             <div id="home-content" class="hidden">
-                <div class="chroma-home-grid">
-                    <div class="chroma-home-hero">
-                        <div class="chroma-home-hero-top"><span>Total identified assets</span><span>Profile inventory</span></div>
-                        <div class="chroma-home-values">
-                            <div><p id="home-asset-total" class="chroma-home-total tabular-nums">0</p><span class="chroma-home-total-label">Nodes in this profile</span></div>
-                            <div class="chroma-home-response"><span id="home-response-ratio">0 of 0</span><small>HTTP response observed</small></div>
-                        </div>
-                        <div id="home-response-track" class="overview-track" role="img" aria-label="No assets identified"></div>
-                        <div class="overview-legend mt-3 text-xs chroma-muted">
-                            <span class="overview-key" style="--key-color: var(--ui-rose)"><b id="home-observed-count">0</b> response recorded</span>
-                            <span class="overview-key" style="--key-color: var(--ui-track)"><b id="home-unobserved-count">0</b> no response recorded</span>
-                        </div>
-                        <p class="text-xs chroma-muted mt-2">Observed at least once; not necessarily during the latest scan.</p>
-                    </div>
-                    <div class="chroma-surface chroma-home-times">
-                        <div class="chroma-time-item"><span class="chroma-time-label">Last scan · UTC</span><span id="home-last-scan" class="chroma-time-value">Never</span><span id="home-last-scan-status" class="chroma-time-detail">No scan recorded</span></div>
-                        <div class="chroma-time-item"><span class="chroma-time-label">Last identified change · UTC</span><span id="home-last-change" class="chroma-time-value">Never</span><span class="chroma-time-detail">Latest tracked asset diff</span></div>
-                    </div>
-                </div>
-                <div class="chroma-home-grid chroma-home-lower">
-                    <div class="chroma-surface chroma-panel">
-                        <div class="chroma-panel-heading"><h2>Priority findings</h2><small>Critical and high · newest first</small></div>
-                        <ol id="home-priority-findings" class="list-none"></ol>
-                        <p id="home-priority-empty" class="hidden text-sm chroma-muted py-5">No Critical or High findings identified.</p>
-                    </div>
-                    <div class="chroma-side">
-                        <div class="chroma-surface chroma-panel">
-                            <div class="chroma-panel-heading"><h2>Findings by severity</h2><small>Exact counts</small></div>
-                            <div id="home-severity-track" class="overview-track" role="img" aria-label="No findings identified"></div>
-                            <div id="home-severity-legend" class="overview-legend mt-4 text-xs chroma-muted"></div>
-                        </div>
-                        <div class="chroma-surface chroma-panel">
-                            <div class="chroma-panel-heading">
+                <div class="st-home">
+                    <span class="st-rail" aria-hidden="true"></span>
+                    <div class="st-grid">
+                        <section class="st-panel st-hero">
+                            <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                            <div class="st-hero-top">
+                                <span>Surface overview</span>
+                                <span id="home-scan-badge" class="st-live hidden"><span class="st-live-dot"></span>Scan in progress</span>
+                            </div>
+                            <div class="st-hero-values">
                                 <div>
-                                    <h2>WAF detection</h2>
-                                    <small class="chroma-waf-note">Latest successful observations.</small>
+                                    <p id="home-asset-total" class="st-total tabular-nums">0</p>
+                                    <span class="st-total-label">Assets discovered</span>
+                                </div>
+                                <div class="st-hero-resp">
+                                    <span id="home-response-ratio" class="st-resp-val tabular-nums">0 / 0</span>
+                                    <small>Responsive over HTTP</small>
                                 </div>
                             </div>
-                            <ul id="home-waf-list" class="chroma-waf-list list-none" aria-label="Detected WAF technologies"></ul>
-                            <p id="home-waf-empty" class="text-sm chroma-muted">No WAF detections recorded.</p>
+                            <div id="home-response-track" class="overview-track st-track" role="img" aria-label="No assets identified"></div>
+                            <div class="st-legend">
+                                <span class="overview-key" style="--key-color: var(--ui-rose)"><b id="home-observed-count">0</b> response recorded</span>
+                                <span class="overview-key" style="--key-color: var(--ui-track)"><b id="home-unobserved-count">0</b> no response</span>
+                            </div>
+                            <div class="st-times">
+                                <div class="st-time"><span class="st-time-l">Last scan · UTC</span><span id="home-last-scan" class="st-time-v">Never</span><span id="home-last-scan-status" class="st-time-d">No scan recorded</span></div>
+                                <div class="st-time"><span class="st-time-l">Last change · UTC</span><span id="home-last-change" class="st-time-v">Never</span><span class="st-time-d">Latest tracked asset diff</span></div>
+                            </div>
+                        </section>
+                        <div class="st-side">
+                            <section class="st-panel">
+                                <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                                <div class="st-panel-h"><h2>Findings by severity</h2><span id="home-severity-total" class="st-h-count tabular-nums">0</span></div>
+                                <div id="home-severity-meters" class="st-sev"></div>
+                                <p id="home-severity-empty" class="hidden st-empty">No Nuclei findings identified.</p>
+                            </section>
+                            <section class="st-panel">
+                                <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                                <div class="st-panel-h"><h2>Detected WAF</h2><span id="home-waf-count" class="st-h-count tabular-nums">0</span></div>
+                                <ul id="home-waf-list" class="st-wafs list-none" aria-label="Detected WAF technologies"></ul>
+                                <p id="home-waf-empty" class="st-empty">No WAF detections recorded.</p>
+                            </section>
                         </div>
                     </div>
+                    <section class="st-panel st-priority">
+                        <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                        <div class="st-panel-h"><h2>Priority findings</h2><small>Critical and high · newest first</small></div>
+                        <ol id="home-priority-findings" class="list-none st-finds"></ol>
+                        <p id="home-priority-empty" class="hidden st-empty">No Critical or High findings identified.</p>
+                    </section>
                 </div>
             </div>
         </section>
@@ -633,7 +643,7 @@
         let profileIndexReady = false;
 
         const HOME_SEVERITY_COLORS = {
-            critical: 'var(--ui-coral)', high: 'var(--ui-amber)', medium: 'var(--ui-plum)',
+            critical: 'var(--ui-coral)', high: 'var(--ui-amber)', medium: 'var(--sev-medium)',
             low: 'var(--ui-teal)', info: 'var(--ui-blue)', unknown: 'var(--ui-muted)',
         };
 
@@ -686,9 +696,10 @@
             wafList.replaceChildren();
             const wafs = data.detected_wafs || [];
             document.getElementById('home-waf-empty').classList.toggle('hidden', wafs.length > 0);
+            document.getElementById('home-waf-count').textContent = wafs.length.toLocaleString();
             for (const name of wafs) {
                 const item = document.createElement('li');
-                item.className = 'chroma-waf-item';
+                item.className = 'chroma-waf-chip';
                 item.textContent = name;
                 wafList.appendChild(item);
             }
@@ -707,23 +718,32 @@
 
             const severities = data.finding_severities || [];
             const findingTotal = severities.reduce((sum, item) => sum + item.count, 0);
-            renderOverviewBar('home-severity-track', severities.map(item => ({
-                label: item.severity, count: item.count,
-                color: HOME_SEVERITY_COLORS[item.severity] || HOME_SEVERITY_COLORS.unknown,
-            })), findingTotal ? severities.filter(item => item.count)
-                .map(item => `${item.count} ${item.severity}`).join(', ') : 'No findings identified');
-            const legend = document.getElementById('home-severity-legend');
-            legend.replaceChildren();
-            if (!findingTotal) {
-                legend.textContent = 'No Nuclei findings identified.';
-            } else {
-                for (const item of severities.filter(item => item.count)) {
-                    const key = document.createElement('span');
-                    key.className = 'overview-key';
-                    key.style.setProperty('--key-color', HOME_SEVERITY_COLORS[item.severity] || HOME_SEVERITY_COLORS.unknown);
-                    key.textContent = `${item.severity.charAt(0).toUpperCase() + item.severity.slice(1)} ${item.count.toLocaleString()}`;
-                    legend.appendChild(key);
-                }
+            document.getElementById('home-severity-total').textContent = findingTotal.toLocaleString();
+            document.getElementById('home-severity-empty').classList.toggle('hidden', findingTotal > 0);
+            const meters = document.getElementById('home-severity-meters');
+            meters.replaceChildren();
+            const severityOrder = ['critical', 'high', 'medium', 'low', 'info'];
+            // Each bar is scaled to the largest severity bucket, so the tallest count
+            // fills the track and the rest read as a proportion of it.
+            const severityMax = Math.max(1, ...severities.map(item => item.count));
+            for (const name of severityOrder) {
+                const item = severities.find(entry => entry.severity === name) || { severity: name, count: 0 };
+                const row = document.createElement('div');
+                row.className = 'st-sev-row';
+                const label = document.createElement('span');
+                label.className = 'st-sev-label';
+                label.textContent = { critical: 'CRIT', high: 'HIGH', medium: 'MED', low: 'LOW', info: 'INFO' }[name] || name.toUpperCase();
+                const track = document.createElement('span');
+                track.className = 'st-sev-track';
+                const fill = document.createElement('i');
+                fill.style.width = `${item.count / severityMax * 100}%`;
+                fill.style.background = HOME_SEVERITY_COLORS[name];
+                track.appendChild(fill);
+                const count = document.createElement('span');
+                count.className = 'st-sev-n';
+                count.textContent = item.count.toLocaleString();
+                row.append(label, track, count);
+                meters.appendChild(row);
             }
 
             const list = document.getElementById('home-priority-findings');

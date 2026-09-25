@@ -1,7 +1,8 @@
 package engine
 
 import (
-	"bytes"
+	"errors"
+	"io"
 	"log"
 	"strings"
 
@@ -19,14 +20,16 @@ func RunAmass(profile *models.Profile) ([]string, error) {
 
 	outb, err := runTool("amass", args, nil, timeoutAmass)
 
-	return parseAmassOutput(outb, profile.Domain), err
+	defer outb.Close()
+	results, parseErr := parseAmassOutput(outb, profile.Domain)
+	return results, errors.Join(err, parseErr)
 }
 
 // parseAmassOutput keeps the lines that look like subdomains of the target and
 // ignores everything else amass prints.
-func parseAmassOutput(out *bytes.Buffer, domain string) []string {
+func parseAmassOutput(out io.Reader, domain string) ([]string, error) {
 	if out == nil {
-		return nil
+		return nil, nil
 	}
 
 	unique := make(map[string]bool)
@@ -49,5 +52,5 @@ func parseAmassOutput(out *bytes.Buffer, domain string) []string {
 		log.Printf("[-] Stopped reading amass output early: %v", err)
 	}
 
-	return results
+	return results, scanner.Err()
 }
