@@ -39,6 +39,8 @@ func main() {
 	flag.BoolVar(&engine.WideTargets, "wide-targets", false, "Feed every host that answered HTTP except 404s into fuzzing, Nuclei and secret hunting, instead of only 200/301/302/307")
 	flag.StringVar(&engine.ToolHome, "tool-home", "", "Directory the external tools use for their config (default /opt/icevirtue, falling back to $HOME)")
 	flag.StringVar(&engine.ToolPaths, "tool-paths", "", "Comma-separated name=path overrides for external tools (e.g. httpx=/usr/bin/httpx-toolkit)")
+	flag.IntVar(&engine.WaymoreResponseLimit, "waymore-response-limit", 5000, "Maximum archived responses Waymore downloads (default 5000)")
+	flag.StringVar(&engine.WaymoreConfig, "waymore-config", "", "Optional Waymore config.yml containing provider API keys and filters")
 
 	var apiPort int
 	var dbPath string

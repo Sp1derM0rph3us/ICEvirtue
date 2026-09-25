@@ -36,7 +36,7 @@ const (
 	timeoutHttpx       = 30 * time.Minute
 	timeoutWAFW00F     = 90 * time.Second
 	timeoutNuclei      = 120 * time.Minute
-	timeoutGau         = 30 * time.Minute
+	timeoutWaymore     = 60 * time.Minute
 	timeoutKatana      = 45 * time.Minute
 	timeoutSubjs       = 15 * time.Minute
 	timeoutMantra      = 30 * time.Minute
@@ -195,6 +195,17 @@ func toolEnv() []string {
 // stdout rather than stderr, so reporting stderr alone leaves the operator
 // staring at an empty message.
 func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (*bytes.Buffer, error) {
+	return runToolWithCapture(name, args, stdin, timeout, true)
+}
+
+// runToolToFiles is for tools whose useful output is written to explicit paths.
+// Their progress stream is bounded for diagnostics instead of held in memory.
+func runToolToFiles(name string, args []string, timeout time.Duration) error {
+	_, err := runToolWithCapture(name, args, nil, timeout, false)
+	return err
+}
+
+func runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (*bytes.Buffer, error) {
 	path, err := resolveTool(name)
 	if err != nil {
 		return &bytes.Buffer{}, err
@@ -225,7 +236,10 @@ func runTool(name string, args []string, stdin io.Reader, timeout time.Duration)
 	outb := &cappedBuffer{limit: maxStreamCapture}
 	errb := &cappedBuffer{limit: maxStreamCapture}
 	var stdout bytes.Buffer
-	cmd.Stdout = io.MultiWriter(&stdout, outb)
+	cmd.Stdout = outb
+	if captureStdout {
+		cmd.Stdout = io.MultiWriter(&stdout, outb)
+	}
 	cmd.Stderr = errb
 
 	start := time.Now()
@@ -276,7 +290,7 @@ func PreflightTools() {
 		{"amass", !SkipAmass},
 		{"dnsx", DnsxList != ""},
 		{"nuclei", !SkipNuclei},
-		{"gau", true},
+		{"waymore", true},
 		{"katana", true},
 		{"subjs", true},
 		{"mantra", true},

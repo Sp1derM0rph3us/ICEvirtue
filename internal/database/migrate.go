@@ -26,6 +26,7 @@ const subdomainLastChangedV1 = "2026_09_subdomain_last_changed_v1"
 // timestampsUTCV1 rewrites mixed-offset legacy values to a single UTC storage
 // representation. It leaves the instant unchanged, including for soft-deleted rows.
 const timestampsUTCV1 = "2026_09_timestamps_utc_v1"
+const secretLiveEvidenceV1 = "2026_09_secret_live_evidence_v1"
 
 // backfillBatch is how many rows one transaction converts.
 //
@@ -63,7 +64,23 @@ func RunDataMigrations() error {
 	if err := runSubdomainLastChangedMigration(); err != nil {
 		return err
 	}
-	return runTimestampsUTCMigration()
+	if err := runTimestampsUTCMigration(); err != nil {
+		return err
+	}
+	return runSecretLiveEvidenceMigration()
+}
+
+func runSecretLiveEvidenceMigration() error {
+	applied, err := migrationApplied(secretLiveEvidenceV1)
+	if err != nil || applied {
+		return err
+	}
+	if err := DB.Model(&models.SecretFinding{}).
+		Where("source_url <> ?", "mantra-discovery").
+		Update("seen_live", true).Error; err != nil {
+		return fmt.Errorf("backfilling live secret evidence: %w", err)
+	}
+	return markMigrationApplied(secretLiveEvidenceV1)
 }
 
 func runTimestampsUTCMigration() error {

@@ -54,7 +54,7 @@ var toolSpecs = map[string]toolSpec{
 	"nuclei":      {names: []string{"nuclei", "nuclei-toolkit"}, verify: true},
 	"katana":      {names: []string{"katana", "katana-toolkit"}, verify: true},
 	"amass":       {names: []string{"amass"}},
-	"gau":         {names: []string{"gau"}},
+	"waymore":     {names: []string{"waymore"}},
 	"subjs":       {names: []string{"subjs"}},
 	"mantra":      {names: []string{"mantra"}},
 	"secrethound": {names: []string{"secrethound"}},

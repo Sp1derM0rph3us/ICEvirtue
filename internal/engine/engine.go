@@ -564,6 +564,26 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 			*profileID, s.SourceURL, s.SecretType, s.SecretValue).First(&existing)
 
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			// The scanners can label the same value differently. Keep historical
+			// evidence on SecretHound's richer row even across separate runs.
+			counterpartEngine := "Mantra"
+			if s.Engine == "Mantra" {
+				counterpartEngine = "SecretHound"
+			}
+			var counterpart models.SecretFinding
+			other := database.DB.Where("profile_id = ? AND source_url = ? AND secret_value = ? AND engine = ?",
+				*profileID, s.SourceURL, s.SecretValue, counterpartEngine).First(&counterpart)
+			if other.Error == nil {
+				if s.Engine == "Mantra" {
+					if err := database.DB.Model(&counterpart).Updates(map[string]interface{}{
+						"seen_live": counterpart.SeenLive || s.SeenLive, "last_seen": time.Now().UTC(),
+					}).Error; err != nil {
+						log.Printf("[-] Updating SecretHound evidence: %v", err)
+					}
+					continue
+				}
+				s.SeenLive = s.SeenLive || counterpart.SeenLive
+			}
 			if Verbose {
 				log.Printf("[VERBOSE] [!] NEW Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
@@ -579,12 +599,27 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 			log.Printf("[-] Loading secret finding: %v", result.Error)
 			continue
 		}
+		if existing.Engine == "SecretHound" && s.Engine == "Mantra" {
+			// A Mantra-only rescan cannot replace SecretHound's provenance and
+			// richer metadata for the same stored credential.
+			if err := database.DB.Model(&existing).Updates(map[string]interface{}{
+				"last_seen": time.Now().UTC(), "seen_live": existing.SeenLive || s.SeenLive,
+			}).Error; err != nil {
+				log.Printf("[-] Updating SecretHound last-seen time: %v", err)
+			}
+			continue
+		}
 		if Verbose {
 			log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
 		}
 		changed := existing.Engine != s.Engine || existing.Risk != s.Risk ||
 			existing.Description != s.Description || existing.Occurrences != s.Occurrences ||
-			!slices.Equal(existing.Context, s.Context)
+			!slices.Equal(existing.Context, s.Context) ||
+			(existing.ArchiveURL == "" && s.ArchiveURL != "") || (!existing.SeenLive && s.SeenLive)
+		if existing.ArchiveURL == "" {
+			existing.ArchiveURL = s.ArchiveURL
+		}
+		existing.SeenLive = existing.SeenLive || s.SeenLive
 		existing.Engine = s.Engine
 		existing.Risk = s.Risk
 		existing.Description = s.Description

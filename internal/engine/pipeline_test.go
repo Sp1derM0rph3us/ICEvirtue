@@ -221,7 +221,7 @@ func TestValidationPartialOutputKeepsRunAlive(t *testing.T) {
 
 	fakeTool(t, binDir, "subfinder", jsonlEmitter(0, subfinderHosts("a.example.com", "b.example.com")...))
 	fakeTool(t, binDir, "httpx", jsonlEmitter(1, httpxHost("https://a.example.com", 200)))
-	fakeTool(t, binDir, "gau", jsonlEmitter(0))
+	fakeTool(t, binDir, "waymore", "exit 0")
 
 	OrchestrateScan(profile)
 
@@ -249,7 +249,7 @@ func TestLeafStageFailureDoesNotHaltTheRun(t *testing.T) {
 	if !strings.HasPrefix(p.LastScanStatus, "completed") {
 		t.Errorf("LastScanStatus = %q, want a completed status: a leaf stage must never halt the run", p.LastScanStatus)
 	}
-	// nuclei, gau, katana and subjs are all absent from the fake PATH, so the run
+	// nuclei, waymore, katana and subjs are all absent from the fake PATH, so the run
 	// finished with failures recorded rather than being cut short.
 	if !strings.Contains(p.LastScanStatus, "failed") {
 		t.Errorf("LastScanStatus = %q, want the leaf failures noted", p.LastScanStatus)
@@ -377,7 +377,7 @@ func TestCleanRunRecordsCompleted(t *testing.T) {
 
 	fakeTool(t, binDir, "subfinder", jsonlEmitter(0, subfinderHosts("a.example.com")...))
 	fakeTool(t, binDir, "httpx", jsonlEmitter(0, httpxHost("https://a.example.com", 200)))
-	fakeTool(t, binDir, "gau", jsonlEmitter(0))
+	fakeTool(t, binDir, "waymore", "exit 0")
 	fakeTool(t, binDir, "katana", jsonlEmitter(0))
 	fakeTool(t, binDir, "subjs", jsonlEmitter(0))
 
@@ -404,7 +404,7 @@ func TestStage2WAFScansEveryHTTPXEndpoint(t *testing.T) {
   *a.example.com*) printf '%s\n' '[{"url":"https://a.example.com","detected":true,"firewall":"Cloudflare"}]';;
   *b.example.com*) printf '%s\n' '[{"url":"https://b.example.com","detected":false,"firewall":"None"}]';;
 esac`)
-	fakeTool(t, binDir, "gau", jsonlEmitter(0))
+	fakeTool(t, binDir, "waymore", "exit 0")
 	fakeTool(t, binDir, "katana", jsonlEmitter(0))
 	fakeTool(t, binDir, "subjs", jsonlEmitter(0))
 

@@ -94,12 +94,24 @@ func TestSecretHoundOutputFailuresAndPartialResults(t *testing.T) {
 
 func TestStageSecretsContinuesWhenSecretHoundFails(t *testing.T) {
 	profile, bin := newPipelineEnv(t, "passive")
-	fakeTool(t, bin, "gau", `printf '%s\n' '{"url":"https://a.example.com/app.js"}'`)
+	fakeTool(t, bin, "waymore", `
+while [ "$#" -gt 0 ]; do
+  case "$1" in -oU) shift; output=$1;; esac
+  shift
+done
+printf '%s\n' 'https://a.example.com/app.js' > "$output"
+`)
 	fakeTool(t, bin, "httpx", `printf '%s\n' 'https://a.example.com/app.js'`)
 	fakeTool(t, bin, "secrethound", `exit 1`)
-	fakeTool(t, bin, "mantra", `printf '%s\n' '{"type":"aws","secret":"AKIA-test"}'`)
+	fakeTool(t, bin, "mantra", `
+test "$1" = -s || exit 9
+IFS= read -r source || exit 10
+test "$source" = 'https://a.example.com/app.js' || exit 11
+printf '\033[1;32m[+]\033[37m https://a.example.com/app.js \033[1;32m[\033[37mAKIA-test\033[1;32m]\033[37m\n'
+`)
 	findings, report := stageSecrets(profile, nil)
-	if len(findings) != 1 || findings[0].Engine != "Mantra" || findings[0].SourceURL != "mantra-discovery" {
+	if len(findings) != 1 || findings[0].Engine != "Mantra" ||
+		findings[0].SourceURL != "https://a.example.com/app.js" || findings[0].SecretType != "generic" {
 		t.Fatalf("Mantra finding lost after SecretHound failure: %+v", findings)
 	}
 	if report.failed() != 1 {
@@ -113,12 +125,76 @@ func TestMergeSecretsPrefersSourcedResults(t *testing.T) {
 		{SourceURL: "https://b.example.com/app.js", SecretType: "aws", SecretValue: "same", Engine: "SecretHound"},
 	}
 	mantra := []models.SecretFinding{
-		{SourceURL: "mantra-discovery", SecretType: "aws", SecretValue: "same", Engine: "Mantra"},
-		{SourceURL: "mantra-discovery", SecretType: "stripe", SecretValue: "other", Engine: "Mantra"},
+		{SourceURL: "https://a.example.com/app.js", SecretType: "generic", SecretValue: "same", Engine: "Mantra"},
+		{SourceURL: "https://c.example.com/app.js", SecretType: "generic", SecretValue: "same", Engine: "Mantra"},
+		{SourceURL: "https://a.example.com/app.js", SecretType: "generic", SecretValue: "other", Engine: "Mantra"},
 	}
 	merged := mergeSecrets(hound, mantra)
-	if len(merged) != 3 || merged[0].SourceURL == merged[1].SourceURL || merged[2].Engine != "Mantra" {
+	if len(merged) != 4 || merged[0].SourceURL == merged[1].SourceURL ||
+		merged[2].SourceURL != "https://c.example.com/app.js" || merged[3].SecretValue != "other" {
 		t.Fatalf("unexpected merged findings: %+v", merged)
+	}
+}
+
+func TestMergeSecretsCombinesLiveAndArchivedEvidence(t *testing.T) {
+	source := "https://a.example.com/app.js"
+	archive := "https://web.archive.org/web/20200101000000/" + source
+	hound := []models.SecretFinding{
+		{SourceURL: source, SecretType: "aws", SecretValue: "same", Engine: "SecretHound", ArchiveURL: archive},
+		{SourceURL: source, SecretType: "aws", SecretValue: "same", Engine: "SecretHound", SeenLive: true},
+	}
+	mantra := []models.SecretFinding{{SourceURL: source, SecretType: "generic", SecretValue: "same", Engine: "Mantra", SeenLive: true}}
+	merged := mergeSecrets(hound, mantra)
+	if len(merged) != 1 || !merged[0].SeenLive || merged[0].ArchiveURL != archive || merged[0].Engine != "SecretHound" {
+		t.Fatalf("evidence was not merged: %+v", merged)
+	}
+}
+
+func TestSeparateScansPreserveArchiveEvidenceAcrossScannerTypes(t *testing.T) {
+	id := newDiffEnv(t)
+	source := "https://a.example.com/app.js"
+	archive := "https://web.archive.org/web/20200101000000/" + source
+	if got := diffSecrets(&id, []models.SecretFinding{{ProfileID: id, SourceURL: source,
+		SecretType: "aws", SecretValue: "same", Engine: "SecretHound", ArchiveURL: archive}}); got != 1 {
+		t.Fatalf("initial archive finding count = %d", got)
+	}
+	if got := diffSecrets(&id, []models.SecretFinding{{ProfileID: id, SourceURL: source,
+		SecretType: "generic", SecretValue: "same", Engine: "Mantra", SeenLive: true}}); got != 0 {
+		t.Fatalf("later Mantra scan inserted %d duplicate(s)", got)
+	}
+	var row models.SecretFinding
+	if err := database.DB.Where("profile_id = ?", id).First(&row).Error; err != nil {
+		t.Fatal(err)
+	}
+	if row.Engine != "SecretHound" || !row.SeenLive || row.ArchiveURL != archive {
+		t.Fatalf("lost archive or live evidence: %+v", row)
+	}
+}
+
+func TestMantraCannotDowngradeSecretHoundRecord(t *testing.T) {
+	id := newDiffEnv(t)
+	source := "https://a.example.com/app.js"
+	hound := models.SecretFinding{
+		ProfileID: id, SourceURL: source, SecretType: "generic", SecretValue: "shared",
+		Engine: "SecretHound", Risk: "high", Description: "known risk",
+		Context: []string{"source context"}, Occurrences: 2,
+	}
+	if got := diffSecrets(&id, []models.SecretFinding{hound}); got != 1 {
+		t.Fatalf("inserted %d SecretHound findings, want 1", got)
+	}
+	mantra := models.SecretFinding{
+		ProfileID: id, SourceURL: source, SecretType: "generic", SecretValue: "shared", Engine: "Mantra",
+	}
+	if got := diffSecrets(&id, []models.SecretFinding{mantra}); got != 0 {
+		t.Fatalf("Mantra rescan inserted %d findings, want 0", got)
+	}
+	var stored models.SecretFinding
+	if err := database.DB.Where("profile_id = ? AND source_url = ?", id, source).First(&stored).Error; err != nil {
+		t.Fatal(err)
+	}
+	if stored.Engine != "SecretHound" || stored.Risk != "high" || stored.Description != "known risk" ||
+		stored.Occurrences != 2 || len(stored.Context) != 1 || stored.Context[0] != "source context" {
+		t.Fatalf("Mantra replaced SecretHound metadata: %+v", stored)
 	}
 }
 

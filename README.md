@@ -20,7 +20,7 @@ The application follows a continuous reconnaissance workflow separated into five
 
 **Stage 04, Vulnerability Scanning.** Unless you passed `--skip-nuclei`, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
 
-**Stage 05, Secret Hunting.** Finally ICEvirtue hunts hard-coded secrets and credentials in historical and current JavaScript. It collects candidate URLs from [Gau](https://github.com/lc/gau), validates the historical ones with HTTPX, crawls the live hosts with [Katana](https://github.com/projectdiscovery/katana), extracts script references with [Subjs](https://github.com/lc/subjs), and then feeds the resulting set of JS files to [Mantra](https://github.com/brosck/mantra) and [SecretHound](https://github.com/rafabd1/SecretHound). This stage is best effort: if one of those tools is missing or fails, the failure is logged and the rest of the stage still runs.
+**Stage 05, Secret Hunting.** ICEvirtue uses [Waymore](https://github.com/xnl-h4ck3r/waymore) to discover historical JS/data URLs and download archived responses. It validates historical URLs that are still live with HTTPX, crawls live hosts with [Katana](https://github.com/projectdiscovery/katana), and extracts script references with [Subjs](https://github.com/lc/subjs). [SecretHound](https://github.com/rafabd1/SecretHound) scans live URLs and archived files in one run; [Mantra](https://github.com/brosck/mantra) scans live URLs only. The stage is best effort: partial tool output remains usable.
 
 ## Using The Dashboard
 
@@ -40,7 +40,7 @@ Under the hood, the schedules the dashboard produces are human-readable strings 
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_3.png)
 
-The **Credentials** tab in Findings shows every credential identified for the selected profile, regardless of which node it came from, with its type, value, source and scanning engine. SecretHound findings link to their source JavaScript files; Mantra findings without a source are shown as **Unattributed**. Older credentials without recorded scanner provenance show **Unknown** as the engine. A node's own Credentials tab shows only findings attributed to that node, including risk, occurrence count, and expandable description and context when available.
+The **Credentials** tab in Findings shows every credential identified for the selected profile, regardless of which node it came from, with its type, value, source and scanning engine. Live findings link to their source files. Findings from downloaded historical files retain the original URL for node attribution and link to the Wayback replay or an archive record. A finding observed in both places shows both links. Historical Mantra findings without a source remain **Unattributed**. Mantra results use the type **generic** because Mantra does not identify a provider. Older credentials without recorded scanner provenance show **Unknown** as the engine. A node's own Credentials tab shows findings attributed to that node, including risk, occurrence count, and expandable description and context when available.
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_dashboard_4.png)
 
@@ -84,13 +84,13 @@ Not every tool is needed in every configuration. Which ones ICEvirtue actually r
 | `httpx` | 02, 05 | always |
 | `wafw00f` | 02 | attempted for every HTTPX-responsive endpoint; active probes are sent |
 | `nuclei` | 04 | unless `--skip-nuclei` |
-| `gau`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | always attempted, failures are non-fatal |
+| `waymore`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | attempted when inputs permit, failures are non-fatal |
 
 Stage 03 needs no external tool at all, since the fuzzer is built in.
 
 Build SecretHound with `go build -o secrethound ./cmd/secrethound` from its repository and put the binary on `PATH`, or pin it with `--tool-paths secrethound=/absolute/path/to/secrethound`. ICEvirtue supplies a `.urls` list and reads SecretHound's JSON output. SecretHound's default TLS behavior is used.
 
-The Credentials list shows which engine found each result. A node's Credentials tab also shows SecretHound's risk, occurrence count, description, and context. Mantra results have no source URL, so they appear in the general list without node attribution. Existing findings show **Unknown** as their engine until a scanner rediscovers them.
+The Credentials list shows which engine found each result. A node's Credentials tab also shows SecretHound's risk, occurrence count, description, and context. New Mantra results retain the reported source URL and appear under that node; historical unattributed Mantra results remain in the general list. Existing findings show **Unknown** as their engine until a scanner rediscovers them.
 
 ### When A Tool Name Belongs To Something Else
 
@@ -124,7 +124,7 @@ sudo apt install httpx-toolkit
 sudo ln -s /usr/bin/httpx-toolkit /usr/local/bin/httpx
 ```
 
-One more thing worth knowing: `katana`, `gau`, `subjs` and `mantra` are not packaged on Debian-family systems at all, so they come from `go install` and land in `$GOPATH/bin`, usually `~/go/bin`. That directory is not on a systemd service's `PATH`, so either add it to `Environment=PATH=` in the unit or copy those binaries into `/usr/local/bin`.
+One more thing worth knowing: `katana`, `subjs` and `mantra` commonly come from `go install` and land in `$GOPATH/bin`, usually `~/go/bin`. Waymore is a Python tool installed separately. Ensure all binaries are on the systemd service's `PATH`, or pin them with `--tool-paths`. Use `--waymore-config /path/to/config.yml` for Waymore API keys; without it ICEvirtue uses a temporary config that does not exclude common JS paths. `--waymore-response-limit` sets Waymore's maximum response count (default 5000); it is not a byte-size limit.
 
 ## Installation
 

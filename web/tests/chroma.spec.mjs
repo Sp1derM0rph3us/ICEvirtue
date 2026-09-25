@@ -114,6 +114,53 @@ test('WAF technologies are unique on Home and explicit in node details', async (
   await expect(page.locator('#sub-dash-ip')).toHaveText('IP: 203.0.113.12  |  No WAF detected');
 });
 
+test('sourced Mantra credentials link to their JS file and legacy rows stay unattributed', async ({ page }) => {
+  await signIn(page);
+  await page.evaluate(() => {
+    const finding = {
+      SecretType: 'generic', SecretValue: 'test-value', Engine: 'Mantra',
+      SourceURL: 'https://app.acme.example.com/app.js',
+    };
+    document.querySelector('#tbody-secs').replaceChildren(buildSecretRow(finding));
+    document.querySelector('#tbody-sub-secs').replaceChildren(buildSecretRow(finding, true));
+    document.querySelector('#tbody-secs').appendChild(buildSecretRow({
+      ...finding, SecretValue: 'old-value', SourceURL: 'mantra-discovery',
+    }));
+  });
+  await expect(page.locator('#tbody-secs tr').first().locator('a')).toHaveAttribute(
+    'href', 'https://app.acme.example.com/app.js');
+  await expect(page.locator('#tbody-sub-secs tr a')).toHaveAttribute(
+    'href', 'https://app.acme.example.com/app.js');
+  await expect(page.locator('#tbody-secs tr').last()).toContainText('Unattributed');
+});
+
+test('archived credentials show archive evidence and live links only when observed', async ({ page }) => {
+  await signIn(page);
+  const source = 'https://app.acme.example.com/old.js';
+  const archive = `https://web.archive.org/web/20200101000000/${source}`;
+  await page.evaluate(({ source, archive }) => {
+    const base = {
+      SecretType: 'aws', SecretValue: 'test-value', Engine: 'SecretHound',
+      SourceURL: source, ArchiveURL: archive,
+    };
+    document.querySelector('#tbody-secs').replaceChildren(
+      buildSecretRow({ ...base, SeenLive: false }),
+      buildSecretRow({ ...base, SeenLive: true }),
+    );
+    document.querySelector('#tbody-sub-secs').replaceChildren(buildSecretRow({ ...base, SeenLive: true }, true));
+    document.querySelector('#secs-mobile').replaceChildren(buildSecretCard({ ...base, SeenLive: true }));
+  }, { source, archive });
+  const rows = page.locator('#tbody-secs tr');
+  await expect(rows.first()).toContainText('Original URL');
+  await expect(rows.nth(1)).toContainText('Live file');
+  for (const selector of ['#tbody-secs tr:first-child', '#tbody-secs tr:nth-child(2)', '#tbody-sub-secs tr:first-child', '#secs-mobile > :first-child']) {
+    const links = page.locator(`${selector} a`);
+    await expect(links).toHaveCount(2);
+    await expect(links.first()).toHaveAttribute('href', source);
+    await expect(links.nth(1)).toHaveAttribute('href', archive);
+  }
+});
+
 test('credential views show engine and limit SecretHound details to a node', async ({ page }) => {
   await signIn(page);
   const rendered = await page.evaluate(() => {

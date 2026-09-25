@@ -183,17 +183,17 @@ func TestResolveToolDoesNotProbeUnverifiedTools(t *testing.T) {
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
 	// Exits non-zero for everything, so it would fail a probe if one were run.
-	want := writeStub(t, bin, "gau", "exit 3")
+	want := writeStub(t, bin, "waymore", "exit 3")
 
-	got, err := resolveTool("gau")
+	got, err := resolveTool("waymore")
 	if err != nil {
 		t.Fatalf("resolveTool: %v", err)
 	}
 	if got != want {
-		t.Errorf("resolveTool(gau) = %q, want %q", got, want)
+		t.Errorf("resolveTool(waymore) = %q, want %q", got, want)
 	}
-	if note := cachedToolNote("gau"); note != "" {
-		t.Errorf("gau must not be probed, got note %q", note)
+	if note := cachedToolNote("waymore"); note != "" {
+		t.Errorf("waymore must not be probed, got note %q", note)
 	}
 }
 

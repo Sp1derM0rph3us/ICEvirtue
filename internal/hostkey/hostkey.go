@@ -4,8 +4,8 @@
 // Nothing upstream agrees on a format. nuclei's matched-at is usually
 // "https://a.example.com/wp-login.php" but can be "a.example.com:8443"; httpx
 // emits "https://a.example.com"; the built-in fuzzer emits a full URL; subfinder
-// emits a bare name; "dnsx -resp-only" emits a bare IP address; and mantra emits
-// the literal string "mantra-discovery", which is not a host at all.
+// emits a bare name; "dnsx -resp-only" emits a bare IP address; and historical
+// Mantra rows use "mantra-discovery", which is not a host at all.
 //
 // Every one of those has to collapse to the same key when it means the same host,
 // which is why both sides of the correlation go through Normalize. Consistency
@@ -98,7 +98,7 @@ func NormalizeOrNil(value string) *string {
 
 // isHostname reports whether host is a dotted DNS name.
 //
-// Requiring a dot is the load-bearing rule. It is what turns mantra's
+// Requiring a dot is the load-bearing rule. It is what turns the historical
 // "mantra-discovery" placeholder into "no host" rather than into a host that
 // findings would then be attributed to, and it is why a dotless name such as
 // "localhost" is rejected — for an internet-facing recon tool that is the right

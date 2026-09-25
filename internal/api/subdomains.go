@@ -59,10 +59,22 @@ type subdomainRow struct {
 const countCap = 1000
 
 func countFor(table, alias string) string {
+	extra := ""
+	if table == "secret_findings" {
+		// Match the secrets list: a Mantra row hidden by a richer
+		// SecretHound result must not inflate the node's credential badge.
+		extra = ` AND NOT (` + alias + `.engine = 'Mantra' AND ` + alias + `.source_url <> 'mantra-discovery'
+			AND EXISTS (SELECT 1 FROM secret_findings matched
+				WHERE matched.profile_id = ` + alias + `.profile_id
+				AND matched.source_url = ` + alias + `.source_url
+				AND matched.secret_value = ` + alias + `.secret_value
+				AND matched.engine = 'SecretHound' AND matched.deleted_at IS NULL))`
+	}
 	return `(SELECT COUNT(*) FROM (SELECT 1 FROM ` + table + ` ` + alias + `
 		WHERE ` + alias + `.profile_id = subdomains.profile_id
 		  AND ` + alias + `.host = subdomains.host
 		  AND ` + alias + `.deleted_at IS NULL
+		  ` + extra + `
 		LIMIT ` + strconv.Itoa(countCap) + `))`
 }
 

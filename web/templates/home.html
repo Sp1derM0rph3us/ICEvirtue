@@ -1669,9 +1669,12 @@
         }
 
         function secretSource(s) {
-            return safeURL(s.SourceURL) === '#'
-                ? '<span class="chroma-muted">Unattributed</span>'
-                : `<a href="${esc(safeURL(s.SourceURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors" title="${esc(s.SourceURL)}">Open source &rarr;</a>`;
+            const original = safeURL(s.SourceURL);
+            if (original === '#') return '<span class="chroma-muted">Unattributed</span>';
+            const link = (href, label) => `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors" title="${esc(href)}">${label} &rarr;</a>`;
+            const archived = safeURL(s.ArchiveURL || '');
+            if (archived === '#') return link(original, 'Open source');
+            return `${link(original, s.SeenLive ? 'Live file' : 'Original URL')}<br>${link(archived, s.ArchiveURL.includes('web.archive.org/') ? 'Archived file' : 'Archive record')}`;
         }
 
         function secretContext(s) {

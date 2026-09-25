@@ -169,14 +169,16 @@ type Vulnerability struct {
 
 type SecretFinding struct {
 	ID uint `gorm:"primaryKey"`
-	// Mantra has no source URL. Its placeholder has no host and cannot be
-	// attributed to a node.
+	// Historical Mantra rows used a placeholder with no host. New Mantra
+	// findings retain their source URL and can be attributed to a node.
 	ProfileID   uuid.UUID `gorm:"type:uuid;uniqueIndex:idx_profile_secret;index:idx_secret_host,priority:1,where:deleted_at IS NULL;index:idx_secret_match,priority:1,where:deleted_at IS NULL;not null"`
 	SourceURL   string    `gorm:"uniqueIndex:idx_profile_secret;not null"`
-	Host        *string   `gorm:"index:idx_secret_host,priority:2"`
-	SecretType  string    `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:2;not null"`
-	SecretValue string    `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:3;not null"`
-	Engine      string    `gorm:"index:idx_secret_match,priority:4"`
+	ArchiveURL  string
+	SeenLive    bool
+	Host        *string `gorm:"index:idx_secret_host,priority:2"`
+	SecretType  string  `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:2;not null"`
+	SecretValue string  `gorm:"uniqueIndex:idx_profile_secret;index:idx_secret_match,priority:3;not null"`
+	Engine      string  `gorm:"index:idx_secret_match,priority:4"`
 	Risk        string
 	Description string
 	Context     []string `gorm:"serializer:json"`

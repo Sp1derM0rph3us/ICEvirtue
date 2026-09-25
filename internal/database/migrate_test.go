@@ -66,6 +66,31 @@ func TestSecretMetadataMigrationRetainsLegacyRows(t *testing.T) {
 	}
 }
 
+func TestSecretLiveEvidenceMigrationBackfillsOnlyAttributedRows(t *testing.T) {
+	id := newMigrateEnv(t)
+	for _, source := range []string{"https://a.example.com/app.js", "mantra-discovery"} {
+		if err := DB.Create(&models.SecretFinding{ProfileID: id, SourceURL: source,
+			SecretType: "generic", SecretValue: source}).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := RunDataMigrations(); err != nil {
+		t.Fatal(err)
+	}
+	var rows []models.SecretFinding
+	if err := DB.Where("profile_id = ?", id).Find(&rows).Error; err != nil {
+		t.Fatal(err)
+	}
+	if len(rows) != 2 {
+		t.Fatalf("rows = %+v", rows)
+	}
+	for _, row := range rows {
+		if row.SeenLive != (row.SourceURL != "mantra-discovery") {
+			t.Fatalf("wrong live evidence migration: %+v", row)
+		}
+	}
+}
+
 // newMigrateEnv opens an isolated database and returns a profile id to hang rows off.
 func newMigrateEnv(t *testing.T) uuid.UUID {
 	t.Helper()

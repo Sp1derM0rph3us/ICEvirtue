@@ -117,7 +117,7 @@ func TestNormalizeAgreesAcrossToolFormats(t *testing.T) {
 	want := "a.example.com"
 
 	// Left to right: subfinder, httpx, nuclei matched-at, the fuzzer's dir URL,
-	// gau/subjs JS source, and a host:port with no scheme.
+	// waymore/subjs JS source, and a host:port with no scheme.
 	for _, form := range []string{
 		"a.example.com",
 		"https://a.example.com",
