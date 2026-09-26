@@ -10,7 +10,8 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 
-	"golang.org/x/crypto/bcrypt"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
 )
 
 func main() {
@@ -22,6 +23,7 @@ func main() {
 	userCmd := flag.NewFlagSet("create", flag.ExitOnError)
 	username := userCmd.String("username", "", "Username for the admin")
 	password := userCmd.String("password", "", "Password for the admin")
+	role := userCmd.String("role", access.Admin, "Account role: viewer, operator, admin (default admin)")
 	dbPathFlag := userCmd.String("db-path", "", "Path to the database file")
 
 	switch os.Args[1] {
@@ -48,14 +50,21 @@ func main() {
 			log.Fatalf("[-] Failed to initialize database: %v", err)
 		}
 
-		hash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
+		if !access.ValidRole(*role) {
+			log.Fatal("invalid role")
+		}
+		if err := accounts.ValidateUsername(*username); err != nil {
+			log.Fatal(err)
+		}
+		hash, err := accounts.HashPassword(*password)
 		if err != nil {
 			log.Fatalf("[-] Failed to hash password: %v", err)
 		}
 
 		user := models.User{
 			Username:     *username,
-			PasswordHash: string(hash),
+			PasswordHash: hash,
+			Role:         *role,
 		}
 
 		result := database.DB.Create(&user)
@@ -63,7 +72,7 @@ func main() {
 			log.Fatalf("[-] Failed to create user (might already exist): %v", result.Error)
 		}
 
-		fmt.Printf("[+] Successfully created system administrator: %s\n", *username)
+		fmt.Printf("[+] Successfully created %s account: %s\n", *role, *username)
 
 	default:
 		fmt.Println("Expected 'create' subcommand")

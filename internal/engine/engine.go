@@ -16,6 +16,7 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/notifications"
 )
 
 var Verbose bool
@@ -108,6 +109,8 @@ func OrchestrateScan(profile *models.Profile) {
 	}
 
 	events.Broadcast("profile_update", p.ID.String(), nil)
+	notifications.Create(notifications.ScanStarted, "Scan started",
+		profile.Domain+" · running in the background", "", &p.ID)
 
 	status := &runStatus{}
 	defer func() {
@@ -133,6 +136,8 @@ func OrchestrateScan(profile *models.Profile) {
 	if len(subdomains) == 0 {
 		status.halt("no subdomains found from any source")
 		log.Printf("[-] [Target: %s] Halting run: every discovery source failed or came back empty. Check the target domain is spelled correctly.", profile.Domain)
+		notifications.Create(notifications.ScanHalted, "Scan halted",
+			profile.Domain+" · no subdomains found from any source", "", &p.ID)
 		return
 	}
 
@@ -155,6 +160,8 @@ func OrchestrateScan(profile *models.Profile) {
 		status.halt("no host answered HTTP")
 		log.Printf("[-] [Target: %s] Halting run: none of the %d discovered subdomains answered HTTP, so nothing downstream can execute.", profile.Domain, len(subdomains))
 		log.Printf("[+] [Target: %s] Persisted %d subdomain(s), %d new.", profile.Domain, len(subdomains), newSubdomains)
+		notifications.Create(notifications.ScanHalted, "Scan halted",
+			profile.Domain+" · no host answered HTTP", "", &p.ID)
 		return
 	}
 
@@ -176,6 +183,10 @@ func OrchestrateScan(profile *models.Profile) {
 	secretHunt.Log()
 	status.noteFailures(secretHunt)
 	newSecrets := persistSecrets(profile, secrets)
+	if newSecrets > 0 {
+		notifications.Create(notifications.Credentials, "New credentials found",
+			fmt.Sprintf("%s · %d new credential(s) in JavaScript", profile.Domain, newSecrets), "", &p.ID)
+	}
 
 	log.Printf("======================")
 	log.Printf("[+] PIPELINE COMPLETE for %s", profile.Domain)
@@ -186,6 +197,10 @@ func OrchestrateScan(profile *models.Profile) {
 	log.Printf("[+] New Vulnerabilities: %d", newVulns)
 	log.Printf("[+] New Secrets Found: %d", newSecrets)
 	log.Printf("======================\n")
+
+	newFindings := newSubdomains + newHosts + newVulns + newDirs + newSecrets
+	notifications.Create(notifications.ScanFinished, "Scan finished",
+		fmt.Sprintf("%s · %d new finding(s)", profile.Domain, newFindings), "", &p.ID)
 }
 
 // stageDiscovery enumerates subdomains from every source available to it.

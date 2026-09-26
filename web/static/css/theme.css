@@ -543,3 +543,187 @@ body.chroma-login-page { display: flex; justify-content: center; align-items: ce
   .st-hero-values { flex-wrap: wrap; }
   .st-hero-resp { text-align: left; }
 }
+
+/* =====================================================================
+ * Notification bell + panel, and toasts (Arctic Steel).
+ * ===================================================================== */
+.notif-wrap { position: relative; display: flex; align-items: center; }
+.notif-bell { display: flex; align-items: center; justify-content: center; background: transparent; border: 0;
+  padding: 5px; color: var(--ui-muted); cursor: pointer; position: relative; line-height: 0; }
+.notif-bell:hover { color: var(--ui-ink); }
+.notif-bell[aria-expanded="true"] { color: var(--ui-rose); }
+.notif-bell svg { width: 16px; height: 16px; }
+.notif-badge { position: absolute; top: -2px; right: -2px; min-width: 15px; height: 15px; padding: 0 3px;
+  border-radius: 8px; background: var(--ui-coral); color: var(--ui-canvas); font-family: var(--font-mono);
+  font-size: 9px; font-weight: 600; display: flex; align-items: center; justify-content: center;
+  border: 2px solid var(--ui-surface); }
+[data-theme="light"] .notif-badge { color: #fff; }
+.notif-panel { position: absolute; top: calc(100% + 12px); left: -8px; width: 370px; max-width: calc(100vw - 32px);
+  z-index: 60; background: var(--ui-surface); border: 1px solid var(--ui-line-strong); border-radius: 4px;
+  overflow: hidden; box-shadow: 0 18px 44px -16px var(--ui-scrim); }
+.notif-head { display: flex; align-items: center; justify-content: space-between; padding: 12px 14px; border-bottom: 1px solid var(--ui-line); }
+.notif-ttl { font-family: var(--font-display); font-size: .74rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ui-ink); }
+.notif-count { font-family: var(--font-mono); font-size: .68rem; color: var(--ui-rose); margin-left: 8px; }
+.notif-clear { display: inline-flex; align-items: center; gap: 6px; color: var(--ui-coral); font-family: var(--font-display);
+  font-size: .66rem; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; background: transparent; border: 0; cursor: pointer; }
+.notif-clear svg { width: 13px; height: 13px; }
+.notif-clear:hover { color: color-mix(in srgb, var(--ui-coral) 78%, var(--ui-ink)); }
+.notif-list { max-height: 340px; overflow-y: auto; }
+.notif-item { position: relative; display: grid; grid-template-columns: auto 1fr auto; gap: 11px; align-items: start;
+  padding: 12px 14px 12px 16px; border-bottom: 1px solid var(--ui-line); cursor: pointer; text-align: left; width: 100%; background: transparent; }
+.notif-item:last-child { border-bottom: 0; }
+.notif-item:hover { background: var(--ui-surface-soft); }
+.notif-item.unread { background: color-mix(in srgb, var(--ui-rose) 6%, transparent); }
+.notif-item.unread::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 2px; background: var(--ui-rose); }
+.notif-ic { flex: none; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.notif-ic svg { width: 13px; height: 13px; }
+.notif-ic.ok { color: var(--ui-teal); border: 1px solid color-mix(in srgb, var(--ui-teal) 38%, transparent); background: color-mix(in srgb, var(--ui-teal) 9%, transparent); }
+.notif-ic.crit { color: var(--ui-coral); border: 1px solid color-mix(in srgb, var(--ui-coral) 38%, transparent); background: color-mix(in srgb, var(--ui-coral) 9%, transparent); }
+.notif-ic.hi { color: var(--ui-amber); border: 1px solid color-mix(in srgb, var(--ui-amber) 38%, transparent); background: color-mix(in srgb, var(--ui-amber) 9%, transparent); }
+.notif-ic.info { color: var(--ui-rose); border: 1px solid color-mix(in srgb, var(--ui-rose) 38%, transparent); background: color-mix(in srgb, var(--ui-rose) 9%, transparent); }
+.notif-body { min-width: 0; }
+.notif-title { font-family: var(--font-sans); font-size: .86rem; font-weight: 500; color: var(--ui-ink); line-height: 1.3; }
+.notif-sub { font-family: var(--font-mono); font-size: .7rem; color: var(--ui-muted); margin-top: 3px; overflow-wrap: anywhere; }
+.notif-time { font-family: var(--font-mono); font-size: .64rem; color: var(--ui-faint); margin-top: 5px; }
+.notif-x { flex: none; background: transparent; border: 0; color: var(--ui-faint); cursor: pointer; font-size: 14px; line-height: 1; padding: 1px 3px; opacity: 0; }
+.notif-item:hover .notif-x, .notif-item:focus-within .notif-x { opacity: 1; }
+.notif-x:hover { color: var(--ui-ink); }
+.notif-empty { padding: 34px 20px; text-align: center; color: var(--ui-muted); }
+.notif-empty svg { width: 24px; height: 24px; color: var(--ui-faint); margin-bottom: 10px; }
+.notif-empty p { margin: 0; font-size: .85rem; }
+.notif-empty small { display: block; color: var(--ui-faint); font-size: .74rem; margin-top: 4px; }
+.notif-foot { padding: 10px 14px; border-top: 1px solid var(--ui-line); display: flex; justify-content: center; }
+.notif-markread { background: transparent; border: 0; color: var(--ui-muted); font-family: var(--font-display);
+  font-size: .68rem; font-weight: 600; letter-spacing: .04em; cursor: pointer; }
+.notif-markread:hover { color: var(--ui-rose); }
+
+.toast-container { position: fixed; top: calc(64px + 14px); right: 16px; z-index: 80; display: flex; flex-direction: column;
+  gap: 10px; width: min(340px, calc(100vw - 32px)); pointer-events: none; }
+.toast { pointer-events: auto; position: relative; background: var(--ui-surface); border: 1px solid var(--ui-line-strong);
+  border-radius: 3px; overflow: hidden; box-shadow: 0 12px 30px -14px var(--ui-scrim); animation: toast-in .3s cubic-bezier(.2,.8,.2,1); }
+.toast.leaving { animation: toast-out .28s ease forwards; }
+@keyframes toast-in { from { opacity: 0; transform: translateX(24px); } to { opacity: 1; transform: none; } }
+@keyframes toast-out { to { opacity: 0; transform: translateX(24px); } }
+.toast-body { display: flex; gap: 11px; padding: 13px 12px 12px; }
+.toast-ic { flex: none; width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.toast-ic svg { width: 13px; height: 13px; }
+.toast-ic.ok { color: var(--ui-teal); border: 1px solid color-mix(in srgb, var(--ui-teal) 40%, transparent); background: color-mix(in srgb, var(--ui-teal) 10%, transparent); }
+.toast-ic.crit { color: var(--ui-coral); border: 1px solid color-mix(in srgb, var(--ui-coral) 40%, transparent); background: color-mix(in srgb, var(--ui-coral) 10%, transparent); }
+.toast-ic.hi { color: var(--ui-amber); border: 1px solid color-mix(in srgb, var(--ui-amber) 40%, transparent); background: color-mix(in srgb, var(--ui-amber) 10%, transparent); }
+.toast-ic.info { color: var(--ui-rose); border: 1px solid color-mix(in srgb, var(--ui-rose) 40%, transparent); background: color-mix(in srgb, var(--ui-rose) 10%, transparent); }
+.toast-main { min-width: 0; flex: 1; }
+.toast-title { font-family: var(--font-display); font-size: .74rem; font-weight: 600; letter-spacing: .04em; color: var(--ui-ink); }
+.toast-sub { font-family: var(--font-mono); font-size: .7rem; color: var(--ui-muted); margin-top: 3px; overflow-wrap: anywhere; }
+.toast-x { flex: none; background: transparent; border: 0; color: var(--ui-faint); cursor: pointer; font-size: 15px; line-height: 1; padding: 2px 3px; align-self: flex-start; }
+.toast-x:hover { color: var(--ui-ink); }
+.toast-prog { height: 2px; opacity: .55; }
+.toast-prog.ok { background: var(--ui-teal); } .toast-prog.crit { background: var(--ui-coral); }
+.toast-prog.hi { background: var(--ui-amber); } .toast-prog.info { background: var(--ui-rose); }
+.toast-prog.run { animation: toast-deplete 4.5s linear forwards; }
+@keyframes toast-deplete { from { width: 100%; } to { width: 0%; } }
+
+@media (max-width: 640px) {
+  .notif-panel { left: auto; right: -6px; }
+  .toast-container { top: auto; bottom: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .toast, .toast.leaving, .toast-prog.run { animation: none !important; }
+}
+
+/* Server-rendered account and administration pages share the console palette. */
+.settings-body { min-height: 100vh; margin: 0; color: var(--ui-ink); background: var(--ui-canvas-wash); font-family: var(--font-body, 'Barlow', sans-serif); }
+.settings-topbar { max-width: 1280px; margin: auto; padding: 14px 24px; display: flex; justify-content: space-between; align-items: center; gap: 24px; flex-wrap: wrap; }
+.settings-brand { display: flex; align-items: center; gap: 12px; text-decoration: none; }
+.settings-brand .chroma-brand-sub { display: block; }
+.settings-nav { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.settings-nav a { text-decoration: none; }
+.settings-nav .chroma-nav-tab { padding: 10px 9px; }
+.settings-main { max-width: 1280px; margin: auto; padding: 28px 24px 48px; }
+.settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; }
+.settings-identity { display: flex; align-items: center; gap: 12px; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: .8rem; }
+.settings-role { display: inline-block; border: 1px solid var(--ui-line-strong, var(--ui-line)); border-radius: 3px; padding: 3px 8px; color: var(--ui-rose); font-family: var(--font-display); text-transform: uppercase; letter-spacing: .08em; font-size: .7rem; }
+.settings-breadcrumb { display: flex; gap: 18px; flex-wrap: wrap; margin: 16px 0 26px; padding-bottom: 14px; border-bottom: 1px solid var(--ui-line); }
+.settings-main a { color: var(--ui-rose); }
+.settings-main a:hover { text-decoration: underline; }
+.settings-options { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 16px; }
+.settings-option { display: block; text-decoration: none; padding: 24px; }
+.settings-option:hover { text-decoration: none !important; border-color: var(--ui-rose); }
+.settings-option h2 { color: var(--ui-ink); font-family: var(--font-display); font-size: 1.35rem; margin: 12px 0; display: flex; justify-content: space-between; }
+.settings-option p,.settings-help { color: var(--ui-muted); font-size: .92rem; line-height: 1.5; }
+.settings-form-panel { max-width: 680px; }
+.settings-form { display: grid; gap: 18px; margin-top: 20px; }
+.settings-form label { display: grid; gap: 7px; font-weight: 500; }
+.settings-form input:not([type=hidden]):not([type=checkbox]),.settings-form select { width: 100%; min-width: 0; box-sizing: border-box; color: var(--ui-ink); background: var(--ui-well, var(--ui-surface-soft)); border: 1px solid var(--ui-line-strong,var(--ui-line)); border-radius: 3px; padding: 11px 12px; font-family: var(--font-mono); font-size: .9rem; }
+.settings-form input:focus,.settings-form select:focus { outline: 2px solid var(--ui-rose); outline-offset: 2px; }
+.settings-actions { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+.settings-message { padding: 14px 18px; margin-bottom: 20px; border: 1px solid var(--ui-teal); color: var(--ui-teal); background: var(--ui-surface); }
+.settings-error { border-color: var(--ui-coral); color: var(--ui-coral); }
+.settings-edit-grid { display: grid; grid-template-columns: minmax(0,1.4fr) minmax(0,1fr); gap: 18px; align-items: start; }
+.settings-side { display: grid; gap: 18px; }
+.settings-role-guide dt { font-family: var(--font-display); color: var(--ui-rose); margin: 14px 0 5px; }
+.settings-role-guide dd { color: var(--ui-muted); font-size: .92rem; line-height: 1.5; margin: 0; }
+.settings-danger { border-color: var(--ui-coral); }
+.settings-form .settings-checkbox { display: flex; align-items: flex-start; gap: 10px; font-size: .9rem; }
+.settings-checkbox input { margin-top: 5px; accent-color: var(--ui-coral); }
+.settings-table-wrap { overflow-x: auto; }
+.settings-table { width: 100%; text-align: left; border-collapse: collapse; }
+.settings-table th { font-family: var(--font-display); font-size: .75rem; color: var(--ui-muted); text-transform: uppercase; letter-spacing: .08em; }
+.settings-table th,.settings-table td { padding: 14px 12px; border-bottom: 1px solid var(--ui-line); }
+.settings-mono { font-family: var(--font-mono); font-size: .85rem; overflow-wrap: anywhere; }
+.settings-pager { display: flex; gap: 22px; justify-content: flex-end; flex-wrap: wrap; font-family: var(--font-mono); font-size: .8rem; margin-top: 20px; color: var(--ui-muted); }
+.settings-logs { margin-top: 18px; }
+.settings-log { border-top: 1px solid var(--ui-line); padding: 12px 0; }
+.settings-log time { color: var(--ui-rose); font-family: var(--font-mono); font-size: .72rem; }
+.settings-log pre { color: var(--ui-ink); font-family: var(--font-mono); font-size: .8rem; white-space: pre-wrap; overflow-wrap: anywhere; margin: 7px 0 0; }
+@media (max-width: 700px) { .settings-options,.settings-edit-grid { grid-template-columns: 1fr; } .settings-main { padding: 22px 16px; } .settings-topbar { padding: 14px 16px; gap: 14px; } .settings-nav { width: 100%; } .settings-nav .chroma-nav-tab { padding: 8px; font-size: .75rem; } .settings-identity { width: 100%; } }
+
+/* =====================================================================
+ * Settings integration fixes + bare-icon theme switch.
+ * ===================================================================== */
+/* The theme switch is a bare icon button: the colour change on hover and the
+ * icon swap (moon in dark, sun in light) are the only indicators — no box. */
+.chroma-theme-button { background: transparent; border: 0; border-radius: 0; padding: 5px;
+  min-width: 0; min-height: 0; color: var(--ui-muted); display: inline-flex; align-items: center; justify-content: center; }
+.chroma-theme-button:hover { background: transparent; color: var(--ui-rose); }
+
+/* A primary button rendered as an <a> inside the settings pages must keep its
+ * own text colour. Astra's generic `.settings-main a` rule painted it steel on
+ * steel (invisible "Create user" button); restore contrast and drop underlines
+ * on button-shaped anchors. */
+.settings-main a.chroma-button { color: var(--ui-canvas); text-decoration: none; }
+[data-theme="light"] .settings-main a.chroma-button { color: #fff; }
+.settings-main a.chroma-button:hover,
+.settings-main a.chroma-button-secondary:hover { text-decoration: none; }
+
+/* Settings top bar to match the home nav: a divider before the trailing
+ * controls, and the sign-out styled like the dashboard's. */
+.settings-nav .chroma-divider { width: 1px; height: 16px; background: var(--ui-line-strong); margin: 0 4px; flex: none; }
+
+/* Settings identity: the username is the primary information, with the full
+ * role name after a separator ("spiderm | Administrator") — no role chip. */
+.settings-identity { align-items: baseline; gap: 9px; }
+.settings-user { font-family: var(--font-mono); font-size: 1.2rem; font-weight: 600; color: var(--ui-ink); letter-spacing: -.01em; }
+.settings-sep { color: var(--ui-line-strong); font-size: 1.05rem; }
+.settings-role-name { font-family: var(--font-display); font-size: .82rem; font-weight: 600; letter-spacing: .04em; color: var(--ui-rose); }
+
+/* =====================================================================
+ * Type coherence: eyebrows, field labels, section headers and table
+ * headers use the display face (Chakra Petch) across every view. Profiles
+ * and Findings were rendering these in the body face (Barlow), which broke
+ * the instrument-label identity the home panels establish.
+ * ===================================================================== */
+.chroma-eyebrow,
+.chroma-field-label,
+.chroma-section-title,
+.chroma-panel-heading h2,
+.chroma-table th { font-family: var(--font-display); }
+
+/* Small uppercase labels that use Tailwind's font-sans utility directly
+ * (count badges, controls-bar labels, pager) also take the display face,
+ * so no instrument label falls back to the body font. */
+#target-count,
+#controls-bar label,
+#profiles-pager label,
+#pager button,
+#profiles-pager button,
+.chroma-profile-pager-actions button { font-family: var(--font-display); }

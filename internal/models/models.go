@@ -12,10 +12,53 @@ import (
 type User struct {
 	ID           uint           `gorm:"primaryKey"`
 	Username     string         `gorm:"uniqueIndex:idx_username;not null"`
-	PasswordHash string         `gorm:"not null"`
+	PasswordHash string         `gorm:"not null" json:"-"`
+	PublicID     string         `gorm:"uniqueIndex:idx_user_public_id"`
+	Role         string         `gorm:"not null;default:''"`
+	AuthVersion  uint64         `gorm:"not null;default:1"`
 	CreatedAt    time.Time      `gorm:"autoCreateTime"`
 	UpdatedAt    time.Time      `gorm:"autoUpdateTime"`
 	DeletedAt    gorm.DeletedAt `gorm:"index"`
+}
+
+func (u *User) BeforeCreate(tx *gorm.DB) error {
+	if u.PublicID == "" {
+		u.PublicID = uuid.NewString()
+	}
+	if u.Role == "" {
+		u.Role = "viewer"
+	}
+	if u.AuthVersion == 0 {
+		u.AuthVersion = 1
+	}
+	return nil
+}
+
+// Session IDs are random JWT identifiers. The signed bearer token is never stored.
+type Session struct {
+	ID        string    `gorm:"primaryKey"`
+	UserID    uint      `gorm:"index;not null"`
+	ExpiresAt time.Time `gorm:"index;not null"`
+	CreatedAt time.Time `gorm:"autoCreateTime"`
+}
+
+// Notification is a per-user, persistent record of a scan-lifecycle or finding
+// event. One row is written per user for each event (fan-out), so the read and
+// delete state is naturally per-user without a join table. It is hard-deleted:
+// a dismissed notification has no value to retain, so there is no DeletedAt.
+//
+// idx_notif_user carries read and created_at so the two hot queries — a user's
+// unread count and their newest page — are index-only for that user.
+type Notification struct {
+	ID        uint   `gorm:"primaryKey"`
+	UserID    uint   `gorm:"index:idx_notif_user,priority:1;not null"`
+	Kind      string `gorm:"not null"` // scan_started | scan_finished | scan_halted | credentials
+	Title     string `gorm:"not null"`
+	Body      string
+	Host      string
+	ProfileID *uuid.UUID `gorm:"type:uuid"`
+	Read      bool       `gorm:"not null;default:false;index:idx_notif_user,priority:2"`
+	CreatedAt time.Time  `gorm:"autoCreateTime;index:idx_notif_user,priority:3"`
 }
 
 type Profile struct {

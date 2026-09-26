@@ -1,0 +1,12 @@
+{{define "content"}}
+<section class="st-panel settings-form-panel"><div class="st-panel-h"><h2>Account details</h2></div>
+<p class="settings-help">Saving changes signs you out on every device. Use your updated credentials to sign in again.</p>
+<form method="post" action="/settings/user" class="settings-form">
+<input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Target.AuthVersion}}">
+<label>Username<input name="username" value="{{.Target.Username}}" required minlength="3" maxlength="64" autocomplete="username" spellcheck="false"></label>
+<label>Current password<input type="password" name="current_password" required autocomplete="current-password"></label>
+<label>New password <span class="settings-help">Optional; leave blank to keep it</span><input type="password" name="password" minlength="12" maxlength="72" autocomplete="new-password" aria-describedby="password-help"></label>
+<label>Confirm new password<input type="password" name="confirm_password" minlength="12" maxlength="72" autocomplete="new-password"></label>
+<p class="settings-help" id="password-help">Use 12–72 bytes for a new password. Usernames use 3–64 letters, numbers, dots, underscores, @ or hyphens.</p>
+<div class="settings-actions"><button class="chroma-button" type="submit">Save and sign out</button><a class="chroma-button-secondary" href="/settings">Cancel</a></div>
+</form></section>{{end}}

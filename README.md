@@ -250,10 +250,11 @@ ICEvirtue-admin create --username 'netrunner' --password 'super-secret-password'
 | Flag | Default | What it does |
 |---|---|---|
 | `--username` | *(required)* | Username for the new dashboard account. |
-| `--password` | *(required)* | Password for the account. Stored as a bcrypt hash, never in plain text. |
+| `--password` | *(required)* | Password of 12–72 bytes. Stored as a bcrypt hash, never in plain text. |
+| `--role` | `admin` | Account role: `viewer`, `operator`, or `admin`. |
 | `--db-path` | `./icevirtue.db` | Database to write the account into. Created and migrated if it does not exist. |
 
-Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. There is currently no subcommand for listing, editing or deleting users, so managing an existing account means editing the `users` table directly.
+Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. Use Settings → Admin dashboard → Users to manage existing accounts. The CLI remains available for initial provisioning and recovery. It creates an Admin by default; pass `--role viewer` or `--role operator` to provision a different role.
 
 ## Running As A systemd Service
 
@@ -284,7 +285,7 @@ WantedBy=multi-user.target
 
 ## Behind A Reverse Proxy
 
-State-changing requests are checked against the `Origin` header the browser sends. That is the CSRF defence, and it needs no token: a cross-site page can neither forge nor suppress `Origin`, so an `Origin` that disagrees with the host ICEvirtue was addressed as is by definition a cross-site request.
+State-changing requests validate the browser’s `Origin` or `Referer` against the request host or the configured trusted origins. JSON API requests also require the JSON content type when they carry a body. Account and administration forms additionally require a CSRF token tied to the authenticated session.
 
 The comparison is on the **host**, not the full origin, so terminating TLS in front of the binary is fine on its own — the browser sends `https://` while the process only ever sees `http`, and requiring a scheme match would refuse every write in the most common deployment.
 
@@ -316,7 +317,7 @@ Two other things to set when a proxy is in front:
 
 ICEvirtue keeps three separate pieces of state, and each can be relocated.
 
-The **database** is a single SQLite file holding users, profiles and every finding. It is controlled by `--db-path` and defaults to `icevirtue.db` in the working directory. WAL mode is enabled, so expect `icevirtue.db-wal` and `icevirtue.db-shm` alongside it. Back up all three together, or checkpoint first.
+The **database** is a single SQLite file holding users, roles, revocable sessions, notifications, profiles and every finding. It is controlled by `--db-path` and defaults to `icevirtue.db` in the working directory. WAL mode is enabled, so expect `icevirtue.db-wal` and `icevirtue.db-shm` alongside it. Back up all three together, or checkpoint first.
 
 The **session signing key** is 64 random bytes generated on first run and reused afterwards, so it has to persist somewhere stable. Restarting with a different key logs everyone out. Because the location has to work both for a service and for a casual terminal run, ICEvirtue picks it in this order:
 
@@ -326,9 +327,58 @@ The **session signing key** is 64 random bytes generated on first run and reused
 4. `/var/lib/icevirtue/jwt.secret`, the FHS location for persistent per-host application state, when it is writable.
 5. `$XDG_STATE_HOME/icevirtue/jwt.secret`, defaulting to `~/.local/state/icevirtue/jwt.secret`, for an unprivileged run that cannot write under `/var/lib`.
 
-The key is written `0600` inside a `0700` directory. Copy it if you want existing sessions to survive a migration, and delete it if you want to invalidate every session, in which case everyone simply logs in again.
+The key is written `0600` inside a `0700` directory. Keep the key and database together when moving an installation. To rotate the key and invalidate every session, stop the service, remove the key, and restart. Upgrading from the old username-based JWT format requires everyone to sign in again even if the key is preserved.
 
 The **tool config home** is where the spawned recon tools keep their own configuration and cache, such as `subfinder`'s `provider-config.yaml` and `nuclei`'s templates. It defaults to `/opt/icevirtue` and falls back to `$HOME` and then to a writable directory ICEvirtue can find, and `--tool-home` overrides it. Files land under `<tool-home>/.config/`. This is entirely independent of `--db-path`, and the resolved value is logged at startup. If you want API keys for `subfinder`'s paid sources, put them in `<tool-home>/.config/subfinder/provider-config.yaml`.
+
+## Accounts, settings and roles
+
+The Settings navigation tab opens a server-rendered page at `/settings`. Operators
+and Admins can open User settings at `/settings/user` to change their username or
+password. The current password is required, and a successful change revokes every
+session for that account. Viewers can see their role in Settings but cannot open or
+submit the account editor.
+
+Admins can open `/settings/admin`, then Users or Server logs. Users supports account
+creation, role assignment, credential edits and permanent account deletion. Every
+saved edit, including a save without changed values, increments the account version
+and revokes all its sessions. Admins may edit themselves and are then returned to
+login. Deleting or demoting the last Admin is refused. User deletion removes sessions
+and notifications while preserving shared reconnaissance data.
+
+Viewer permits reads of profiles, schedules, findings, assets and notifications.
+Operator adds profile creation, scheduling, deletion, scan execution, notification
+mutations and self-service account edits. Admin adds user administration and server
+logs. These rules are checked on the server. All authenticated API writes require
+Operator or Admin; login and logout are authentication operations available to every
+role. There is no per-profile ownership restriction in this version.
+
+Existing accounts migrate once to Admin because the former provisioning command
+created administrators. New accounts default to Viewer in the model and admin form;
+the bootstrap CLI explicitly defaults to Admin. The demo fixture is an Admin.
+
+JWTs contain only an opaque account UUID, a random session ID, account version,
+issuer, audience and issue/not-before/expiry timestamps. The server pins HS256 and
+the session token type, checks every required claim, then checks the live account,
+version and session record in SQLite. Roles are read from the current account record.
+Legacy tokens are rejected. `--session-ttl` defaults to 24 hours and accepts one
+second through seven days. Logout revokes one session; account edits revoke all.
+SSE streams check revocation before sending data and every two seconds while idle.
+
+Account pages are separate templates outside the public static tree. Forms use
+ordinary server POSTs with session-bound CSRF tokens, server validation and escaped
+HTML responses. Account management does not depend on client-side JavaScript.
+New passwords must contain 12–72 bytes. Usernames must contain 3–64 letters, numbers,
+dots, underscores, @ or hyphens, beginning with a letter or number.
+
+Server logs show the latest 2,000 process log entries, newest first, in pages of 100.
+Entries are capped at 16 KiB. The in-memory buffer resets on restart; normal process
+output remains available to the service manager. Logs are Admin-only and rendered
+as escaped text. SQL parameters, HTTP query strings and request bodies are not
+included by the new request/database logging configuration.
+
+See [the implementation and verification report](docs/account-access.md) for the
+design rationale and scope of the access-control checks.
 
 ## HTTP API
 
@@ -339,7 +389,7 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `GET /login` | The login page. Redirects to `/` if you are already signed in. |
 | `GET /` | The dashboard. Redirects to `/login` if you are not. |
 | `POST /api/login` | Log in, sets the session cookie. Rate limited per client address. |
-| `POST /api/logout` | Clear the session cookie. |
+| `POST /api/logout` | Revoke the current session on the server and clear its cookie. |
 | `GET /api/profiles` | Target profiles, paginated. |
 | `GET /api/profiles/index` | Every profile as an id and a domain, unpaginated. This is what the dashboard's target picker reads, so it is not truncated to a page. |
 | `POST /api/profiles` | Create a profile from `domain`, `schedule` and optional `mode`. |
@@ -354,9 +404,9 @@ Everything the dashboard does is available over HTTP. Authentication is a `POST`
 | `GET /api/profiles/{id}/vulnerabilities` | Nuclei findings. |
 | `GET /api/profiles/{id}/vulnerabilities/severity-summary?host=...` | Exact nonzero Nuclei finding counts grouped by severity for one asset. |
 | `GET /api/profiles/{id}/secrets` | Secrets found in JavaScript. |
-| `GET /api/events` | Server-Sent Events stream of `profile_update` and `discovery_update` events. |
+| `GET /api/events` | Authenticated Server-Sent Events stream, including scan updates and notifications. Revoked sessions stop receiving events. |
 
-Every list endpoint is paginated and answers with an envelope rather than a bare array:
+Profile and finding list endpoints are paginated and answer with an envelope rather than a bare array:
 
 ```json
 {

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
 
@@ -34,15 +35,20 @@ const (
 // of the actual 80KB dashboard means an HTML edit cannot break a routing test, and the
 // tests assert on markers they placed themselves.
 func testAssets() (templates, static fstest.MapFS) {
-	return fstest.MapFS{
-			"login.html": {Data: []byte(`<!doctype html><title>` + loginMarker + `</title>`)},
-			"home.html":  {Data: []byte(`<!doctype html><title>` + homeMarker + `</title>`)},
-		}, fstest.MapFS{
-			"css/output.css": {Data: []byte(`:root{--x:1}`)},
-			"css/theme.css":  {Data: []byte(`:root{--y:2}`)},
-			// Something outside css/, to prove the mount point is what limits exposure.
-			"secret.txt": {Data: []byte(`should not be served`)},
-		}
+	templates = fstest.MapFS{
+		"login.html": {Data: []byte(`<!doctype html><title>` + loginMarker + `</title>`)},
+		"home.html":  {Data: []byte(`<!doctype html><title>` + homeMarker + `</title>`)},
+	}
+	for _, name := range settingsPages {
+		templates[name+".html"] = &fstest.MapFile{Data: []byte(`{{define "content"}}SETTINGS-MARKER{{end}}`)}
+	}
+	templates["settings_base.html"] = &fstest.MapFile{Data: []byte(`{{template "content" .}}`)}
+	return templates, fstest.MapFS{
+		"css/output.css": {Data: []byte(`:root{--x:1}`)},
+		"css/theme.css":  {Data: []byte(`:root{--y:2}`)},
+		// Something outside css/, to prove the mount point is what limits exposure.
+		"secret.txt": {Data: []byte(`should not be served`)},
+	}
 }
 
 // authOnce loads a signing key once for the whole test binary.
@@ -53,6 +59,7 @@ func testAssets() (templates, static fstest.MapFS) {
 // t.TempDir either — that is removed when the first test finishes, while the key has to
 // outlive all of them.
 var authOnce sync.Once
+var testSigningKey = []byte(strings.Repeat("test-key", 8))
 
 func initAuth(t *testing.T) {
 	t.Helper()
@@ -60,6 +67,9 @@ func initAuth(t *testing.T) {
 		dir, err := os.MkdirTemp("", "icevirtue-jwt-*")
 		if err != nil {
 			t.Fatalf("temp dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "jwt.secret"), testSigningKey, 0600); err != nil {
+			t.Fatal(err)
 		}
 		if err := auth.Init(filepath.Join(dir, "jwt.secret")); err != nil {
 			t.Fatalf("auth.Init: %v", err)
@@ -71,9 +81,35 @@ func sessionCookie(t *testing.T, ttl time.Duration) *http.Cookie {
 	t.Helper()
 	initAuth(t)
 
-	token, err := auth.GenerateTokenWithTTL("netrunner", ttl)
+	var u models.User
+	if err := database.DB.Where("username = ?", "session-fixture").First(&u).Error; err != nil {
+		u = models.User{Username: "session-fixture", PasswordHash: "unused", Role: "operator"}
+		if err := database.DB.Create(&u).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	duration := ttl
+	if duration <= 0 {
+		duration = time.Hour
+	}
+	token, err := issueSession(&u, duration)
 	if err != nil {
-		t.Fatalf("GenerateTokenWithTTL: %v", err)
+		t.Fatal(err)
+	}
+	if ttl <= 0 {
+		c, err := auth.ValidateToken(token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c.IssuedAt = jwt.NewNumericDate(time.Now().Add(-2 * time.Hour))
+		c.NotBefore = c.IssuedAt
+		c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(ttl))
+		signed := jwt.NewWithClaims(jwt.SigningMethodHS256, c)
+		signed.Header["typ"] = auth.TokenType
+		token, err = signed.SignedString(testSigningKey)
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 	return &http.Cookie{Name: cookieName, Value: token}
 }

@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/serverlogs"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -31,6 +33,7 @@ func (o *originList) Set(value string) error {
 }
 
 func main() {
+	log.SetOutput(io.MultiWriter(os.Stderr, serverlogs.Default))
 	flag.BoolVar(&engine.Verbose, "verbose", false, "Print detailed scan findings to the terminal")
 	flag.StringVar(&engine.DnsxList, "dnsx-list", "", "Comma-separated absolute paths to wordlists for active dnsx bruteforcing (Full Mode only)")
 	flag.StringVar(&engine.DirectoryList, "directory-list", "", "Comma-separated absolute paths to wordlists for directory fuzzing")
@@ -61,6 +64,9 @@ func main() {
 	flag.Var(&trustedOrigins, "trusted-origin",
 		"An Origin to accept on state-changing requests in addition to the request's own host. Repeatable. Needed when a reverse proxy rewrites Host, because otherwise every write is refused with 403.")
 	flag.Parse()
+	if sessionTTL < time.Second || sessionTTL > auth.MaxSessionTTL {
+		log.Fatal("[-] Session TTL must be between one second and seven days")
+	}
 	if err := engine.SetWAFProcessTimeout(wafProcessTimeout); err != nil {
 		log.Fatalf("[-] Invalid WAF process timeout: %v", err)
 	}

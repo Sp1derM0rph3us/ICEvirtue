@@ -56,7 +56,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenString, err := auth.GenerateTokenWithTTL(user.Username, a.cfg.SessionTTL)
+	tokenString, err := issueSession(&user, a.cfg.SessionTTL)
 	if err != nil {
 		log.Printf("[-] Issuing a session for %q: %v", user.Username, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -68,13 +68,16 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, map[string]string{"message": "success"})
 }
 
-// handleLogout clears the cookie.
-//
-// It does not invalidate anything server-side, so a token captured before logout keeps
-// working until it expires. Closing that gap needs a per-user "tokens issued before this
-// instant are refused" column and a lookup on every request; it is recorded as a
-// follow-up rather than done here.
+// Logout revokes this session on the server, including copied bearer cookies.
 func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if cookie, err := r.Cookie(cookieName); err == nil {
+		if c, err := auth.ValidateToken(cookie.Value); err == nil {
+			if err := database.DB.Where("id = ?", c.ID).Delete(&models.Session{}).Error; err != nil {
+				http.Error(w, "could not revoke session", http.StatusInternalServerError)
+				return
+			}
+		}
+	}
 	http.SetCookie(w, a.authCookie("", -1))
 	respondJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }

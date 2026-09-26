@@ -27,7 +27,7 @@
     <link rel="stylesheet" href="/static/css/output.css">
     <link rel="stylesheet" href="/static/css/theme.css">
 </head>
-<body class="min-h-screen flex flex-col font-sans">
+<body data-can-write="{{.CanWrite}}" class="min-h-screen flex flex-col font-sans">
     
     <!-- The horizontal padding belongs on the inner max-w-7xl container, not on the
          nav. With it on the nav, the centred container started 16px inside a box that
@@ -43,9 +43,31 @@
                 </span>
             </div>
             <div id="main-nav-actions" class="chroma-nav-actions flex font-sans items-center">
+                <div class="notif-wrap" id="notif-wrap">
+                    <button id="notif-bell" class="notif-bell" onclick="toggleNotifPanel(event)" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <span id="notif-badge" class="notif-badge hidden">0</span>
+                    </button>
+                    <div id="notif-panel" class="notif-panel hidden" role="dialog" aria-label="Notifications">
+                        <div class="notif-head">
+                            <div><span class="notif-ttl">Notifications</span><span id="notif-count" class="notif-count"></span></div>
+                            {{if .CanWrite}}<button class="notif-clear" onclick="deleteAllNotifs()">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                                Delete all
+                            </button>{{end}}
+                        </div>
+                        <div id="notif-list" class="notif-list"></div>
+                        <div id="notif-empty" class="notif-empty hidden">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                            <p>You're all caught up</p><small>New scan activity will appear here.</small>
+                        </div>
+                        {{if .CanWrite}}<div class="notif-foot"><button id="notif-markread" class="notif-markread" onclick="markAllNotifsRead()">Mark all as read</button></div>{{end}}
+                    </div>
+                </div>
                 <button id="nav-btn-home" class="chroma-nav-tab tab-active" onclick="switchView('home')" aria-current="page">Home</button>
                 <button id="nav-btn-profiles" class="chroma-nav-tab tab-inactive" onclick="switchView('profiles')">Profiles</button>
                 <button id="nav-btn-findings" class="chroma-nav-tab tab-inactive" onclick="switchView('findings')">Findings</button>
+                <a id="nav-btn-settings" class="chroma-nav-tab tab-inactive" href="/settings">Settings</a>
                 <div class="chroma-divider h-4 w-px bg-slate-800 mx-2"></div>
                 <!-- Both icons ship in the markup and theme.css shows exactly one, so
                      toggling the theme needs no class juggling in JS. -->
@@ -57,6 +79,8 @@
             </div>
         </div>
     </nav>
+
+    <div id="toast-container" class="toast-container" aria-live="polite" aria-atomic="false"></div>
 
     <!-- flex flex-col is what lets the Findings panel claim the leftover viewport
          height. Without it main was a plain block, so the section's height:100% had no
@@ -151,7 +175,7 @@
             
             <div class="chroma-form-panel p-6">
                 <h2 class="chroma-section-title mb-5">Create profile</h2>
-                <form id="form-add-target" class="chroma-profile-form flex flex-wrap gap-5 items-end">
+                {{if .CanWrite}}<form id="form-add-target" class="chroma-profile-form flex flex-wrap gap-5 items-end">
                     <div class="flex-grow">
                         <label for="input-domain" class="chroma-field-label">Target domain</label>
                         <input type="text" id="input-domain" required pattern="^[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$" title="Must be a valid domain format (e.g., example.com)" placeholder="example.com" class="chroma-input w-full font-mono text-sm">
@@ -185,7 +209,7 @@
                             Add profile
                         </button>
                     </div>
-                </form>
+                </form>{{else}}<p class="settings-help">Viewer access · Profiles and schedules are read only.</p>{{end}}
             </div>
 
             <div class="chroma-list-panel overflow-hidden">
@@ -540,6 +564,7 @@
     </div>
 
     <script>
+        const CAN_WRITE = document.body.dataset.canWrite === 'true';
         const ESCAPES = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' };
 
         // The server clamps size to this. Offering more in the selector would show the
@@ -1066,7 +1091,7 @@
             }
         }
 
-        document.getElementById('form-add-target').addEventListener('submit', async (e) => {
+        document.getElementById('form-add-target')?.addEventListener('submit', async (e) => {
             e.preventDefault();
             const btn = e.target.querySelector('button');
             const originalText = btn.innerText;
@@ -1188,6 +1213,7 @@
             // textContent, not innerHTML: the status comes from the engine.
             tr.querySelector(`#last-run-${id}`).textContent = lastRunText(p);
 
+            if (!CAN_WRITE) tr.querySelectorAll('[data-action]').forEach(el => el.remove());
             return tr;
         }
 
@@ -1208,6 +1234,7 @@
                     <button type="button" data-action="delete" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-button-danger">Delete</button>
                 </div>`;
             li.querySelector('dl dd:last-child').textContent = lastRunText(p);
+            if (!CAN_WRITE) li.querySelector('.chroma-mobile-actions').remove();
             return li;
         }
 
@@ -1468,11 +1495,11 @@
 
         async function forceScan(id) {
             try {
-                const res = await api(`/api/profiles/${id}/scan`, { method: 'POST' });
-                if (!res.ok) throw new Error(await res.text());
-                alert("Scan initiated successfully in the background.");
-            } catch(err) {
-                alert("Could not start scan: " + err.message);
+                await api(`/api/profiles/${id}/scan`, { method: 'POST' });
+                // Success is announced by the engine's "scan started" notification over
+                // SSE (toast + bell counter), so nothing is shown here.
+            } catch (err) {
+                showToast({ cls: 'crit', icon: 'alert', title: 'Scan could not start', sub: err.message });
             }
         }
 
@@ -2244,15 +2271,185 @@
             if (viewState.view === 'findings' && viewState.profile) renderCurrentView();
         });
 
+        // ---- Notifications & toasts ----
+        const NOTIF_STYLE = {
+            scan_started:  { cls: 'ok',   icon: 'check' },
+            scan_finished: { cls: 'ok',   icon: 'check' },
+            scan_halted:   { cls: 'crit', icon: 'alert' },
+            credentials:   { cls: 'info', icon: 'key' },
+        };
+        const NOTIF_ICONS = {
+            check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',
+            alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>',
+            key:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 7-7M17 3l3 3-3 3"/></svg>',
+        };
+        let notifItems = [];
+        let notifUnread = 0;
+
+        function notifRelTime(iso) {
+            const d = new Date(iso);
+            if (Number.isNaN(d.getTime())) return '';
+            const s = Math.floor((Date.now() - d.getTime()) / 1000);
+            if (s < 60) return 'just now';
+            if (s < 3600) return Math.floor(s / 60) + 'm ago';
+            if (s < 86400) return Math.floor(s / 3600) + 'h ago';
+            return Math.floor(s / 86400) + 'd ago';
+        }
+
+        function setNotifBadge(n) {
+            notifUnread = Math.max(0, n);
+            const badge = document.getElementById('notif-badge');
+            badge.textContent = notifUnread > 99 ? '99+' : String(notifUnread);
+            badge.classList.toggle('hidden', notifUnread === 0);
+        }
+
+        function renderNotifPanel() {
+            const list = document.getElementById('notif-list');
+            list.replaceChildren();
+            document.getElementById('notif-empty').classList.toggle('hidden', notifItems.length > 0);
+            document.getElementById('notif-markread')?.parentElement.classList.toggle('hidden', notifItems.length === 0);
+            document.getElementById('notif-count').textContent = notifUnread ? notifUnread + ' unread' : '';
+            for (const n of notifItems) {
+                const style = NOTIF_STYLE[n.kind] || { cls: 'info', icon: 'check' };
+                const row = document.createElement('div');
+                row.className = 'notif-item' + (n.read ? '' : ' unread');
+                if (CAN_WRITE) { row.setAttribute('role', 'button'); row.tabIndex = 0; }
+                const ic = document.createElement('div');
+                ic.className = 'notif-ic ' + style.cls;
+                ic.innerHTML = NOTIF_ICONS[style.icon] || NOTIF_ICONS.check;
+                const body = document.createElement('div');
+                body.className = 'notif-body';
+                const title = document.createElement('div');
+                title.className = 'notif-title';
+                title.textContent = n.title || '';
+                const sub = document.createElement('div');
+                sub.className = 'notif-sub';
+                sub.textContent = n.body || n.host || '';
+                const time = document.createElement('div');
+                time.className = 'notif-time';
+                time.textContent = notifRelTime(n.created_at);
+                body.append(title, sub, time);
+                const x = document.createElement('button');
+                x.className = 'notif-x';
+                x.setAttribute('aria-label', 'Dismiss');
+                x.innerHTML = '&times;';
+                x.addEventListener('click', (e) => { e.stopPropagation(); dismissNotif(n.id); });
+                const activate = () => { if (CAN_WRITE) markNotifRead(n.id); };
+                row.addEventListener('click', activate);
+                row.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activate(); }
+                });
+                row.append(ic, body);
+                if (CAN_WRITE) row.append(x);
+                list.appendChild(row);
+            }
+        }
+
+        async function loadNotifications() {
+            try {
+                const data = await apiJSON('/api/notifications');
+                notifItems = data.data || [];
+                setNotifBadge(data.unread || 0);
+                renderNotifPanel();
+            } catch (e) { /* keep the current badge; a transient failure is not fatal */ }
+        }
+
+        function toggleNotifPanel(event) {
+            if (event) event.stopPropagation();
+            const panel = document.getElementById('notif-panel');
+            const willOpen = panel.classList.contains('hidden');
+            panel.classList.toggle('hidden', !willOpen);
+            document.getElementById('notif-bell').setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) loadNotifications();
+        }
+
+        async function markNotifRead(id) {
+            const n = notifItems.find(x => x.id === id);
+            if (n && !n.read) { n.read = true; setNotifBadge(notifUnread - 1); renderNotifPanel(); }
+            try { await api('/api/notifications/' + id + '/read', { method: 'POST' }); } catch (e) {}
+        }
+
+        async function markAllNotifsRead() {
+            notifItems.forEach(n => { n.read = true; });
+            setNotifBadge(0);
+            renderNotifPanel();
+            try { await api('/api/notifications/read', { method: 'POST' }); } catch (e) {}
+        }
+
+        async function dismissNotif(id) {
+            const wasUnread = notifItems.some(x => x.id === id && !x.read);
+            notifItems = notifItems.filter(x => x.id !== id);
+            if (wasUnread) setNotifBadge(notifUnread - 1);
+            renderNotifPanel();
+            try { await api('/api/notifications/' + id, { method: 'DELETE' }); } catch (e) {}
+        }
+
+        async function deleteAllNotifs() {
+            notifItems = [];
+            setNotifBadge(0);
+            renderNotifPanel();
+            try { await api('/api/notifications', { method: 'DELETE' }); } catch (e) {}
+        }
+
+        // A click anywhere outside the bell closes the panel.
+        document.addEventListener('click', (e) => {
+            const wrap = document.getElementById('notif-wrap');
+            const panel = document.getElementById('notif-panel');
+            if (wrap && panel && !panel.classList.contains('hidden') && !wrap.contains(e.target)) {
+                panel.classList.add('hidden');
+                document.getElementById('notif-bell').setAttribute('aria-expanded', 'false');
+            }
+        });
+
+        function showToast(opts) {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const cls = opts.cls || 'info';
+            const el = document.createElement('div');
+            el.className = 'toast';
+            el.innerHTML =
+                '<div class="toast-body">' +
+                    '<div class="toast-ic ' + cls + '">' + (NOTIF_ICONS[opts.icon] || NOTIF_ICONS.check) + '</div>' +
+                    '<div class="toast-main"><div class="toast-title"></div><div class="toast-sub"></div></div>' +
+                    '<button class="toast-x" aria-label="Dismiss">&times;</button>' +
+                '</div>' +
+                '<div class="toast-prog ' + cls + ' run"></div>';
+            el.querySelector('.toast-title').textContent = opts.title || '';
+            el.querySelector('.toast-sub').textContent = opts.sub || '';
+            container.prepend(el);
+            const remove = () => { el.classList.add('leaving'); setTimeout(() => el.remove(), 280); };
+            const timer = setTimeout(remove, 4500);
+            el.querySelector('.toast-x').addEventListener('click', () => { clearTimeout(timer); remove(); });
+        }
+
+        function toastForNotification(n) {
+            const style = NOTIF_STYLE[n.kind] || { cls: 'info', icon: 'check' };
+            showToast({ cls: style.cls, icon: style.icon, title: n.title, sub: n.body || n.host || '' });
+        }
+
+        loadNotifications();
+
         const sse = new EventSource('/api/events');
 
         sse.onmessage = (event) => {
             try {
                 const data = JSON.parse(event.data);
+                if (data.type === "session_revoked") { sse.close(); window.location.replace("/login?reason=session-ended"); return; }
                 if (data.type === 'profile_update') {
                     refreshProfiles().then(() => {
                         if (viewState.view === 'home') loadHomeOverview();
                     });
+                    return;
+                }
+                if (data.type === 'notification') {
+                    // A new server-side notification: raise the transient toast and bump
+                    // the bell counter. If the panel is open, refetch so the new row
+                    // (with its id) appears and can be marked read.
+                    const n = data.data || {};
+                    setNotifBadge(notifUnread + 1);
+                    toastForNotification(n);
+                    const panel = document.getElementById('notif-panel');
+                    if (panel && !panel.classList.contains('hidden')) loadNotifications();
                     return;
                 }
                 if (data.type !== 'discovery_update' || data.profile_id !== viewState.profile) return;

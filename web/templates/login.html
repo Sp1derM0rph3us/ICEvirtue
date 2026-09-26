@@ -42,6 +42,8 @@
         Sign in failed. Check your credentials.
     </div>
 
+    {{if .Notice}}<p class="settings-message" role="status">{{.Notice}}</p>{{end}}
+
     <form id="login-form" class="chroma-login-form">
         <div class="chroma-login-field">
             <label for="username" class="chroma-field-label">Username</label>

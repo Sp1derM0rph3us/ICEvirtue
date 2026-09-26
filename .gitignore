@@ -34,16 +34,18 @@ go.work.sum
 *.db*
 # Locally generated dashboard fixture; the broader pattern above covers it too,
 # but keeping this explicit makes the disposable validation data discoverable.
+# 
 mock-dashboard.db*
 jwt*
 test_*
 tmp_*
 ICEvirtue
 resume.cfg
-# ffs
 .agent/
 .claude/
 .config/
+*_REPORT.md
+
 # Superdesign design workspace: init context, design-system.md, HTML mockups,
 # and local resume.json (draft ids). Regenerable tool state, not product code.
 .superdesign/

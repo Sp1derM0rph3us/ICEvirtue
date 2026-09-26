@@ -1,9 +1,13 @@
 package auth
 
 import (
+	"crypto/hmac"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"github.com/google/uuid"
 	"log"
 	"os"
 	"path/filepath"
@@ -74,8 +78,39 @@ func Init(explicitPath string) error {
 			return fmt.Errorf("failed to create JWT secret directory %s: %w", dir, err)
 		}
 	}
-	if err := os.WriteFile(path, secret, 0600); err != nil {
-		return fmt.Errorf("failed to write JWT secret %s: %w", path, err)
+	// Publish a complete key atomically without overwriting a key created by
+	// another starting process. A crash cannot leave an empty signing key.
+	file, err := os.CreateTemp(filepath.Dir(path), ".jwt-key-*")
+	if err != nil {
+		return err
+	}
+	defer os.Remove(file.Name())
+	if _, err := file.Write(secret); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Sync(); err != nil {
+		file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	if err := os.Link(file.Name(), path); err != nil {
+		if os.IsExist(err) {
+			// Another process published first. Read once; a dangling symlink or
+			// unreadable path must fail rather than recursively attempting creation.
+			existing, readErr := os.ReadFile(path)
+			if readErr != nil {
+				return fmt.Errorf("reading concurrently created JWT secret: %w", readErr)
+			}
+			if len(existing) < minSecretLen {
+				return fmt.Errorf("JWT secret %s is only %d bytes", path, len(existing))
+			}
+			jwtSecret = existing
+			return nil
+		}
+		return fmt.Errorf("failed to publish JWT secret %s: %w", path, err)
 	}
 
 	jwtSecret = secret
@@ -148,72 +183,84 @@ func ensureWritableDir(dir string) error {
 	return os.Remove(name)
 }
 
+// Claims contain opaque identifiers and security metadata only. Roles and account
+// details are loaded from the database for each request, never trusted from a JWT.
 type Claims struct {
-	Username string `json:"username"`
+	Version uint64 `json:"ver"`
 	jwt.RegisteredClaims
 }
 
-// DefaultSessionTTL is how long a session lasts unless the caller says otherwise.
 const DefaultSessionTTL = 24 * time.Hour
+const MaxSessionTTL = 7 * 24 * time.Hour
+const Issuer = "icevirtue"
+const Audience = "icevirtue-dashboard"
+const TokenType = "icevirtue-session+jwt"
 
-func GenerateToken(username string) (string, error) {
-	return GenerateTokenWithTTL(username, DefaultSessionTTL)
-}
-
-// GenerateTokenWithTTL mints a token with an explicit lifetime.
-//
-// The explicit form exists so the session length can be configured, and so a test can
-// produce an already-expired token. Without it, "an expired session is redirected to
-// the login page" could only be tested with a malformed token, which exercises a
-// different branch of ValidateToken entirely.
-func GenerateTokenWithTTL(username string, ttl time.Duration) (string, error) {
+func GenerateTokenWithTTL(subject string, version uint64, ttl time.Duration) (string, error) {
 	if len(jwtSecret) < minSecretLen {
 		return "", errNoSecret
 	}
-
-	now := time.Now()
-	claims := &Claims{
-		Username: username,
-		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(ttl)),
-			IssuedAt:  jwt.NewNumericDate(now),
-		},
+	if _, err := uuid.Parse(subject); err != nil || subject == uuid.Nil.String() || version == 0 {
+		return "", errors.New("invalid session identity")
 	}
-
+	if ttl < time.Second || ttl > MaxSessionTTL {
+		return "", errors.New("session lifetime must be between one second and seven days")
+	}
+	now := time.Now().UTC()
+	claims := &Claims{Version: version, RegisteredClaims: jwt.RegisteredClaims{
+		Issuer: Issuer, Subject: subject, Audience: jwt.ClaimStrings{Audience}, ID: uuid.NewString(),
+		ExpiresAt: jwt.NewNumericDate(now.Add(ttl)), IssuedAt: jwt.NewNumericDate(now), NotBefore: jwt.NewNumericDate(now),
+	}}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	token.Header["typ"] = TokenType
 	return token.SignedString(jwtSecret)
 }
 
-func ValidateToken(tokenStr string) (*Claims, error) {
+func ValidateToken(raw string) (*Claims, error) {
 	if len(jwtSecret) < minSecretLen {
 		return nil, errNoSecret
 	}
-
+	if len(raw) > 4096 {
+		return nil, errors.New("token too large")
+	}
 	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims,
-		func(token *jwt.Token) (interface{}, error) { return jwtSecret, nil },
-		// Pin the algorithm to the one GenerateToken uses, rather than accepting the
-		// whole HMAC family. With a single symmetric key this is not exploitable — an
-		// attacker who cannot sign HS256 cannot sign HS384 either — but it is the guard
-		// that matters the moment anyone reaches for an asymmetric algorithm, where the
-		// RS256-to-HS256 confusion attack signs a forged token with the public key.
-		//
-		// This also replaces the keyfunc's own method check, so there is one place that
-		// decides which algorithms are acceptable instead of two.
-		jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}),
-		// jwt/v5 does not require exp by default, so a token minted without one would
-		// never expire. Nothing mints such a token today; this makes it impossible for
-		// anything to start.
-		jwt.WithExpirationRequired(),
-	)
-
+	token, err := jwt.ParseWithClaims(raw, claims, func(token *jwt.Token) (interface{}, error) {
+		if token.Header["typ"] != TokenType {
+			return nil, errors.New("invalid token type")
+		}
+		// No dynamic key selection, remote key URLs, or critical extensions.
+		for name := range token.Header {
+			if name != "alg" && name != "typ" {
+				return nil, errors.New("unsupported token header")
+			}
+		}
+		return jwtSecret, nil
+	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired(),
+		jwt.WithIssuer(Issuer), jwt.WithAudience(Audience), jwt.WithIssuedAt(), jwt.WithStrictDecoding())
 	if err != nil {
 		return nil, err
 	}
-
-	if !token.Valid {
-		return nil, fmt.Errorf("invalid token")
+	if !token.Valid || claims.Version == 0 || claims.IssuedAt == nil || claims.NotBefore == nil || claims.ExpiresAt == nil {
+		return nil, errors.New("incomplete session claims")
 	}
-
+	if _, err := uuid.Parse(claims.Subject); err != nil {
+		return nil, errors.New("invalid subject")
+	}
+	if _, err := uuid.Parse(claims.ID); err != nil {
+		return nil, errors.New("invalid session id")
+	}
+	if claims.Subject == uuid.Nil.String() || claims.ID == uuid.Nil.String() ||
+		!claims.ExpiresAt.After(claims.IssuedAt.Time) || claims.ExpiresAt.Sub(claims.IssuedAt.Time) > MaxSessionTTL ||
+		!claims.NotBefore.Equal(claims.IssuedAt.Time) || len(claims.Audience) != 1 {
+		return nil, errors.New("invalid session claims")
+	}
 	return claims, nil
+}
+
+// CSRFToken is purpose-separated and tied to one authenticated session. It is
+// rendered into server-side forms and compared in constant time on submission.
+func CSRFToken(c *Claims) string {
+	mac := hmac.New(sha256.New, jwtSecret)
+	mac.Write([]byte("icevirtue-form-csrf:" + c.ID))
+	return hex.EncodeToString(mac.Sum(nil))
 }

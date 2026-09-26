@@ -1,0 +1,5 @@
+{{define "content"}}
+<section class="st-panel"><div class="st-panel-h"><h2>{{.Total}} users</h2><a class="chroma-button" href="/settings/admin/users/new">Create user</a></div>
+<div class="settings-table-wrap"><table class="settings-table"><thead><tr><th>Username</th><th>Role</th><th>Created (UTC)</th><th>Action</th></tr></thead><tbody>{{range .Users}}<tr><td class="settings-mono">{{.Username}}</td><td><span class="settings-role">{{.Role}}</span></td><td class="settings-mono">{{.CreatedAt.UTC.Format "2006-01-02 15:04"}}</td><td><a class="chroma-button-secondary" href="/settings/admin/users/{{.ID}}" aria-label="Edit {{.Username}}">Edit</a></td></tr>{{else}}<tr><td colspan="4">No users found.</td></tr>{{end}}</tbody></table></div>
+<nav class="settings-pager" aria-label="User pages">{{if gt .Page 1}}<a href="?page={{.Previous}}">← Previous</a>{{end}}<span>Page {{.Page}} of {{.Pages}}</span>{{if lt .Page .Pages}}<a href="?page={{.Next}}">Next →</a>{{end}}</nav>
+</section>{{end}}

@@ -1,0 +1,5 @@
+{{define "content"}}
+<div class="settings-options">
+{{if .CanWrite}}<a href="/settings/user" class="st-panel settings-option"><span class="chroma-eyebrow">Your account</span><h2>User settings <span aria-hidden="true">↗</span></h2><p>Change your login username and password.</p></a>{{else}}<section class="st-panel settings-option"><span class="chroma-eyebrow">Your account</span><h2>User settings</h2><p>Your Viewer role allows read access. Contact an administrator to change your account details.</p></section>{{end}}
+{{if .IsAdmin}}<a href="/settings/admin" class="st-panel settings-option"><span class="chroma-eyebrow">Administration</span><h2>Admin dashboard <span aria-hidden="true">↗</span></h2><p>Manage users and roles, and inspect server logs.</p></a>{{end}}
+</div>{{end}}

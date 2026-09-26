@@ -236,130 +236,142 @@ func TestInitRejectsATruncatedKeyFile(t *testing.T) {
 
 func TestTokensAreRejectedBeforeInit(t *testing.T) {
 	isolate(t)
-
-	if _, err := GenerateToken("someone"); err == nil {
-		t.Error("GenerateToken must fail before Init rather than sign with an empty key")
+	if _, err := GenerateTokenWithTTL(testSubject, 1, time.Hour); err == nil {
+		t.Fatal("signed without a key")
 	}
 	if _, err := ValidateToken("anything"); err == nil {
-		t.Error("ValidateToken must fail before Init rather than accept an unsigned token")
+		t.Fatal("validated without a key")
 	}
+}
+
+const testSubject = "142dc1ed-c208-4b90-b985-ab588e32e6e1"
+
+func tokenFixture(t *testing.T) (string, *Claims) {
+	t.Helper()
+	isolate(t)
+	t.Setenv("STATE_DIRECTORY", t.TempDir())
+	if err := Init(""); err != nil {
+		t.Fatal(err)
+	}
+	raw, err := GenerateTokenWithTTL(testSubject, 3, time.Hour)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, err := ValidateToken(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return raw, c
 }
 
 func TestGenerateAndValidateRoundTrip(t *testing.T) {
-	isolate(t)
-
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("Init: %v", err)
+	raw, c := tokenFixture(t)
+	if c.Subject != testSubject || c.Version != 3 || c.ID == "" {
+		t.Fatalf("incorrect claims: %+v", c)
 	}
-
-	token, err := GenerateToken("netrunner")
+	if strings.Contains(raw, "netrunner") {
+		t.Fatal("PII in token")
+	}
+	if c.Issuer != Issuer || len(c.Audience) != 1 || c.Audience[0] != Audience {
+		t.Fatal("missing issuer/audience")
+	}
+	another, err := GenerateTokenWithTTL(testSubject, 3, time.Hour)
 	if err != nil {
-		t.Fatalf("GenerateToken: %v", err)
+		t.Fatal(err)
 	}
-
-	claims, err := ValidateToken(token)
+	c2, err := ValidateToken(another)
 	if err != nil {
-		t.Fatalf("ValidateToken: %v", err)
+		t.Fatal(err)
 	}
-	if claims.Username != "netrunner" {
-		t.Errorf("Username = %q, want %q", claims.Username, "netrunner")
+	if c.ID == c2.ID {
+		t.Fatal("reused session id")
 	}
 }
 
-// A token signed with a different key must not validate; this is what would
-// break silently if the secret were ever allowed to be empty.
+func TestJWTRejectsInvalidClaimsAndHeaders(t *testing.T) {
+	_, base := tokenFixture(t)
+	cases := map[string]func(*Claims, *jwt.Token){
+		"issuer":             func(c *Claims, _ *jwt.Token) { c.Issuer = "other" },
+		"audience":           func(c *Claims, _ *jwt.Token) { c.Audience = jwt.ClaimStrings{"other"} },
+		"missing audience":   func(c *Claims, _ *jwt.Token) { c.Audience = nil },
+		"multiple audiences": func(c *Claims, _ *jwt.Token) { c.Audience = jwt.ClaimStrings{Audience, "other"} },
+		"subject":            func(c *Claims, _ *jwt.Token) { c.Subject = "username" },
+		"session id":         func(c *Claims, _ *jwt.Token) { c.ID = "" },
+		"version":            func(c *Claims, _ *jwt.Token) { c.Version = 0 },
+		"no expiry":          func(c *Claims, _ *jwt.Token) { c.ExpiresAt = nil },
+		"no issued at":       func(c *Claims, _ *jwt.Token) { c.IssuedAt = nil },
+		"no not before":      func(c *Claims, _ *jwt.Token) { c.NotBefore = nil },
+		"future issued at":   func(c *Claims, _ *jwt.Token) { c.IssuedAt = jwt.NewNumericDate(time.Now().Add(time.Hour)) },
+		"future not before":  func(c *Claims, _ *jwt.Token) { c.NotBefore = jwt.NewNumericDate(time.Now().Add(time.Hour)) },
+		"expired":            func(c *Claims, _ *jwt.Token) { c.ExpiresAt = jwt.NewNumericDate(time.Now().Add(-time.Minute)) },
+		"excessive lifetime": func(c *Claims, _ *jwt.Token) {
+			c.ExpiresAt = jwt.NewNumericDate(c.IssuedAt.Add(MaxSessionTTL + time.Hour))
+		},
+		"type":            func(_ *Claims, t *jwt.Token) { t.Header["typ"] = "JWT" },
+		"key URL":         func(_ *Claims, t *jwt.Token) { t.Header["jku"] = "https://attacker.invalid/key" },
+		"critical header": func(_ *Claims, t *jwt.Token) { t.Header["crit"] = []string{"bad"} },
+		"HS384":           func(_ *Claims, t *jwt.Token) { t.Method = jwt.SigningMethodHS384; t.Header["alg"] = "HS384" },
+		"HS512":           func(_ *Claims, t *jwt.Token) { t.Method = jwt.SigningMethodHS512; t.Header["alg"] = "HS512" },
+	}
+	for name, mutate := range cases {
+		t.Run(name, func(t *testing.T) {
+			c := *base
+			token := jwt.NewWithClaims(jwt.SigningMethodHS256, &c)
+			token.Header["typ"] = TokenType
+			mutate(&c, token)
+			raw, err := token.SignedString(jwtSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := ValidateToken(raw); err == nil {
+				t.Fatal("invalid token accepted")
+			}
+		})
+	}
+}
+
 func TestValidateRejectsTokenFromADifferentKey(t *testing.T) {
-	isolate(t)
-
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-	token, err := GenerateToken("netrunner")
-	if err != nil {
-		t.Fatalf("GenerateToken: %v", err)
-	}
-
-	// Re-initialise against a fresh state directory to get a different key.
-	jwtSecret = nil
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("second Init: %v", err)
-	}
-
-	if _, err := ValidateToken(token); err == nil {
-		t.Error("a token signed with the previous key must not validate")
+	raw, _ := tokenFixture(t)
+	jwtSecret = []byte(strings.Repeat("different", 8))
+	if _, err := ValidateToken(raw); err == nil {
+		t.Fatal("wrong key accepted")
 	}
 }
 
-// TestValidateRejectsOtherHmacAlgorithms covers the algorithm pin. Accepting the whole
-// HMAC family is not exploitable with one symmetric key, but the pin is what closes the
-// door before anyone introduces an asymmetric one.
-func TestValidateRejectsOtherHmacAlgorithms(t *testing.T) {
-	isolate(t)
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("Init: %v", err)
+func TestTokenTamperingAndUnsigned(t *testing.T) {
+	raw, c := tokenFixture(t)
+	parts := strings.Split(raw, ".")
+	parts[2] = "AAAA"
+	if _, err := ValidateToken(strings.Join(parts, ".")); err == nil {
+		t.Fatal("tampered signature accepted")
 	}
-
-	for _, method := range []*jwt.SigningMethodHMAC{jwt.SigningMethodHS384, jwt.SigningMethodHS512} {
-		claims := &Claims{
-			Username: "netrunner",
-			RegisteredClaims: jwt.RegisteredClaims{
-				ExpiresAt: jwt.NewNumericDate(time.Now().Add(time.Hour)),
-				IssuedAt:  jwt.NewNumericDate(time.Now()),
-			},
-		}
-		signed, err := jwt.NewWithClaims(method, claims).SignedString(jwtSecret)
-		if err != nil {
-			t.Fatalf("signing with %s: %v", method.Alg(), err)
-		}
-		if _, err := ValidateToken(signed); err == nil {
-			t.Errorf("a token signed with %s was accepted; only HS256 may be", method.Alg())
-		}
-	}
-}
-
-// TestValidateRequiresAnExpiry guards the WithExpirationRequired option. A token with no
-// exp would otherwise validate forever.
-func TestValidateRequiresAnExpiry(t *testing.T) {
-	isolate(t)
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("Init: %v", err)
-	}
-
-	claims := &Claims{Username: "netrunner"} // no ExpiresAt
-	signed, err := jwt.NewWithClaims(jwt.SigningMethodHS256, claims).SignedString(jwtSecret)
+	token := jwt.NewWithClaims(jwt.SigningMethodNone, c)
+	token.Header["typ"] = TokenType
+	unsigned, err := token.SignedString(jwt.UnsafeAllowNoneSignatureType)
 	if err != nil {
-		t.Fatalf("signing: %v", err)
+		t.Fatal(err)
 	}
-	if _, err := ValidateToken(signed); err == nil {
-		t.Error("a token with no expiry was accepted; it would never expire")
+	if _, err := ValidateToken(unsigned); err == nil {
+		t.Fatal("unsigned token accepted")
 	}
 }
 
 func TestGenerateTokenWithTTL(t *testing.T) {
+	tokenFixture(t)
+	for _, ttl := range []time.Duration{-time.Minute, 0, MaxSessionTTL + time.Second} {
+		if _, err := GenerateTokenWithTTL(testSubject, 1, ttl); err == nil {
+			t.Fatalf("accepted TTL %v", ttl)
+		}
+	}
+}
+
+func TestInitRejectsDanglingKeySymlink(t *testing.T) {
 	isolate(t)
-	t.Setenv("STATE_DIRECTORY", t.TempDir())
-	if err := Init(""); err != nil {
-		t.Fatalf("Init: %v", err)
+	path := filepath.Join(t.TempDir(), "jwt.secret")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "missing"), path); err != nil {
+		t.Fatal(err)
 	}
-
-	live, err := GenerateTokenWithTTL("netrunner", time.Hour)
-	if err != nil {
-		t.Fatalf("GenerateTokenWithTTL: %v", err)
-	}
-	if _, err := ValidateToken(live); err != nil {
-		t.Errorf("a token with an hour left was rejected: %v", err)
-	}
-
-	expired, err := GenerateTokenWithTTL("netrunner", -time.Minute)
-	if err != nil {
-		t.Fatalf("GenerateTokenWithTTL: %v", err)
-	}
-	if _, err := ValidateToken(expired); err == nil {
-		t.Error("an expired token was accepted")
+	if err := Init(path); err == nil {
+		t.Fatal("dangling key symlink accepted")
 	}
 }

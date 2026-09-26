@@ -1,0 +1,4 @@
+{{define "content"}}
+<section class="st-panel"><div class="st-panel-h"><h2>Application activity</h2><a class="chroma-button-secondary" href="/settings/admin/logs">Refresh logs</a></div><p class="settings-help">Newest first · UTC · Up to 2,000 entries from this server process since startup. Entries over 16 KiB are truncated. The buffer resets when the server restarts.</p>
+<div class="settings-logs" role="log" aria-label="Server logs">{{range .Logs}}<article class="settings-log"><time>{{.Time.Format "2006-01-02 15:04:05"}} UTC</time><pre>{{.Message}}</pre></article>{{else}}<p class="settings-help">No server activity has been recorded yet.</p>{{end}}</div>
+<nav class="settings-pager" aria-label="Log pages">{{if gt .Page 1}}<a href="?page={{.Previous}}">← Previous</a>{{end}}<span>Page {{.Page}} of {{.Pages}} · {{.Total}} entries</span>{{if lt .Page .Pages}}<a href="?page={{.Next}}">Next →</a>{{end}}</nav></section>{{end}}

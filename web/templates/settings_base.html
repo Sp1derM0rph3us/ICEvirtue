@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · ICEvirtue</title>
+<script>(function(){try{var t=localStorage.getItem('icevirtue-theme');document.documentElement.dataset.theme=t==='light'||t==='dark'?t:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();</script>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/static/css/output.css"><link rel="stylesheet" href="/static/css/theme.css">
+</head><body class="settings-body min-h-screen flex flex-col font-sans">
+
+<nav class="glass-header chroma-topbar sticky top-0 z-50 shrink-0" aria-label="Main navigation">
+    <div class="chroma-nav-layout max-w-7xl mx-auto px-6 flex justify-between items-center">
+        <a class="flex items-center gap-3 settings-brand" href="/" aria-label="ICEvirtue Home">
+            <span class="chroma-brand-mark" aria-hidden="true"></span>
+            <span class="chroma-brand-wrap"><span class="chroma-brand">ICEVIRTUE</span><span class="chroma-brand-sub">Red Team Continuous Monitoring System</span></span>
+        </a>
+        <div class="chroma-nav-actions flex font-sans items-center">
+            <div class="notif-wrap" id="notif-wrap">
+                <button id="notif-bell" class="notif-bell" onclick="toggleNotifPanel(event)" aria-label="Notifications" aria-haspopup="true" aria-expanded="false">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                    <span id="notif-badge" class="notif-badge hidden">0</span>
+                </button>
+                <div id="notif-panel" class="notif-panel hidden" role="dialog" aria-label="Notifications">
+                    <div class="notif-head">
+                        <div><span class="notif-ttl">Notifications</span><span id="notif-count" class="notif-count"></span></div>
+                        {{if .CanWrite}}<button class="notif-clear" onclick="deleteAllNotifs()">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg>
+                            Delete all
+                        </button>{{end}}
+                    </div>
+                    <div id="notif-list" class="notif-list"></div>
+                    <div id="notif-empty" class="notif-empty hidden">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
+                        <p>You're all caught up</p><small>New scan activity will appear here.</small>
+                    </div>
+                    {{if .CanWrite}}<div class="notif-foot"><button id="notif-markread" class="notif-markread" onclick="markAllNotifsRead()">Mark all as read</button></div>{{end}}
+                </div>
+            </div>
+            <a class="chroma-nav-tab tab-inactive" href="/">Home</a>
+            <a class="chroma-nav-tab tab-inactive" href="/?view=profiles">Profiles</a>
+            <a class="chroma-nav-tab tab-inactive" href="/?view=findings">Findings</a>
+            <a class="chroma-nav-tab tab-active" href="/settings" aria-current="page">Settings</a>
+            <div class="chroma-divider h-4 w-px bg-slate-800 mx-2"></div>
+            <button type="button" id="settings-theme" class="chroma-theme-button flex items-center" aria-label="Toggle light and dark theme" title="Toggle light / dark">
+                <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
+                <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
+            </button>
+            <button type="button" id="settings-logout" class="chroma-logout" aria-label="Sign out">Sign out</button>
+        </div>
+    </div>
+</nav>
+
+<main class="settings-main flex-grow">
+    <div class="chroma-page-header">
+        <div>
+            <span class="chroma-eyebrow">Account / administration</span>
+            <h1 class="chroma-page-title">{{.Title}}</h1>
+            <p class="chroma-subtitle">Manage your account, users and server activity.</p>
+        </div>
+        <div class="settings-identity"><span class="settings-user">{{.User.Username}}</span><span class="settings-sep" aria-hidden="true">|</span><span class="settings-role-name">{{if eq .User.Role "admin"}}Administrator{{else if eq .User.Role "operator"}}Operator{{else}}Viewer{{end}}</span></div>
+    </div>
+    {{if .Error}}<p class="settings-message settings-error" role="alert">{{.Error}}</p>{{end}}
+    {{if .Notice}}<p class="settings-message" role="status">{{.Notice}}</p>{{end}}
+    {{template "content" .}}
+</main>
+
+<script>
+document.getElementById('settings-theme').addEventListener('click',function(){var t=document.documentElement.dataset.theme==='dark'?'light':'dark';document.documentElement.dataset.theme=t;try{localStorage.setItem('icevirtue-theme',t)}catch(e){}});
+document.getElementById('settings-logout').addEventListener('click',async function(){try{await fetch('/api/logout',{method:'POST',credentials:'same-origin'})}catch(e){}location.href='/login';});
+window.addEventListener('pageshow',function(e){if(e.persisted)location.reload()});
+
+// ---- Notification bell (matches the dashboard toolbar) ----
+(function(){
+  var STYLE={scan_started:{cls:'ok',icon:'check'},scan_finished:{cls:'ok',icon:'check'},scan_halted:{cls:'crit',icon:'alert'},credentials:{cls:'info',icon:'key'}};
+  var ICONS={check:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>',alert:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>',key:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.5 12.5 7-7M17 3l3 3-3 3"/></svg>'};
+  var items=[],unread=0;
+  function rel(iso){var d=new Date(iso);if(isNaN(d.getTime()))return '';var s=Math.floor((Date.now()-d.getTime())/1000);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return Math.floor(s/86400)+'d ago';}
+  function badge(n){unread=Math.max(0,n);var b=document.getElementById('notif-badge');b.textContent=unread>99?'99+':String(unread);b.classList.toggle('hidden',unread===0);}
+  function render(){var list=document.getElementById('notif-list');list.replaceChildren();document.getElementById('notif-empty').classList.toggle('hidden',items.length>0);var mr=document.getElementById('notif-markread');if(mr)mr.parentElement.classList.toggle('hidden',items.length===0);document.getElementById('notif-count').textContent=unread?unread+' unread':'';
+    items.forEach(function(n){var st=STYLE[n.kind]||{cls:'info',icon:'check'};var row=document.createElement('div');row.className='notif-item'+(n.read?'':' unread');row.setAttribute('role','button');row.tabIndex=0;
+      var ic=document.createElement('div');ic.className='notif-ic '+st.cls;ic.innerHTML=ICONS[st.icon]||ICONS.check;
+      var body=document.createElement('div');body.className='notif-body';var t=document.createElement('div');t.className='notif-title';t.textContent=n.title||'';var sub=document.createElement('div');sub.className='notif-sub';sub.textContent=n.body||n.host||'';var tm=document.createElement('div');tm.className='notif-time';tm.textContent=rel(n.created_at);body.append(t,sub,tm);
+      var x=document.createElement('button');x.className='notif-x';x.setAttribute('aria-label','Dismiss');x.innerHTML='&times;';x.addEventListener('click',function(e){e.stopPropagation();dismiss(n.id);});
+      var act=function(){markRead(n.id);};row.addEventListener('click',act);row.addEventListener('keydown',function(e){if(e.key==='Enter'||e.key===' '){e.preventDefault();act();}});
+      row.append(ic,body,x);list.appendChild(row);});}
+  async function load(){try{var r=await fetch('/api/notifications',{credentials:'same-origin'});if(!r.ok)return;var d=await r.json();items=d.data||[];badge(d.unread||0);render();}catch(e){}}
+  window.toggleNotifPanel=function(ev){if(ev)ev.stopPropagation();var p=document.getElementById('notif-panel');var open=p.classList.contains('hidden');p.classList.toggle('hidden',!open);document.getElementById('notif-bell').setAttribute('aria-expanded',String(open));if(open)load();};
+  async function markRead(id){var n=items.find(function(x){return x.id===id;});if(n&&!n.read){n.read=true;badge(unread-1);render();}try{await fetch('/api/notifications/'+id+'/read',{method:'POST',credentials:'same-origin'});}catch(e){}}
+  window.markAllNotifsRead=async function(){items.forEach(function(n){n.read=true;});badge(0);render();try{await fetch('/api/notifications/read',{method:'POST',credentials:'same-origin'});}catch(e){}};
+  async function dismiss(id){var was=items.some(function(x){return x.id===id&&!x.read;});items=items.filter(function(x){return x.id!==id;});if(was)badge(unread-1);render();try{await fetch('/api/notifications/'+id,{method:'DELETE',credentials:'same-origin'});}catch(e){}}
+  window.deleteAllNotifs=async function(){items=[];badge(0);render();try{await fetch('/api/notifications',{method:'DELETE',credentials:'same-origin'});}catch(e){}};
+  document.addEventListener('click',function(e){var w=document.getElementById('notif-wrap'),p=document.getElementById('notif-panel');if(w&&p&&!p.classList.contains('hidden')&&!w.contains(e.target)){p.classList.add('hidden');document.getElementById('notif-bell').setAttribute('aria-expanded','false');}});
+  load();
+})();
+</script>
+</body></html>

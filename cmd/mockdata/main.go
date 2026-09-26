@@ -37,7 +37,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("hashing demo password: %v", err)
 	}
-	if err := database.DB.Create(&models.User{Username: *username, PasswordHash: string(hash)}).Error; err != nil {
+	if err := database.DB.Create(&models.User{Username: *username, PasswordHash: string(hash), Role: "admin"}).Error; err != nil {
 		log.Fatalf("creating demo user: %v", err)
 	}
 

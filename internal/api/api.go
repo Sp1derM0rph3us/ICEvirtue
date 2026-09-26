@@ -19,6 +19,7 @@ import (
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
 )
 
@@ -57,8 +58,12 @@ type API struct {
 // directly with nothing around them. StartServer used to construct the router and call
 // ListenAndServe in one function, so there was no way to get at the handler.
 func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
-	if cfg.SessionTTL <= 0 {
+	if cfg.SessionTTL == 0 {
 		cfg.SessionTTL = auth.DefaultSessionTTL
+	}
+
+	if cfg.SessionTTL < time.Second || cfg.SessionTTL > auth.MaxSessionTTL {
+		return nil, fmt.Errorf("session TTL must be between one second and seven days")
 	}
 
 	pages, err := newPageStore(cfg)
@@ -80,7 +85,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 	// All root middleware must be registered before any route: chi panics on a Use after
 	// a route has been added to the same mux.
 	r.Use(middleware.RequestID)
-	r.Use(middleware.Logger)
+	r.Use(requestLog)
 	r.Use(middleware.Recoverer)
 	r.Use(middleware.GetHead)
 	r.Use(securityHeaders)
@@ -121,6 +126,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		r.Use(noStore)
 		r.Use(a.requirePageAuth)
 		r.Get("/", a.handleHome)
+		a.settingsRoutes(r)
 	})
 
 	// Authenticated API. 401s rather than redirects, so fetch sees a status instead of an
@@ -128,6 +134,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 	r.Group(func(r chi.Router) {
 		r.Use(noStore)
 		r.Use(a.requireAPIAuth)
+		r.Use(requireWritePermission)
 		r.Use(a.requireSameOrigin)
 		r.Use(requireJSONBody)
 		r.Use(middleware.RequestSize(1 << 20))
@@ -149,6 +156,16 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 				r.Get("/vulnerabilities/severity-summary", getVulnerabilitySeveritySummary)
 				r.Get("/vulnerabilities", getProfileVulnerabilities)
 				r.Get("/directories", getProfileDirectories)
+			})
+		})
+
+		r.Route("/api/notifications", func(r chi.Router) {
+			r.Get("/", getNotifications)
+			r.Delete("/", deleteAllNotifications)
+			r.Post("/read", markAllNotificationsRead)
+			r.Route("/{id}", func(r chi.Router) {
+				r.Post("/read", markNotificationRead)
+				r.Delete("/", deleteNotification)
 			})
 		})
 
@@ -201,12 +218,17 @@ func UserFromContext(ctx interface{ Value(any) any }) (*auth.Claims, bool) {
 //
 // It returns the claims rather than discarding them, so a handler can finally see who is
 // asking. The SSE handler needs the expiry.
-func (a *API) authenticate(r *http.Request) (*auth.Claims, error) {
+func (a *API) authenticate(r *http.Request) (*auth.Claims, *models.User, error) {
 	cookie, err := r.Cookie(cookieName)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return auth.ValidateToken(cookie.Value)
+	c, err := auth.ValidateToken(cookie.Value)
+	if err != nil {
+		return nil, nil, err
+	}
+	u, err := sessionUser(c)
+	return c, u, err
 }
 
 // requirePageAuth guards HTML routes. An unauthenticated browser is sent to the login
@@ -214,16 +236,17 @@ func (a *API) authenticate(r *http.Request) (*auth.Claims, error) {
 // enforceable on the server instead of decided inside one handler.
 func (a *API) requirePageAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, err := a.authenticate(r)
+		claims, user, err := a.authenticate(r)
 		if err != nil {
 			// 302, deliberately not 301 or 308. A permanent redirect is cacheable with no
 			// explicit freshness, so one anonymous visit would poison / -> /login in that
 			// browser until its cache was purged. noStore has already run, so this
 			// response is not stored either.
+			http.SetCookie(w, a.authCookie("", -1))
 			http.Redirect(w, r, "/login", http.StatusFound)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withClaims(r.Context(), claims)))
+		next.ServeHTTP(w, r.WithContext(authenticatedContext(r, claims, user)))
 	})
 }
 
@@ -231,12 +254,13 @@ func (a *API) requirePageAuth(next http.Handler) http.Handler {
 // fetch that follows a redirect to an HTML page cannot tell what went wrong.
 func (a *API) requireAPIAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		claims, err := a.authenticate(r)
+		claims, user, err := a.authenticate(r)
 		if err != nil {
+			http.SetCookie(w, a.authCookie("", -1))
 			http.Error(w, "Unauthorized", http.StatusUnauthorized)
 			return
 		}
-		next.ServeHTTP(w, r.WithContext(withClaims(r.Context(), claims)))
+		next.ServeHTTP(w, r.WithContext(authenticatedContext(r, claims, user)))
 	})
 }
 
@@ -253,8 +277,9 @@ type pageStore struct {
 }
 
 type pageSet struct {
-	login *template.Template
-	home  *template.Template
+	login    *template.Template
+	home     *template.Template
+	settings map[string]*template.Template
 }
 
 func newPageStore(cfg Config) (*pageStore, error) {
@@ -268,9 +293,7 @@ func newPageStore(cfg Config) (*pageStore, error) {
 }
 
 func parsePages(fsys fs.FS) (*pageSet, error) {
-	// html/template, never text/template: the two have identical APIs, the import differs
-	// by five characters, and text/template performs no escaping at all. Nothing is
-	// injected into these pages today, so this is insurance against the day something is.
+	// html/template escapes all server-provided values in their output context.
 	login, err := template.New("login.html").ParseFS(fsys, "login.html")
 	if err != nil {
 		return nil, fmt.Errorf("parsing the login page: %w", err)
@@ -279,7 +302,11 @@ func parsePages(fsys fs.FS) (*pageSet, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parsing the dashboard page: %w", err)
 	}
-	return &pageSet{login: login, home: home}, nil
+	settings, err := parseSettingsPages(fsys)
+	if err != nil {
+		return nil, err
+	}
+	return &pageSet{login: login, home: home, settings: settings}, nil
 }
 
 // get returns the pages, re-parsing them first in development.
@@ -306,11 +333,11 @@ func (a *API) handleHome(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	a.renderPage(w, pages.home)
+	a.renderData(w, pages.home, homeData(currentUser(r)))
 }
 
 func (a *API) handleLoginPage(w http.ResponseWriter, r *http.Request) {
-	if _, err := a.authenticate(r); err == nil {
+	if _, _, err := a.authenticate(r); err == nil {
 		http.Redirect(w, r, "/", http.StatusFound)
 		return
 	}
@@ -329,23 +356,27 @@ func (a *API) handleLoginPage(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal server error", http.StatusInternalServerError)
 		return
 	}
-	a.renderPage(w, pages.login)
+	notice := ""
+	switch r.URL.Query().Get("reason") {
+	case "account-updated":
+		notice = "Your account was updated. Sign in again with your current credentials."
+	case "session-ended":
+		notice = "Your session ended or your account changed. Sign in again to continue."
+	}
+	a.renderData(w, pages.login, pageData{Notice: notice})
 }
 
-// renderPage buffers the page before writing it.
+// renderData buffers the page before writing it.
 //
 // Executing straight into the ResponseWriter meant a failure halfway through had already
 // sent a 200 and a partial body, so the http.Error that followed appended its message
 // into the middle of the HTML. Buffering makes the response all-or-nothing.
 //
-// Nothing is injected: both templates contain zero actions and the client reads its own
-// state from the query string. Keeping it at zero is deliberate — server-side injection
-// would bypass the esc() and safeURL() helpers the pages rely on. If a bootstrap payload
-// ever becomes necessary, the pattern is a data- attribute holding json.Marshal output,
-// never a value interpolated into a script block.
-func (a *API) renderPage(w http.ResponseWriter, tmpl *template.Template) {
+// html/template escapes account fields and log text in the server-rendered pages.
+// Privileged account forms are loaded only after authentication and authorization.
+func (a *API) renderData(w http.ResponseWriter, tmpl *template.Template, data interface{}) {
 	var buf bytes.Buffer
-	if err := tmpl.Execute(&buf, nil); err != nil {
+	if err := tmpl.Execute(&buf, data); err != nil {
 		// The caller gets a status and nothing else. The old handler put err.Error() in
 		// the body, which told an unauthenticated visitor the absolute path of the
 		// template directory.
@@ -423,12 +454,8 @@ func (a *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, ": keep-alive\n\n")
 	flusher.Flush()
 
-	// A stream opened one second before the token expired used to keep running for as
-	// long as the client stayed connected, so authorisation outlived the credential that
-	// granted it — and logout did not close it either. The expiry is already in the
-	// claims, so one timer is enough: no polling, and it fires at exactly the right
-	// moment. A periodic re-check would only be worth adding alongside revocation, which
-	// is the only thing that can change before exp.
+	// Enforce expiry and revalidate account/session state while the stream is idle
+	// and before each data event. A revoked session must stop receiving findings.
 	expiry := time.NewTimer(time.Until(claims.ExpiresAt.Time))
 	defer expiry.Stop()
 
@@ -437,6 +464,16 @@ func (a *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 	heartbeat := time.NewTicker(30 * time.Second)
 	defer heartbeat.Stop()
 
+	recheck := time.NewTicker(2 * time.Second)
+	defer recheck.Stop()
+	revoked := func() bool {
+		if _, err := sessionUser(claims); err != nil {
+			fmt.Fprint(w, "data: {\"type\":\"session_revoked\"}\n\n")
+			flusher.Flush()
+			return true
+		}
+		return false
+	}
 	ctx := r.Context()
 	for {
 		select {
@@ -446,10 +483,17 @@ func (a *API) handleEvents(w http.ResponseWriter, r *http.Request) {
 			// Ending the response is the only signal available: SSE has no way to send a
 			// status once the stream has started.
 			return
+		case <-recheck.C:
+			if revoked() {
+				return
+			}
 		case <-heartbeat.C:
 			fmt.Fprintf(w, ": keep-alive\n\n")
 			flusher.Flush()
 		case e := <-clientChan:
+			if revoked() {
+				return
+			}
 			msg, err := json.Marshal(e)
 			if err == nil {
 				fmt.Fprintf(w, "data: %s\n\n", msg)

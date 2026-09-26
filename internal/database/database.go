@@ -1,6 +1,7 @@
 package database
 
 import (
+	"github.com/google/uuid"
 	"log"
 	"os"
 	"path/filepath"
@@ -23,16 +24,17 @@ func InitDatabase(dbPath string) error {
 	}
 
 	newLogger := logger.New(
-		log.New(os.Stdout, "\r\n", log.LstdFlags),
+		log.New(log.Writer(), "\r\n", log.LstdFlags),
 		logger.Config{
-			LogLevel:                  logger.Error, 
-			IgnoreRecordNotFoundError: true,         
-			Colorful:                  true,        
+			LogLevel:                  logger.Error,
+			IgnoreRecordNotFoundError: true,
+			Colorful:                  true,
+			ParameterizedQueries:      true,
 		},
 	)
 
 	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
-		Logger: newLogger,
+		Logger:  newLogger,
 		NowFunc: func() time.Time { return time.Now().UTC() },
 		// Translate driver errors into gorm's own sentinels, so a unique-index violation
 		// can be recognised with errors.Is rather than by matching a message string. It
@@ -60,6 +62,8 @@ func InitDatabase(dbPath string) error {
 	err = db.AutoMigrate(
 		&models.SchemaMigration{},
 		&models.User{},
+		&models.Session{},
+		&models.Notification{},
 		&models.Profile{},
 		&models.Subdomain{},
 		&models.AliveHost{},
@@ -68,6 +72,38 @@ func InitDatabase(dbPath string) error {
 		&models.DirectoryFinding{},
 	)
 	if err != nil {
+		return err
+	}
+
+	// Legacy accounts were provisioned as administrators by ICEvirtue-admin.
+	// New accounts default to viewer in BeforeCreate; only pre-role rows are upgraded.
+	if err := db.Transaction(func(tx *gorm.DB) error {
+		const version = "2026_09_account_roles_sessions_v1"
+		var applied int64
+		if err := tx.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&applied).Error; err != nil {
+			return err
+		}
+		if applied > 0 {
+			return nil
+		}
+		var users []models.User
+		if err := tx.Unscoped().Where("public_id IS NULL OR public_id = '' OR role = ''").Find(&users).Error; err != nil {
+			return err
+		}
+		for _, u := range users {
+			updates := map[string]interface{}{}
+			if u.PublicID == "" {
+				updates["public_id"] = uuid.NewString()
+			}
+			if u.Role == "" {
+				updates["role"] = "admin"
+			}
+			if err := tx.Unscoped().Model(&u).Updates(updates).Error; err != nil {
+				return err
+			}
+		}
+		return tx.Create(&models.SchemaMigration{Version: version}).Error
+	}); err != nil {
 		return err
 	}
 
