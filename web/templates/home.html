@@ -23,7 +23,7 @@
     <title>ICEvirtue Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Chakra+Petch:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700&family=Barlow:wght@400;500;600;700;900&family=Chakra+Petch:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="/static/css/output.css">
     <link rel="stylesheet" href="/static/css/theme.css">
 </head>
@@ -1195,8 +1195,8 @@
             const lastRunClass = halted ? "text-rose-500/80" : "text-slate-500";
 
             tr.innerHTML = `
-                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tighter"><span title="${id}" aria-label="Profile ID ${id}">${shortID}</span></td>
-                <td class="p-5 font-mono font-bold text-slate-200 text-base tracking-tighter">${domain}</td>
+                <td class="p-5 text-slate-700 font-mono font-bold text-xs uppercase tracking-tight"><span title="${id}" aria-label="Profile ID ${id}">${shortID}</span></td>
+                <td class="p-5 font-mono font-bold text-slate-200 text-sm tracking-tight">${domain}</td>
                 <td class="p-5 text-slate-500">
                     <div class="chroma-profile-schedule">
                     <span id="schedule-text-${id}" data-schedule="${schedule}" title="Stored schedule: ${schedule}" class="chroma-schedule-label">${scheduleText}</span>
@@ -1692,8 +1692,8 @@
             // A node can only be opened when it has a correlation key. Without one there
             // are no findings to scope to it, so the link would open an empty view.
             const nameCell = s.host
-                ? `<button data-action="open-node" data-domain="${esc(s.host)}" data-label="${domain}" class="hover:text-white transition-colors text-left uppercase tracking-tighter">${domain}</button>`
-                : `<span class="uppercase tracking-tighter opacity-40" title="No usable host, so no findings can be attributed to it">${domain}</span>`;
+                ? `<button data-action="open-node" data-domain="${esc(s.host)}" data-label="${domain}" class="hover:text-white transition-colors text-left uppercase tracking-tight">${domain}</button>`
+                : `<span class="uppercase tracking-tight opacity-40" title="No usable host, so no findings can be attributed to it">${domain}</span>`;
 
             const tr = document.createElement('tr');
             tr.className = 'hover:bg-accent/[0.04] transition-colors group';

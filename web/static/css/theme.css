@@ -727,3 +727,17 @@ body.chroma-login-page { display: flex; justify-content: center; align-items: ce
 #pager button,
 #profiles-pager button,
 .chroma-profile-pager-actions button { font-family: var(--font-display); }
+
+/* Chakra Petch tops out at 700; these labels were authored at 800, which the
+ * browser would synthesize. Cap them at a real weight so nothing is faked. */
+.chroma-eyebrow, .chroma-field-label, .chroma-section-title,
+.chroma-panel-heading h2, .chroma-table th { font-weight: 700; }
+
+/* Page titles use Sora at semibold — a balanced bold that reads confident
+ * without the heaviness of Barlow's 700+ used before. */
+:root { --font-title: "Sora", var(--font-sans); }
+.chroma-page-title { font-family: var(--font-title); font-weight: 600; letter-spacing: -.02em; }
+
+/* Data / identifier monospace: JetBrains Mono reads cleaner than IBM Plex Mono
+ * for hostnames and figures, and fits the terminal/console identity better. */
+:root { --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; }
