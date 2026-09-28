@@ -251,10 +251,9 @@ ICEvirtue-admin create --username 'netrunner' --password 'super-secret-password'
 |---|---|---|
 | `--username` | *(required)* | Username for the new dashboard account. |
 | `--password` | *(required)* | Password of 12–72 bytes. Stored as a bcrypt hash, never in plain text. |
-| `--role` | `admin` | Account role: `viewer`, `operator`, or `admin`. |
 | `--db-path` | `./icevirtue.db` | Database to write the account into. Created and migrated if it does not exist. |
 
-Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. Use Settings → Admin dashboard → Users to manage existing accounts. The CLI remains available for initial provisioning and recovery. It creates an Admin by default; pass `--role viewer` or `--role operator` to provision a different role.
+Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. The CLI creates an Admin account for initial provisioning and recovery. Use Settings → Admin dashboard → Users to create Viewer or Operator accounts and manage existing accounts.
 
 ## Running As A systemd Service
 
@@ -355,7 +354,7 @@ role. There is no per-profile ownership restriction in this version.
 
 Existing accounts migrate once to Admin because the former provisioning command
 created administrators. New accounts default to Viewer in the model and admin form;
-the bootstrap CLI explicitly defaults to Admin. The demo fixture is an Admin.
+the bootstrap CLI creates Admin accounts. The demo fixture is an Admin.
 
 JWTs contain only an opaque account UUID, a random session ID, account version,
 issuer, audience and issue/not-before/expiry timestamps. The server pins HS256 and

@@ -7,11 +7,11 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
-
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"gorm.io/gorm"
 )
 
 func main() {
@@ -23,7 +23,6 @@ func main() {
 	userCmd := flag.NewFlagSet("create", flag.ExitOnError)
 	username := userCmd.String("username", "", "Username for the admin")
 	password := userCmd.String("password", "", "Password for the admin")
-	role := userCmd.String("role", access.Admin, "Account role: viewer, operator, admin (default admin)")
 	dbPathFlag := userCmd.String("db-path", "", "Path to the database file")
 
 	switch os.Args[1] {
@@ -50,32 +49,32 @@ func main() {
 			log.Fatalf("[-] Failed to initialize database: %v", err)
 		}
 
-		if !access.ValidRole(*role) {
-			log.Fatal("invalid role")
-		}
-		if err := accounts.ValidateUsername(*username); err != nil {
-			log.Fatal(err)
-		}
-		hash, err := accounts.HashPassword(*password)
-		if err != nil {
-			log.Fatalf("[-] Failed to hash password: %v", err)
+		if err := createAdmin(database.DB, *username, *password); err != nil {
+			log.Fatalf("[-] Failed to create admin user: %v", err)
 		}
 
-		user := models.User{
-			Username:     *username,
-			PasswordHash: hash,
-			Role:         *role,
-		}
-
-		result := database.DB.Create(&user)
-		if result.Error != nil {
-			log.Fatalf("[-] Failed to create user (might already exist): %v", result.Error)
-		}
-
-		fmt.Printf("[+] Successfully created %s account: %s\n", *role, *username)
+		fmt.Printf("[+] Successfully created admin account: %s\n", *username)
 
 	default:
 		fmt.Println("Expected 'create' subcommand")
 		os.Exit(1)
 	}
+}
+
+// createAdmin uses the same input rules as the web dashboard. The User model's
+// BeforeCreate hook supplies the opaque public ID and initial auth version used
+// by dashboard sessions.
+func createAdmin(db *gorm.DB, username, password string) error {
+	if err := accounts.ValidateUsername(username); err != nil {
+		return err
+	}
+	hash, err := accounts.HashPassword(password)
+	if err != nil {
+		return err
+	}
+	return db.Create(&models.User{
+		Username:     username,
+		PasswordHash: hash,
+		Role:         access.Admin,
+	}).Error
 }
