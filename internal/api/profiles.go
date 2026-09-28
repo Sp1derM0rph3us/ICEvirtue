@@ -14,6 +14,7 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/engine"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/notifications"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
 )
 
@@ -175,6 +176,11 @@ func (a *API) deleteProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// The profile exists and we hold its lock; capture its domain now, while the
+	// row is still there, so the deletion notification can name it.
+	var domain string
+	database.DB.Model(&models.Profile{}).Where("id = ?", id).Select("domain").Scan(&domain)
+
 	// From here the lock is held. Anything that goes wrong below has to give it back, or
 	// the profile is stuck refusing both scans and deletes forever. This runs outside the
 	// transaction on purpose: inside, a rollback would undo the release too.
@@ -215,6 +221,18 @@ func (a *API) deleteProfile(w http.ResponseWriter, r *http.Request) {
 
 	// After the commit, never inside it: Sync reads the database.
 	a.syncScheduler("after deleting " + id.String())
+
+	// Record the deletion through the notification system: one persistent per-user
+	// row for the bell, plus a live "notification" event that raises a toast on
+	// every connected operator. This is the in-app replacement for the dashboard's
+	// old browser confirm()/alert() dialogs. profileID is nil because the profile no
+	// longer exists to click through to.
+	deletedLabel := domain
+	if deletedLabel == "" {
+		deletedLabel = "The profile"
+	}
+	notifications.Create(notifications.ProfileDeleted, "Profile deleted",
+		deletedLabel+" and its findings were removed", domain, nil)
 
 	events.Broadcast("profile_update", id.String(), nil)
 	w.WriteHeader(http.StatusNoContent)

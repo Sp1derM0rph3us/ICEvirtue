@@ -2,7 +2,6 @@ package engine
 
 import (
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 )
@@ -122,7 +121,7 @@ func (s *stageReport) Log() {
 		prefix = "[-]"
 	}
 
-	log.Printf("%s [Target: %s] %s: %d unique result(s) from %d of %d tool(s)",
+	logf("%s [Target: %s] %s: %d unique result(s) from %d of %d tool(s)",
 		prefix, s.Target, s.Stage, s.Unique, s.productive(), s.attempted())
 
 	width := 0
@@ -135,13 +134,13 @@ func (s *stageReport) Log() {
 	for _, r := range s.runs {
 		switch {
 		case r.skipped():
-			log.Printf("      %-*s  skipped        %s", width, r.Tool, r.SkipReason)
+			logf("      %-*s  skipped        %s", width, r.Tool, r.SkipReason)
 		case r.Err != nil && r.Count > 0:
-			log.Printf("      %-*s  PARTIAL   %5d  %v", width, r.Tool, r.Count, r.Err)
+			logf("      %-*s  PARTIAL   %5d  %v", width, r.Tool, r.Count, r.Err)
 		case r.Err != nil:
-			log.Printf("      %-*s  FAILED    %5d  %v", width, r.Tool, r.Count, r.Err)
+			logf("      %-*s  FAILED    %5d  %v", width, r.Tool, r.Count, r.Err)
 		default:
-			log.Printf("      %-*s  ok        %5d", width, r.Tool, r.Count)
+			logf("      %-*s  ok        %5d", width, r.Tool, r.Count)
 		}
 	}
 }

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -105,15 +104,15 @@ func resolveToolHome() string {
 		// Warn about anything we had to skip, so a production box that quietly
 		// fell back to a temp directory does not look like a healthy one.
 		for _, r := range rejected {
-			log.Printf("[-] Unusable tool config home, falling back: %s", r)
+			logf("[-] Unusable tool config home, falling back: %s", r)
 		}
 
 		if resolvedToolHome == "" {
-			log.Printf("[-] No writable tool config home found. External tools will fail; pass --tool-home to point at a writable directory.")
+			logf("[-] No writable tool config home found. External tools will fail; pass --tool-home to point at a writable directory.")
 			return
 		}
 
-		log.Printf("[+] Tool config home: %s", resolvedToolHome)
+		logf("[+] Tool config home: %s", resolvedToolHome)
 	})
 	return resolvedToolHome
 }
@@ -293,7 +292,7 @@ func (o *toolOutput) Write(p []byte) (int, error) {
 func (o *toolOutput) Close() error {
 	err := errors.Join(o.File.Close(), os.Remove(o.Name()))
 	if err != nil {
-		log.Printf("[-] Cleaning up tool output: %v", err)
+		logf("[-] Cleaning up tool output: %v", err)
 	}
 	return err
 }
@@ -395,20 +394,20 @@ func PreflightTools() {
 		present = append(present, fmt.Sprintf("%s (%s)", t.name, path))
 	}
 
-	log.Printf("[+] Preflight: %d/%d required tools resolved", len(present), len(present)+len(doubtful)+len(missing))
+	logf("[+] Preflight: %d/%d required tools resolved", len(present), len(present)+len(doubtful)+len(missing))
 	for _, p := range present {
-		log.Printf("      %s", p)
+		logf("      %s", p)
 	}
 	if len(skipped) > 0 {
-		log.Printf("[*] Preflight: not required with the current flags: %s", strings.Join(skipped, ", "))
+		logf("[*] Preflight: not required with the current flags: %s", strings.Join(skipped, ", "))
 	}
 	if len(doubtful) > 0 {
-		log.Printf("[-] Preflight: resolved but NOT VERIFIED as the expected program: %s", strings.Join(doubtful, ", "))
-		log.Printf("[-] Preflight: see the warning above each; pin the right binary with --tool-paths name=/path")
+		logf("[-] Preflight: resolved but NOT VERIFIED as the expected program: %s", strings.Join(doubtful, ", "))
+		logf("[-] Preflight: see the warning above each; pin the right binary with --tool-paths name=/path")
 	}
 	if len(missing) > 0 {
-		log.Printf("[-] Preflight: MISSING: %s", strings.Join(missing, ", "))
-		log.Printf("[-] Preflight: the stages using those tools will fail. PATH=%s", os.Getenv("PATH"))
+		logf("[-] Preflight: MISSING: %s", strings.Join(missing, ", "))
+		logf("[-] Preflight: the stages using those tools will fail. PATH=%s", os.Getenv("PATH"))
 	}
 }
 

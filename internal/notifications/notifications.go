@@ -13,13 +13,16 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
-// The four notification kinds the product raises today. They are also sent to
-// the client as the event's `kind`, which selects the toast styling and icon.
+// The notification kinds the product raises today. They are also sent to the
+// client as the event's `kind`, which selects the toast styling and icon. A
+// kind the client does not recognise falls back to a neutral info/check style,
+// so a new kind here needs no client change to render.
 const (
-	ScanStarted  = "scan_started"
-	ScanFinished = "scan_finished"
-	ScanHalted   = "scan_halted"
-	Credentials  = "credentials"
+	ScanStarted    = "scan_started"
+	ScanFinished   = "scan_finished"
+	ScanHalted     = "scan_halted"
+	Credentials    = "credentials"
+	ProfileDeleted = "profile_deleted"
 )
 
 // perUserCap bounds how many notifications one user retains. Every scan fans a

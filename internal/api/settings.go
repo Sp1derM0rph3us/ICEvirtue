@@ -24,7 +24,7 @@ import (
 )
 
 type pageData struct {
-	Title, Error, Notice, CSRF  string
+	Title, Subtitle, BackURL, BackLabel, Error, Notice, CSRF string
 	User                        *models.User
 	Target                      models.User
 	CanWrite, IsAdmin, Creating bool
@@ -110,6 +110,17 @@ func (a *API) requireForm(next http.Handler) http.Handler {
 func (a *API) settingsRender(w http.ResponseWriter, r *http.Request, name, title string, d pageData) {
 	d.User = currentUser(r)
 	d.Title = title
+	// Each settings page carries its own subtitle. A handler may set one on the
+	// pageData it passes; otherwise it is derived from the page name here, so every
+	// call site of a shared page gets the right line without repeating it.
+	if d.Subtitle == "" {
+		d.Subtitle = settingsSubtitle(name)
+	}
+	// A return control on every settings page, pointing one level up the menu, so
+	// the section is navigable without the browser back button.
+	if d.BackURL == "" {
+		d.BackURL, d.BackLabel = settingsBack(name)
+	}
 	d.CanWrite = access.Allows(d.User.Role, access.Write)
 	d.IsAdmin = access.Allows(d.User.Role, access.ManageUsers)
 	c, _ := UserFromContext(r.Context())
@@ -121,6 +132,43 @@ func (a *API) settingsRender(w http.ResponseWriter, r *http.Request, name, title
 		return
 	}
 	a.renderData(w, pages.settings[name], d)
+}
+
+// settingsSubtitle returns the subtitle shown under each settings page title.
+// Only the base Settings page keeps the broad summary; every other page names
+// its own scope.
+func settingsSubtitle(name string) string {
+	switch name {
+	case "user_settings":
+		return "Manage your information."
+	case "admin":
+		return "Manage users and application configurations."
+	case "admin_users":
+		return "Create accounts, assign roles and revoke access."
+	case "admin_user":
+		return "Create and edit accounts, roles and credentials."
+	case "admin_logs":
+		return "Pre-flight and scans pipeline logging."
+	default: // the base settings page
+		return "Manage your account, users and server activity."
+	}
+}
+
+// settingsBack returns the URL and label for a page's return control, pointing
+// one level up the settings menu. The base page returns to the dashboard.
+func settingsBack(name string) (url, label string) {
+	switch name {
+	case "user_settings", "admin":
+		return "/settings", "Back to settings"
+	case "admin_users":
+		return "/settings/admin", "Back to admin dashboard"
+	case "admin_user":
+		return "/settings/admin/users", "Back to users"
+	case "admin_logs":
+		return "/settings/admin", "Back to admin dashboard"
+	default: // the base settings page
+		return "/", "Back to dashboard"
+	}
 }
 
 func (a *API) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -308,7 +356,9 @@ func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) logsPage(w http.ResponseWriter, r *http.Request) {
-	logs := serverlogs.Default.Snapshot()
+	// Scans, not Default: this page shows reconnaissance-engine activity only, not
+	// the full process log (HTTP requests, auth, account changes, template errors).
+	logs := serverlogs.Scans.Snapshot()
 	d := pageData{Total: int64(len(logs))}
 	d.Page, d.Pages = pageNumber(r, d.Total, 100)
 	d.Previous = d.Page - 1

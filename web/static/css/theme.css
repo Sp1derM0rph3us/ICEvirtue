@@ -741,3 +741,45 @@ body.chroma-login-page { display: flex; justify-content: center; align-items: ce
 /* Data / identifier monospace: JetBrains Mono reads cleaner than IBM Plex Mono
  * for hostnames and figures, and fits the terminal/console identity better. */
 :root { --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, monospace; }
+
+/* =====================================================================
+ * Home overview placeholder panels — no-profiles, loading and error.
+ * These share the Home slot and used to be bare chroma-surface cards with
+ * loosely stacked Tailwind-utility text, which read as an unaligned box on
+ * first boot. They now take the same instrument-panel treatment as the rest
+ * of Home: centred content, corner brackets, a display-face heading and a
+ * mono support line, so an empty dashboard still looks like the console.
+ * ===================================================================== */
+.st-empty { display: flex; flex-direction: column; align-items: center; justify-content: center;
+  text-align: center; gap: 14px; padding: 52px 24px; }
+.st-empty h2 { margin: 0; font-family: var(--font-display); font-size: .95rem; font-weight: 600;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--ui-ink); }
+.st-empty p { margin: 0; max-width: 42ch; font-family: var(--font-mono); font-size: .78rem;
+  line-height: 1.55; color: var(--ui-muted); }
+.st-empty .chroma-button, .st-empty .chroma-button-secondary { margin-top: 4px; }
+.st-empty-mark { display: inline-flex; align-items: center; justify-content: center; color: var(--ui-rose); }
+.st-empty-mark svg { width: 30px; height: 30px; }
+.st-empty-mark--error { color: var(--ui-coral); }
+#home-error-text { color: var(--ui-coral); }
+.st-empty-spin { width: 30px; height: 30px; border-radius: 50%; border: 2px solid var(--ui-line);
+  border-top-color: var(--ui-rose); animation: st-spin .8s linear infinite; }
+@keyframes st-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .st-empty-spin { animation: none; } }
+
+/* =====================================================================
+ * Settings panel header + logs list corrections.
+ * Center the title and its action button on one row (they were baseline-
+ * aligned, so a text heading and a taller button read as vertically off),
+ * and drop the first log row's top border so the panel header's own bottom
+ * border is the single rule between the header and the log stream — the two
+ * used to stack as a double line once the help paragraph was removed.
+ * ===================================================================== */
+.settings-main .st-panel-h { align-items: center; }
+.settings-logs .settings-log:first-child { border-top: 0; }
+
+/* Return control shown at the top of every settings page, one level up the menu.
+ * Styled as a secondary button with a leading back-arrow, matching the node
+ * sub-dashboard's "Back to nodes" control. */
+.settings-back { display: inline-flex; align-items: center; gap: .5rem; width: fit-content; margin-bottom: 1.1rem; font-size: .78rem; text-decoration: none; }
+.settings-back:hover { text-decoration: none; }
+.settings-back svg { width: 1rem; height: 1rem; flex: none; }

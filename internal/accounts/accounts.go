@@ -30,8 +30,11 @@ func ValidateUsername(username string) error {
 }
 
 func HashPassword(password string) (string, error) {
-	if len(password) < 12 || len(password) > 72 {
-		return "", ValidationError("password must contain 12–72 bytes")
+	// Minimum is a placeholder pending a fuller password policy. The 72-byte
+	// maximum is bcrypt's hard limit, not policy: golang.org/x/crypto/bcrypt
+	// rejects anything longer, so the cap stays to keep a clear message.
+	if len(password) < 8 || len(password) > 72 {
+		return "", ValidationError("password must contain 8–72 bytes")
 	}
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hash), err

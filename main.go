@@ -53,6 +53,7 @@ func main() {
 	var secureCookies bool
 	var sessionTTL time.Duration
 	var trustedOrigins originList
+	var reloadTemplates bool
 	flag.IntVar(&apiPort, "api-port", 8888, "Port for the web dashboard to listen on")
 	flag.StringVar(&dbPath, "db-path", "icevirtue.db", "Path to the database file (must match the path used by ICEvirtue-admin)")
 	flag.StringVar(&jwtSecretPath, "jwt-secret", "", "Path to the JWT signing key (default /var/lib/icevirtue/jwt.secret, falling back to $XDG_STATE_HOME/icevirtue)")
@@ -63,6 +64,8 @@ func main() {
 	flag.DurationVar(&wafProcessTimeout, "waf-process-timeout", engine.DefaultWAFProcessTimeout, "Maximum wall-clock time for each wafw00f process (default 30s)")
 	flag.Var(&trustedOrigins, "trusted-origin",
 		"An Origin to accept on state-changing requests in addition to the request's own host. Repeatable. Needed when a reverse proxy rewrites Host, because otherwise every write is refused with 403.")
+	flag.BoolVar(&reloadTemplates, "reload-templates", false,
+		"Re-read the HTML templates from disk on every request so template edits appear on refresh without a restart. Development only; leave off in production.")
 	flag.Parse()
 	if sessionTTL < time.Second || sessionTTL > auth.MaxSessionTTL {
 		log.Fatal("[-] Session TTL must be between one second and seven days")
@@ -103,11 +106,12 @@ func main() {
 		// Templates live outside the tree served under /static. Serving the whole web
 		// folder meant GET /static/template.html handed the entire authenticated
 		// dashboard to anyone, and GET /static/ listed the directory.
-		Templates:      api.DirFS(filepath.Join(webDir, "templates")),
-		Static:         api.DirFS(filepath.Join(webDir, "static")),
-		SecureCookies:  secureCookies,
-		TrustedOrigins: trustedOrigins,
-		SessionTTL:     sessionTTL,
+		Templates:       api.DirFS(filepath.Join(webDir, "templates")),
+		Static:          api.DirFS(filepath.Join(webDir, "static")),
+		SecureCookies:   secureCookies,
+		TrustedOrigins:  trustedOrigins,
+		SessionTTL:      sessionTTL,
+		ReloadTemplates: reloadTemplates,
 	}
 
 	// Surface a bind failure or a broken template as a normal fatal, rather than as a

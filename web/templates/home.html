@@ -102,15 +102,27 @@
                 </div>
             </div>
 
-            <div id="home-empty" class="chroma-surface hidden px-8 py-12 text-center">
-                <h2 class="text-lg font-bold text-white mb-2">No profiles yet</h2>
-                <p class="text-sm text-slate-500 mb-5">Create a profile to see its reconnaissance overview.</p>
-                <button type="button" onclick="switchView('profiles')" class="chroma-button mt-2">Open Profiles</button>
+            <div id="home-empty" class="st-panel st-empty hidden">
+                <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                <span class="st-empty-mark" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="M21 21l-4.35-4.35"></path></svg>
+                </span>
+                <h2>No profiles yet</h2>
+                <p>Register a target domain to begin continuous reconnaissance and populate this surface overview.</p>
+                <button type="button" onclick="switchView('profiles')" class="chroma-button">Open Profiles</button>
             </div>
-            <div id="home-loading" class="chroma-surface hidden px-8 py-10 text-center text-sm" role="status">Loading profile overview…</div>
-            <div id="home-error" class="chroma-surface hidden px-8 py-10 text-center" role="alert">
-                <p id="home-error-text" class="text-rose-500 text-sm mb-4">Could not load the profile overview.</p>
-                <button type="button" onclick="refreshProfiles().then(() => loadHomeOverview())" class="text-accent text-sm font-bold hover:text-white">Retry</button>
+            <div id="home-loading" class="st-panel st-empty hidden" role="status">
+                <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                <span class="st-empty-spin" aria-hidden="true"></span>
+                <p>Loading profile overview…</p>
+            </div>
+            <div id="home-error" class="st-panel st-empty hidden" role="alert">
+                <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
+                <span class="st-empty-mark st-empty-mark--error" aria-hidden="true">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 9v4M12 17h.01"></path><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path></svg>
+                </span>
+                <p id="home-error-text">Could not load the profile overview.</p>
+                <button type="button" onclick="refreshProfiles().then(() => loadHomeOverview())" class="chroma-button-secondary">Retry</button>
             </div>
 
             <div id="home-content" class="hidden">
@@ -1117,8 +1129,9 @@
                 // One refresh rather than three hand-maintained insertions: the table, the
                 // picker and the count all come from the server, so they cannot drift.
                 await refreshProfiles({ revealProfileId: newProfile.ID });
+                showToast({ cls: 'ok', icon: 'check', title: 'Profile added', sub: domain });
             } catch (err) {
-                alert("Failed to add profile: " + err.message);
+                showToast({ cls: 'crit', icon: 'alert', title: 'Profile could not be added', sub: err.message });
             } finally {
                 btn.innerText = originalText;
                 btn.disabled = false;
@@ -1397,8 +1410,12 @@
             loadCurrentView();
         }
 
+        // Deletion is fire-and-confirm-by-notification: the browser confirm()/alert()
+        // dialogs were replaced by the app's own feedback path. Success is announced by
+        // the server's "profile deleted" notification over SSE (toast + bell counter),
+        // exactly as forceScan relies on the engine's "scan started" notification, so
+        // nothing is shown here on success. Only the failure toast is raised locally.
         async function deleteTarget(id, domain) {
-            if (!confirm(`Are you sure you want to delete ${domain}?`)) return;
             try {
                 const res = await api(`/api/profiles/${id}`, { method: 'DELETE' });
                 if (!res.ok) throw new Error(await res.text());
@@ -1413,7 +1430,7 @@
                 }
                 await refreshProfiles();
             } catch (err) {
-                alert("Failed to delete profile: " + err.message);
+                showToast({ cls: 'crit', icon: 'alert', title: 'Profile could not be deleted', sub: err.message });
             }
         }
 
@@ -1485,8 +1502,9 @@
                 const profile = profileRows.find(p => String(p.ID) === String(id));
                 if (profile) profile.Schedule = data.schedule;
                 closeEditModal();
+                showToast({ cls: 'ok', icon: 'check', title: 'Schedule updated', sub: (profile && profile.Domain) ? profile.Domain : scheduleLabel(data.schedule) });
             } catch (err) {
-                alert("Failed to update schedule: " + err.message);
+                showToast({ cls: 'crit', icon: 'alert', title: 'Schedule could not be updated', sub: err.message });
             } finally {
                 btn.innerText = originalText;
                 btn.disabled = false;

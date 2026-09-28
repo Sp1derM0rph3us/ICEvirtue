@@ -51,11 +51,15 @@
 </nav>
 
 <main class="settings-main flex-grow">
+    {{if .BackURL}}<a class="settings-back chroma-button-secondary" href="{{.BackURL}}">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 19l-7-7m0 0l7-7m-7 7h18"></path></svg>
+        {{.BackLabel}}
+    </a>{{end}}
     <div class="chroma-page-header">
         <div>
             <span class="chroma-eyebrow">Account / administration</span>
             <h1 class="chroma-page-title">{{.Title}}</h1>
-            <p class="chroma-subtitle">Manage your account, users and server activity.</p>
+            <p class="chroma-subtitle">{{.Subtitle}}</p>
         </div>
         <div class="settings-identity"><span class="settings-user">{{.User.Username}}</span><span class="settings-sep" aria-hidden="true">|</span><span class="settings-role-name">{{if eq .User.Role "admin"}}Administrator{{else if eq .User.Role "operator"}}Operator{{else}}Viewer{{end}}</span></div>
     </div>

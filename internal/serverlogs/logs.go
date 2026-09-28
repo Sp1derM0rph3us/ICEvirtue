@@ -19,7 +19,17 @@ type Buffer struct {
 	entries []Entry
 }
 
+// Default retains the full process log (everything written through the standard
+// logger: HTTP requests, authentication, account changes, template errors and
+// the rest). It is the terminal mirror.
 var Default = &Buffer{}
+
+// Scans retains only the reconnaissance engine's output — scan starts and
+// completions, per-stage summaries, per-tool success and failure, halts and
+// pipeline totals. The admin "Server logs" page reads this buffer so it shows
+// scan activity rather than the whole process log. The engine feeds it through
+// its own logger (see internal/engine/logging.go).
+var Scans = &Buffer{}
 
 func (b *Buffer) Write(p []byte) (int, error) {
 	message := strings.TrimSpace(string(p))

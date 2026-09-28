@@ -3,7 +3,6 @@ package engine
 import (
 	"errors"
 	"fmt"
-	"log"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -80,7 +79,7 @@ func (r *runStatus) summary() string {
 func OrchestrateScan(profile *models.Profile) {
 	var p models.Profile
 	if err := database.DB.First(&p, profile.ID).Error; err != nil {
-		log.Printf("[-] Profile %s not found in DB before scan", profile.ID)
+		logf("[-] Profile %s not found in DB before scan", profile.ID)
 		return
 	}
 
@@ -100,11 +99,11 @@ func OrchestrateScan(profile *models.Profile) {
 		Where("id = ? AND is_scanning = ?", p.ID, false).
 		Update("is_scanning", true)
 	if claim.Error != nil {
-		log.Printf("[-] Failed to acquire the scan lock for %s: %v", p.Domain, claim.Error)
+		logf("[-] Failed to acquire the scan lock for %s: %v", p.Domain, claim.Error)
 		return
 	}
 	if claim.RowsAffected == 0 {
-		log.Printf("[-] Skipping scan for %s. A scan is already currently running.", p.Domain)
+		logf("[-] Skipping scan for %s. A scan is already currently running.", p.Domain)
 		return
 	}
 
@@ -122,9 +121,9 @@ func OrchestrateScan(profile *models.Profile) {
 		events.Broadcast("profile_update", p.ID.String(), nil)
 	}()
 
-	log.Printf("======================")
-	log.Printf("[+] INITIATING SCAN PIPELINE for Profile: %s", profile.Domain)
-	log.Printf("======================")
+	logf("======================")
+	logf("[+] INITIATING SCAN PIPELINE for Profile: %s", profile.Domain)
+	logf("======================")
 
 	// Stage 01. Halting here means no source produced anything, so there is no
 	// attack surface to enumerate and the target itself is suspect.
@@ -135,7 +134,7 @@ func OrchestrateScan(profile *models.Profile) {
 
 	if len(subdomains) == 0 {
 		status.halt("no subdomains found from any source")
-		log.Printf("[-] [Target: %s] Halting run: every discovery source failed or came back empty. Check the target domain is spelled correctly.", profile.Domain)
+		logf("[-] [Target: %s] Halting run: every discovery source failed or came back empty. Check the target domain is spelled correctly.", profile.Domain)
 		notifications.Create(notifications.ScanHalted, "Scan halted",
 			profile.Domain+" · no subdomains found from any source", "", &p.ID)
 		return
@@ -158,8 +157,8 @@ func OrchestrateScan(profile *models.Profile) {
 
 	if len(hosts) == 0 {
 		status.halt("no host answered HTTP")
-		log.Printf("[-] [Target: %s] Halting run: none of the %d discovered subdomains answered HTTP, so nothing downstream can execute.", profile.Domain, len(subdomains))
-		log.Printf("[+] [Target: %s] Persisted %d subdomain(s), %d new.", profile.Domain, len(subdomains), newSubdomains)
+		logf("[-] [Target: %s] Halting run: none of the %d discovered subdomains answered HTTP, so nothing downstream can execute.", profile.Domain, len(subdomains))
+		logf("[+] [Target: %s] Persisted %d subdomain(s), %d new.", profile.Domain, len(subdomains), newSubdomains)
 		notifications.Create(notifications.ScanHalted, "Scan halted",
 			profile.Domain+" · no host answered HTTP", "", &p.ID)
 		return
@@ -188,15 +187,15 @@ func OrchestrateScan(profile *models.Profile) {
 			fmt.Sprintf("%s · %d new credential(s) in JavaScript", profile.Domain, newSecrets), "", &p.ID)
 	}
 
-	log.Printf("======================")
-	log.Printf("[+] PIPELINE COMPLETE for %s", profile.Domain)
-	log.Printf("[+] New Subdomains: %d", newSubdomains)
-	log.Printf("[+] New Alive Hosts: %d", newHosts)
-	log.Printf("[+] Changed WAF Observations: %d", changedWAFs)
-	log.Printf("[+] New Directories: %d", newDirs)
-	log.Printf("[+] New Vulnerabilities: %d", newVulns)
-	log.Printf("[+] New Secrets Found: %d", newSecrets)
-	log.Printf("======================\n")
+	logf("======================")
+	logf("[+] PIPELINE COMPLETE for %s", profile.Domain)
+	logf("[+] New Subdomains: %d", newSubdomains)
+	logf("[+] New Alive Hosts: %d", newHosts)
+	logf("[+] Changed WAF Observations: %d", changedWAFs)
+	logf("[+] New Directories: %d", newDirs)
+	logf("[+] New Vulnerabilities: %d", newVulns)
+	logf("[+] New Secrets Found: %d", newSecrets)
+	logf("======================\n")
 
 	newFindings := newSubdomains + newHosts + newVulns + newDirs + newSecrets
 	notifications.Create(notifications.ScanFinished, "Scan finished",
@@ -339,7 +338,7 @@ func targetHosts(profile *models.Profile, hosts []models.AliveHost) []models.Ali
 	if WideTargets {
 		policy = "wide (any status except 404)"
 	}
-	log.Printf("[*] [Target: %s] Target filter %s selected %d of %d alive host(s)",
+	logf("[*] [Target: %s] Target filter %s selected %d of %d alive host(s)",
 		profile.Domain, policy, len(targets), len(hosts))
 
 	return targets
@@ -423,7 +422,7 @@ func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
 
 		if result.Error != nil {
 			if Verbose {
-				log.Printf("[VERBOSE] [+] NEW Subdomain: %s", sub)
+				logf("[VERBOSE] [+] NEW Subdomain: %s", sub)
 			}
 			database.DB.Create(&models.Subdomain{
 				ProfileID: *profileID,
@@ -433,7 +432,7 @@ func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
 			newCount++
 		} else {
 			if Verbose {
-				log.Printf("[VERBOSE] [*] Old Subdomain: %s", sub)
+				logf("[VERBOSE] [*] Old Subdomain: %s", sub)
 			}
 			// host is written here as well as by the BeforeSave hook, because hooks do
 			// not fire for an Update. This is the second of three mechanisms that keep
@@ -457,14 +456,14 @@ func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
 
 		if result.Error != nil {
 			if Verbose {
-				log.Printf("[VERBOSE] [+] NEW Alive Host: %s (IP: %s | Title: %s)", h.URL, h.IP, h.Title)
+				logf("[VERBOSE] [+] NEW Alive Host: %s (IP: %s | Title: %s)", h.URL, h.IP, h.Title)
 			}
 			database.DB.Create(&h)
 			touchAsset(profileID, hostkey.NormalizeOrNil(h.URL))
 			newCount++
 		} else {
 			if Verbose {
-				log.Printf("[VERBOSE] [*] Old Alive Host: %s", h.URL)
+				logf("[VERBOSE] [*] Old Alive Host: %s", h.URL)
 			}
 			// One statement instead of up to three. Every column that can change on a
 			// re-sighting goes in the same update, which matters more than it looks:
@@ -505,7 +504,7 @@ func diffWAFs(profileID *uuid.UUID, observations []wafObservation) int {
 		var existing models.AliveHost
 		if err := database.DB.Where("profile_id = ? AND url = ?", *profileID, observation.URL).
 			First(&existing).Error; err != nil {
-			log.Printf("[-] Loading HTTP endpoint for WAF observation: %v", err)
+			logf("[-] Loading HTTP endpoint for WAF observation: %v", err)
 			continue
 		}
 		if existing.WAFName != nil && *existing.WAFName == observation.Name {
@@ -516,7 +515,7 @@ func diffWAFs(profileID *uuid.UUID, observations []wafObservation) int {
 			previous = *existing.WAFName
 		}
 		if err := database.DB.Model(&existing).UpdateColumn("waf_name", observation.Name).Error; err != nil {
-			log.Printf("[-] Storing WAF observation: %v", err)
+			logf("[-] Storing WAF observation: %v", err)
 			continue
 		}
 		// An initial clean result is useful state, but is not a new finding.
@@ -538,14 +537,14 @@ func diffVulns(profileID *uuid.UUID, vulns []models.Vulnerability) int {
 
 		if result.Error != nil {
 			if Verbose {
-				log.Printf("[VERBOSE] [!] NEW Vulnerability: %s found on %s (%s)", v.TemplateID, v.URL, v.Severity)
+				logf("[VERBOSE] [!] NEW Vulnerability: %s found on %s (%s)", v.TemplateID, v.URL, v.Severity)
 			}
 			database.DB.Create(&v)
 			touchAsset(profileID, hostkey.NormalizeOrNil(v.URL))
 			newCount++
 		} else {
 			if Verbose {
-				log.Printf("[VERBOSE] [*] Old Vulnerability: %s found on %s", v.TemplateID, v.URL)
+				logf("[VERBOSE] [*] Old Vulnerability: %s found on %s", v.TemplateID, v.URL)
 			}
 			changed := existing.Severity != v.Severity ||
 				existing.Name != v.Name || existing.Description != v.Description
@@ -593,17 +592,17 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 					if err := database.DB.Model(&counterpart).Updates(map[string]interface{}{
 						"seen_live": counterpart.SeenLive || s.SeenLive, "last_seen": time.Now().UTC(),
 					}).Error; err != nil {
-						log.Printf("[-] Updating SecretHound evidence: %v", err)
+						logf("[-] Updating SecretHound evidence: %v", err)
 					}
 					continue
 				}
 				s.SeenLive = s.SeenLive || counterpart.SeenLive
 			}
 			if Verbose {
-				log.Printf("[VERBOSE] [!] NEW Secret: %s found in %s", s.SecretType, s.SourceURL)
+				logf("[VERBOSE] [!] NEW Secret: %s found in %s", s.SecretType, s.SourceURL)
 			}
 			if err := database.DB.Create(&s).Error; err != nil {
-				log.Printf("[-] Storing secret finding: %v", err)
+				logf("[-] Storing secret finding: %v", err)
 				continue
 			}
 			touchAsset(profileID, hostkey.NormalizeOrNil(s.SourceURL))
@@ -611,7 +610,7 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 			continue
 		}
 		if result.Error != nil {
-			log.Printf("[-] Loading secret finding: %v", result.Error)
+			logf("[-] Loading secret finding: %v", result.Error)
 			continue
 		}
 		if existing.Engine == "SecretHound" && s.Engine == "Mantra" {
@@ -620,12 +619,12 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 			if err := database.DB.Model(&existing).Updates(map[string]interface{}{
 				"last_seen": time.Now().UTC(), "seen_live": existing.SeenLive || s.SeenLive,
 			}).Error; err != nil {
-				log.Printf("[-] Updating SecretHound last-seen time: %v", err)
+				logf("[-] Updating SecretHound last-seen time: %v", err)
 			}
 			continue
 		}
 		if Verbose {
-			log.Printf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
+			logf("[VERBOSE] [*] Old Secret: %s found in %s", s.SecretType, s.SourceURL)
 		}
 		changed := existing.Engine != s.Engine || existing.Risk != s.Risk ||
 			existing.Description != s.Description || existing.Occurrences != s.Occurrences ||
@@ -641,7 +640,7 @@ func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
 		existing.Context = s.Context
 		existing.Occurrences = s.Occurrences
 		if err := database.DB.Save(&existing).Error; err != nil {
-			log.Printf("[-] Updating secret finding: %v", err)
+			logf("[-] Updating secret finding: %v", err)
 			continue
 		}
 		if changed {
@@ -659,14 +658,14 @@ func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
 
 		if result.Error != nil {
 			if Verbose {
-				log.Printf("[VERBOSE] [+] NEW Directory: %s (%d)", d.DirURL, d.StatusCode)
+				logf("[VERBOSE] [+] NEW Directory: %s (%d)", d.DirURL, d.StatusCode)
 			}
 			database.DB.Create(&d)
 			touchAsset(profileID, hostkey.NormalizeOrNil(d.SubdomainURL))
 			newCount++
 		} else {
 			if Verbose {
-				log.Printf("[VERBOSE] [*] Old Directory: %s", d.DirURL)
+				logf("[VERBOSE] [*] Old Directory: %s", d.DirURL)
 			}
 			changed := existing.StatusCode != d.StatusCode
 			updates := map[string]interface{}{
