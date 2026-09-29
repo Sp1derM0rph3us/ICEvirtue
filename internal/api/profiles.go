@@ -198,6 +198,9 @@ func (a *API) deleteProfile(w http.ResponseWriter, r *http.Request) {
 		// that no longer existed. That is precisely the orphaned data this handler claims
 		// to prevent, and the previous test counted without Unscoped() so it passed over
 		// the bug.
+		if err := tx.Where("profile_id = ? AND state = ?", id, "queued").Delete(&models.ScanJob{}).Error; err != nil {
+			return err
+		}
 		children := []interface{}{
 			&models.Subdomain{}, &models.AliveHost{}, &models.Vulnerability{},
 			&models.SecretFinding{}, &models.DirectoryFinding{},
@@ -246,6 +249,7 @@ func (a *API) editProfileSchedule(w http.ResponseWriter, r *http.Request) {
 
 	var req struct {
 		Schedule string `json:"schedule"`
+		Enabled  *bool  `json:"enabled"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "invalid request body", http.StatusBadRequest)
@@ -260,33 +264,44 @@ func (a *API) editProfileSchedule(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// One statement, no read-then-write. The old handler loaded the profile, updated the
-	// column, and then returned profile.Schedule from the struct it had loaded before the
-	// update — so the response always echoed the previous value.
-	res := database.DB.Model(&models.Profile{}).
-		Where("id = ?", id).
-		Update("schedule", req.Schedule)
-	if res.Error != nil {
-		log.Printf("[-] Updating the schedule for %s: %v", id, res.Error)
-		http.Error(w, "failed to update schedule", http.StatusInternalServerError)
-		return
-	}
-	// SQLite counts a row as changed whenever an UPDATE touches it, even when the new
-	// value equals the old, so zero rows here means no such profile — which also covers it
-	// having been deleted concurrently. This reasoning is SQLite-specific.
-	if res.RowsAffected == 0 {
-		http.Error(w, "profile not found", http.StatusNotFound)
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		var p models.Profile
+		if err := tx.First(&p, "id = ?", id).Error; err != nil {
+			return err
+		}
+		updates := map[string]any{"schedule": req.Schedule}
+		if req.Enabled != nil {
+			updates["enabled"] = *req.Enabled
+			if !*req.Enabled {
+				result := tx.Where("profile_id = ? AND state = ? AND source = ?", id, "queued", "scheduled").Delete(&models.ScanJob{})
+				if result.Error != nil {
+					return result.Error
+				}
+				if result.RowsAffected > 0 {
+					updates["is_queued"] = false
+				}
+			}
+		}
+		return tx.Model(&p).Updates(updates).Error
+	})
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			http.Error(w, "profile not found", 404)
+		} else {
+			http.Error(w, "failed to update schedule", 500)
+		}
 		return
 	}
 
 	a.syncScheduler("after rescheduling " + id.String())
+	events.Broadcast("profile_update", id.String(), nil)
 
 	// Return the value that was written. Re-reading would be no more truthful under a
 	// concurrent writer, and this is what the caller's request achieved.
 	respondJSON(w, http.StatusOK, map[string]string{"schedule": req.Schedule})
 }
 
-func forceScanProfile(w http.ResponseWriter, r *http.Request) {
+func (a *API) forceScanProfile(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -307,9 +322,24 @@ func forceScanProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	go engine.OrchestrateScan(&profile)
+	if a.sched == nil || a.sched.Coordinator == nil {
+		http.Error(w, "scan coordinator unavailable", 503)
+		return
+	}
+	if err := a.sched.Coordinator.Enqueue(id.String(), "manual"); err != nil {
+		status := 500
+		if errors.Is(err, engine.ErrScanDuplicate) {
+			status = 409
+		}
+		if errors.Is(err, engine.ErrQueueFull) {
+			status = 429
+			w.Header().Set("Retry-After", "30")
+		}
+		http.Error(w, err.Error(), status)
+		return
+	}
 
-	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan started in background"})
+	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan queued"})
 }
 
 // syncScheduler resynchronises and logs a failure without failing the request.

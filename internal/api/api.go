@@ -21,12 +21,14 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 )
 
 // Config is everything the server needs from main, so this package reads no flags and
 // touches no filesystem at import time — which is what lets a test build a real router
 // with fabricated assets.
 type Config struct {
+	Wordlists *wordlists.Store
 	// Templates holds login.html and home.html. It is deliberately NOT the tree served
 	// under /static: the previous layout served the whole web directory, so
 	// GET /static/template.html handed the entire authenticated dashboard to anyone.
@@ -45,10 +47,11 @@ type Config struct {
 // This replaces a package-level globalScheduler, which could not be set per test and
 // would race under any parallel one.
 type API struct {
-	cfg    Config
-	sched  *scheduler.Scheduler
-	pages  *pageStore
-	logins *loginLimiter
+	uploads chan struct{}
+	cfg     Config
+	sched   *scheduler.Scheduler
+	pages   *pageStore
+	logins  *loginLimiter
 }
 
 // NewRouter builds the complete handler, including every middleware.
@@ -78,7 +81,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		return nil, fmt.Errorf("static assets have no css directory: %w", err)
 	}
 
-	a := &API{cfg: cfg, sched: sched, pages: pages, logins: newLoginLimiter()}
+	a := &API{cfg: cfg, sched: sched, pages: pages, logins: newLoginLimiter(), uploads: make(chan struct{}, 1)}
 
 	r := chi.NewRouter()
 
@@ -147,7 +150,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 			r.Route("/{id}", func(r chi.Router) {
 				r.Delete("/", a.deleteProfile)
 				r.Put("/schedule", a.editProfileSchedule)
-				r.Post("/scan", forceScanProfile)
+				r.Post("/scan", a.forceScanProfile)
 				r.Get("/overview", getProfileOverview)
 				r.Get("/subdomains", getProfileSubdomains)
 				r.Get("/secrets", getProfileSecrets)
@@ -172,6 +175,7 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		r.Get("/api/events", a.handleEvents)
 	})
 
+	a.configurationRoutes(r)
 	r.NotFound(notFound)
 	r.MethodNotAllowed(methodNotAllowed)
 

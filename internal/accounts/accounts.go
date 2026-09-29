@@ -3,6 +3,7 @@ package accounts
 
 import (
 	"errors"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"regexp"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
@@ -30,12 +31,10 @@ func ValidateUsername(username string) error {
 }
 
 func HashPassword(password string) (string, error) {
-	// Minimum is a placeholder pending a fuller password policy. The 72-byte
-	// maximum is bcrypt's hard limit, not policy: golang.org/x/crypto/bcrypt
-	// rejects anything longer, so the cap stays to keep a clear message.
-	if len(password) < 8 || len(password) > 72 {
-		return "", ValidationError("password must contain 8–72 bytes")
+	if err := appconfig.ValidatePassword(appconfig.Defaults().Password, password); err != nil {
+		return "", ValidationError(err.Error())
 	}
+
 	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
 	return string(hash), err
 }
@@ -60,12 +59,15 @@ func Create(db *gorm.DB, actor *models.User, username, password, role string) er
 	if !access.ValidRole(role) {
 		return ValidationError("select a valid role")
 	}
-	hash, err := HashPassword(password)
+	hash, err := HashPasswordWithPolicy(db, password)
 	if err != nil {
 		return err
 	}
 	return db.Transaction(func(tx *gorm.DB) error {
 		if err := actorInTransaction(tx, actor, access.ManageUsers); err != nil {
+			return err
+		}
+		if err := CheckPassword(tx, password); err != nil {
 			return err
 		}
 		return tx.Create(&models.User{Username: username, PasswordHash: hash, Role: role}).Error
@@ -84,7 +86,7 @@ func Update(db *gorm.DB, actor *models.User, id uint, edit Edit, admin bool) err
 	var hash string
 	var err error
 	if edit.Password != "" {
-		hash, err = HashPassword(edit.Password)
+		hash, err = HashPasswordWithPolicy(db, edit.Password)
 		if err != nil {
 			return err
 		}
@@ -122,6 +124,9 @@ func Update(db *gorm.DB, actor *models.User, id uint, edit Edit, admin bool) err
 		}
 		updates := map[string]interface{}{"username": edit.Username, "role": edit.Role, "auth_version": gorm.Expr("auth_version + 1")}
 		if hash != "" {
+			if err := CheckPassword(tx, edit.Password); err != nil {
+				return err
+			}
 			updates["password_hash"] = hash
 		}
 		if err := tx.Model(&target).Updates(updates).Error; err != nil {
@@ -167,4 +172,20 @@ func Delete(db *gorm.DB, actor *models.User, id uint, version uint64) error {
 		}
 		return tx.Unscoped().Delete(&target).Error
 	})
+}
+
+func CheckPassword(db *gorm.DB, password string) error {
+	err := appconfig.CheckPassword(db, password)
+	var v appconfig.ValidationError
+	if errors.As(err, &v) {
+		return ValidationError(v.Error())
+	}
+	return err
+}
+func HashPasswordWithPolicy(db *gorm.DB, password string) (string, error) {
+	if err := CheckPassword(db, password); err != nil {
+		return "", err
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	return string(hash), err
 }

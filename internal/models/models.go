@@ -68,6 +68,7 @@ type Profile struct {
 	Mode       string
 	Enabled    bool
 	IsScanning bool
+	IsQueued   bool
 	LastScan   time.Time
 	// LastScanStatus is a short controlled summary of the last run, such as
 	// "completed" or "halted: no host answered HTTP". It is rendered in the

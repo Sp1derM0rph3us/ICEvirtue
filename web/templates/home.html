@@ -133,7 +133,7 @@
                             <span class="st-brk tl" aria-hidden="true"></span><span class="st-brk tr" aria-hidden="true"></span><span class="st-brk bl" aria-hidden="true"></span><span class="st-brk br" aria-hidden="true"></span>
                             <div class="st-hero-top">
                                 <span>Surface overview</span>
-                                <span id="home-scan-badge" class="st-live hidden"><span class="st-live-dot"></span>Scan in progress</span>
+                                <span id="home-scan-badge" class="st-live hidden"><span class="st-live-dot"></span><span id="home-scan-state">Scan in progress</span></span>
                             </div>
                             <div class="st-hero-values">
                                 <div>
@@ -727,7 +727,8 @@
                 data.profile.last_scan_status || 'No scan recorded';
             document.getElementById('home-last-change').textContent =
                 overviewUTC(data.last_identified_change_utc);
-            document.getElementById('home-scan-badge').classList.toggle('hidden', !data.profile.is_scanning);
+            document.getElementById('home-scan-badge').classList.toggle('hidden', !data.profile.is_scanning && !data.profile.is_queued);
+            document.getElementById('home-scan-state').textContent = data.profile.is_scanning ? 'Scan in progress' : 'Scan queued';
 
             const wafList = document.getElementById('home-waf-list');
             wafList.replaceChildren();
@@ -1187,7 +1188,7 @@
                 + (animate ? " animate-fade-in" : "");
             const statusHtml = p.IsScanning ?
                 `<span class="chroma-status"><span class="chroma-status-dot"></span>Scanning</span>` :
-                `<span class="chroma-status chroma-status--idle">Idle</span>`;
+                `<span class="chroma-status chroma-status--idle">${p.IsQueued ? 'Queued' : 'Idle'}</span>`;
             const id = esc(p.ID);
             const shortID = esc(String(p.ID).slice(0, 6));
             const domain = esc(p.Domain);
@@ -1199,7 +1200,7 @@
             // into onclick="fn('...')" would place untrusted text inside a JS string
             // literal, a context HTML escaping cannot make safe.
             let actionHtml = '';
-            if (!p.IsScanning) {
+            if (!p.IsScanning && !p.IsQueued) {
                 actionHtml += `<button data-action="scan" data-id="${id}" class="chroma-button-secondary">Run scan</button> `;
             }
             actionHtml += `<button data-action="delete" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-button-danger">Delete</button>`;
@@ -1239,11 +1240,11 @@
             li.className = 'chroma-mobile-card';
             li.innerHTML = `<h3>${domain}</h3>
                 <dl><dt>Schedule</dt><dd><span id="schedule-text-${id}" data-schedule="${schedule}" title="Stored schedule: ${schedule}">${esc(scheduleLabel(p.Schedule))}</span></dd>
-                    <dt>Status</dt><dd>${p.IsScanning ? 'Scanning' : 'Idle'}</dd>
+                    <dt>Status</dt><dd>${p.IsScanning ? 'Scanning' : (p.IsQueued ? 'Queued' : 'Idle')}</dd>
                     <dt>Last run</dt><dd class="${(p.LastScanStatus || '').startsWith('halted') ? 'text-rose-500' : ''}"></dd></dl>
                 <div class="chroma-mobile-actions">
                     <button type="button" data-action="edit-schedule" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary">Edit schedule</button>
-                    ${p.IsScanning ? '' : `<button type="button" data-action="scan" data-id="${id}" class="chroma-button-secondary">Run scan</button>`}
+                    ${(p.IsScanning || p.IsQueued) ? '' : `<button type="button" data-action="scan" data-id="${id}" class="chroma-button-secondary">Run scan</button>`}
                     <button type="button" data-action="delete" data-id="${id}" data-domain="${domain}" class="chroma-button-secondary chroma-button-danger">Delete</button>
                 </div>`;
             li.querySelector('dl dd:last-child').textContent = lastRunText(p);

@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"io"
 	"os"
 	"os/exec"
@@ -192,24 +193,24 @@ func toolEnv() []string {
 // last part matters: several of these tools print fatal startup errors to
 // stdout rather than stderr, so reporting stderr alone leaves the operator
 // staring at an empty message.
-func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (io.ReadCloser, error) {
-	return runToolWithCapture(name, args, stdin, timeout, true)
+func (run *runner) runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (io.ReadCloser, error) {
+	return run.runToolWithCapture(name, args, stdin, timeout, true)
 }
 
 // runToolToFiles is for tools whose useful output is written to explicit paths.
 // Their progress stream is bounded for diagnostics instead of held in memory.
-func runToolToFiles(name string, args []string, timeout time.Duration) error {
-	_, err := runToolWithCapture(name, args, nil, timeout, false)
+func (run *runner) runToolToFiles(name string, args []string, timeout time.Duration) error {
+	_, err := run.runToolWithCapture(name, args, nil, timeout, false)
 	return err
 }
 
-func runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (io.ReadCloser, error) {
+func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (io.ReadCloser, error) {
 	path, err := resolveTool(name)
 	if err != nil {
 		return io.NopCloser(strings.NewReader("")), err
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	ctx, cancel := context.WithTimeout(run.ctx, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, path, args...)
@@ -236,11 +237,11 @@ func runToolWithCapture(name string, args []string, stdin io.Reader, timeout tim
 	var stdout io.ReadCloser = io.NopCloser(strings.NewReader(""))
 	var output *toolOutput
 	if captureStdout {
-		file, err := os.CreateTemp("", "icevirtue-output-*")
+		file, err := os.CreateTemp(run.scratch, "icevirtue-output-*")
 		if err != nil {
 			return stdout, fmt.Errorf("%s output file: %w", name, err)
 		}
-		output = &toolOutput{File: file}
+		output = &toolOutput{File: file, stop: cancel}
 		stdout = output
 	}
 	cmd.Stdout = outb
@@ -279,12 +280,25 @@ func runToolWithCapture(name string, args []string, stdin io.Reader, timeout tim
 type toolOutput struct {
 	*os.File
 	writeErr error
+	written  int64
+	stop     context.CancelFunc
 }
 
 func (o *toolOutput) Write(p []byte) (int, error) {
+	if o.written+int64(len(p)) > 4<<30 {
+		o.writeErr = fmt.Errorf("tool output exceeds 4 GiB storage limit")
+		if o.stop != nil {
+			o.stop()
+		}
+		return 0, o.writeErr
+	}
 	n, err := o.File.Write(p)
+	o.written += int64(n)
 	if err != nil {
 		o.writeErr = fmt.Errorf("writing tool output: %w", err)
+		if o.stop != nil {
+			o.stop()
+		}
 	}
 	return n, err
 }
@@ -347,11 +361,11 @@ func (s *lineReader) Err() error {
 	return s.err
 }
 
-// PreflightTools logs which external tools the current flags require and which
-// of them are actually on PATH. Deliberately non-fatal: --skip-amass,
-// --skip-nuclei and an omitted --dnsx-list all legitimately make some tools
+// PreflightTools logs which external tools the current configuration require and which
+// of them are actually on PATH. Deliberately non-fatal: application settings
+// can disable stages and legitimately make some tools
 // unnecessary.
-func PreflightTools() {
+func PreflightTools(c models.ApplicationConfiguration) {
 	resolveToolHome()
 
 	tools := []struct {
@@ -360,15 +374,15 @@ func PreflightTools() {
 	}{
 		{"subfinder", true},
 		{"httpx", true},
-		{"wafw00f", true},
-		{"amass", !SkipAmass},
-		{"dnsx", DnsxList != ""},
-		{"nuclei", !SkipNuclei},
-		{"waymore", true},
-		{"katana", true},
-		{"subjs", true},
-		{"mantra", true},
-		{"secrethound", true},
+		{"wafw00f", !c.Scan.SkipWAF},
+		{"amass", !c.Scan.SkipAmass},
+		{"dnsx", !c.Scan.SkipDNSX},
+		{"nuclei", !c.Scan.SkipNuclei},
+		{"waymore", !c.Scan.SkipSecrets},
+		{"katana", !c.Scan.SkipSecrets},
+		{"subjs", !c.Scan.SkipSecrets},
+		{"mantra", !c.Scan.SkipSecrets},
+		{"secrethound", !c.Scan.SkipSecrets},
 	}
 
 	var present, missing, skipped, doubtful []string
@@ -399,7 +413,7 @@ func PreflightTools() {
 		logf("      %s", p)
 	}
 	if len(skipped) > 0 {
-		logf("[*] Preflight: not required with the current flags: %s", strings.Join(skipped, ", "))
+		logf("[*] Preflight: not required with the current configuration: %s", strings.Join(skipped, ", "))
 	}
 	if len(doubtful) > 0 {
 		logf("[-] Preflight: resolved but NOT VERIFIED as the expected program: %s", strings.Join(doubtful, ", "))

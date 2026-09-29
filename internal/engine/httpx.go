@@ -28,7 +28,7 @@ type HttpxResult struct {
 // The results and the error are both meaningful: httpx streams JSONL as it
 // probes, so a run that failed or hit its timeout still returns every host it
 // had already confirmed alive.
-func RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost, error) {
+func (run *runner) RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost, error) {
 	if len(subdomains) == 0 {
 		return nil, fmt.Errorf("no input subdomains provided to RunHttpx")
 	}
@@ -38,7 +38,7 @@ func RunHttpx(profile *models.Profile, subdomains []string) ([]models.AliveHost,
 	args := []string{"-silent", "-json", "-title", "-web-server", "-ip", "-status-code"}
 	stdin := strings.NewReader(strings.Join(subdomains, "\n"))
 
-	outb, err := runTool("httpx", args, stdin, timeoutHttpx)
+	outb, err := run.runTool("httpx", args, stdin, timeoutHttpx)
 
 	defer outb.Close()
 	results, parseErr := parseHttpxOutput(outb, profile.ID)

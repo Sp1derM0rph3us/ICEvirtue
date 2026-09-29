@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/glebarez/sqlite"
 	"github.com/google/uuid"
@@ -17,10 +18,13 @@ func TestCreateAdmin(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := db.AutoMigrate(&models.User{}); err != nil {
+	if err := db.AutoMigrate(&models.User{}, &models.ApplicationConfiguration{}); err != nil {
 		t.Fatal(err)
 	}
 
+	if err := appconfig.Seed(db); err != nil {
+		t.Fatal(err)
+	}
 	const username = "bootstrap.admin"
 	const password = "correct-horse-battery"
 	if err := createAdmin(db, username, password); err != nil {
@@ -49,6 +53,12 @@ func TestCreateAdmin(t *testing.T) {
 	}
 	if err := createAdmin(db, "x", password); err == nil {
 		t.Fatal("invalid username was accepted")
+	}
+	if err := db.Model(&models.ApplicationConfiguration{}).Where("id = 1").Update("password_minimum", 22).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := createAdmin(db, "policy.admin", password); err == nil {
+		t.Fatal("CLI ignored stored policy")
 	}
 	if err := createAdmin(db, "another.admin", "short"); err == nil {
 		t.Fatal("short password was accepted")

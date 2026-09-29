@@ -68,13 +68,18 @@ func createAdmin(db *gorm.DB, username, password string) error {
 	if err := accounts.ValidateUsername(username); err != nil {
 		return err
 	}
-	hash, err := accounts.HashPassword(password)
+	hash, err := accounts.HashPasswordWithPolicy(db, password)
 	if err != nil {
 		return err
 	}
-	return db.Create(&models.User{
-		Username:     username,
-		PasswordHash: hash,
-		Role:         access.Admin,
-	}).Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		if err := accounts.CheckPassword(tx, password); err != nil {
+			return err
+		}
+		return tx.Create(&models.User{
+			Username:     username,
+			PasswordHash: hash,
+			Role:         access.Admin,
+		}).Error
+	})
 }

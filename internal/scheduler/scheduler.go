@@ -13,6 +13,7 @@ import (
 )
 
 type Scheduler struct {
+	Coordinator *engine.Coordinator
 	// mu serialises rebuild.
 	//
 	// cron.Cron's own Entries, Remove and AddFunc are each goroutine-safe, but the
@@ -24,8 +25,12 @@ type Scheduler struct {
 	Cron *cron.Cron
 }
 
-func NewScheduler() *Scheduler {
-	return &Scheduler{Cron: cron.New(cron.WithSeconds())}
+func NewScheduler(coordinators ...*engine.Coordinator) *Scheduler {
+	s := &Scheduler{Cron: cron.New(cron.WithSeconds())}
+	if len(coordinators) > 0 {
+		s.Coordinator = coordinators[0]
+	}
+	return s
 }
 
 // Start builds the schedule and then starts the cron loop.
@@ -46,7 +51,7 @@ func (s *Scheduler) Start() error {
 }
 
 func (s *Scheduler) Stop() {
-	s.Cron.Stop()
+	<-s.Cron.Stop().Done()
 	log.Println("[*] Scheduler stopped")
 }
 
@@ -91,7 +96,11 @@ func (s *Scheduler) rebuild() error {
 		// "fix" this by re-querying at fire time: the reload is the fix.
 		_, err = s.Cron.AddFunc(cronExpr, func() {
 			log.Printf("[*] [Target: %s] Triggering scheduled scan mode: %s", profile.Domain, profile.Mode)
-			engine.OrchestrateScan(&profile)
+			if s.Coordinator != nil {
+				if err := s.Coordinator.Enqueue(profile.ID.String(), "scheduled"); err != nil {
+					log.Printf("[-] Scheduled scan admission: %v", err)
+				}
+			}
 		})
 		if err != nil {
 			log.Printf("[-] Failed to schedule profile %s: %v", profile.Domain, err)

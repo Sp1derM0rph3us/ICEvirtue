@@ -16,6 +16,7 @@ import (
 )
 
 type overviewProfile struct {
+	IsQueued       bool       `json:"is_queued"`
 	ID             uuid.UUID  `json:"id"`
 	Domain         string     `json:"domain"`
 	IsScanning     bool       `json:"is_scanning"`
@@ -78,7 +79,7 @@ func getProfileOverview(w http.ResponseWriter, r *http.Request) {
 			return err
 		}
 		result.Profile = overviewProfile{
-			ID: profile.ID, Domain: profile.Domain, IsScanning: profile.IsScanning,
+			ID: profile.ID, Domain: profile.Domain, IsScanning: profile.IsScanning, IsQueued: profile.IsQueued,
 			LastScanUTC: utcOrNil(profile.LastScan), LastScanStatus: profile.LastScanStatus,
 		}
 

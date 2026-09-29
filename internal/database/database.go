@@ -11,6 +11,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
 
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -60,6 +61,7 @@ func InitDatabase(dbPath string) error {
 	sqlDB.SetMaxIdleConns(1)
 
 	err = db.AutoMigrate(
+		&models.ApplicationConfiguration{}, &models.Wordlist{}, &models.ScanJob{}, &models.WordlistPin{},
 		&models.SchemaMigration{},
 		&models.User{},
 		&models.Session{},
@@ -107,6 +109,9 @@ func InitDatabase(dbPath string) error {
 		return err
 	}
 
+	if err := appconfig.Seed(db); err != nil {
+		return err
+	}
 	DB = db
 	log.Printf("[+] Database connected and migrated: %s", dbPath)
 	return nil

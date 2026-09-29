@@ -345,6 +345,12 @@ func TestDnsxRunsOncePerWordlist(t *testing.T) {
 	wlDir := t.TempDir()
 	wl1, wl2 := filepath.Join(wlDir, "small.txt"), filepath.Join(wlDir, "big.txt")
 	DnsxList = wl1 + ", " + wl2 + ","
+	if err := os.WriteFile(wl1, []byte("small\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(wl2, []byte("big\n"), 0600); err != nil {
+		t.Fatal(err)
+	}
 
 	fakeTool(t, binDir, "subfinder", jsonlEmitter(0))
 	// Each invocation emits a name derived from the wordlist it was handed.

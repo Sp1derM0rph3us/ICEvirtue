@@ -388,7 +388,7 @@ func TestLogOutputEscapedAndAdminOnly(t *testing.T) {
 	h := realServer(t)
 	_, a := roleUser(t, "admin")
 	_, o := roleUser(t, "operator")
-	serverlogs.Default.Write([]byte(`<script>alert("log")</script>`))
+	serverlogs.Scans.Write([]byte(`<script>alert("log")</script>`))
 	requireStatus(t, do(t, h, "GET", "/settings/admin/logs", o), 403)
 	w := do(t, h, "GET", "/settings/admin/logs", a)
 	requireStatus(t, w, 200)

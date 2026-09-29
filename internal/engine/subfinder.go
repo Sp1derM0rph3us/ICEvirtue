@@ -19,7 +19,7 @@ type SubfinderResult struct {
 // The results and the error are both meaningful. Subfinder streams JSONL, so a
 // run that failed or hit its timeout partway through still returns every name it
 // managed to emit, and the caller decides what a partial run is worth.
-func RunSubfinder(profile *models.Profile) ([]string, error) {
+func (run *runner) RunSubfinder(profile *models.Profile) ([]string, error) {
 	log.Printf("[*] [Target: %s] Running subfinder...", profile.Domain)
 
 	args := []string{"-d", profile.Domain, "-silent", "-json"}
@@ -28,7 +28,7 @@ func RunSubfinder(profile *models.Profile) ([]string, error) {
 		args = append(args, "-all")
 	}
 
-	outb, err := runTool("subfinder", args, nil, timeoutSubfinder)
+	outb, err := run.runTool("subfinder", args, nil, timeoutSubfinder)
 
 	defer outb.Close()
 	results, parseErr := parseSubfinderOutput(outb)

@@ -13,12 +13,12 @@ import (
 //
 // The results and the error are both meaningful: amass streams its findings, so
 // a run that failed or hit its timeout still returns what it emitted first.
-func RunAmass(profile *models.Profile) ([]string, error) {
+func (run *runner) RunAmass(profile *models.Profile) ([]string, error) {
 	log.Printf("[*] [Target: %s] Running amass...", profile.Domain)
 
 	args := []string{"enum", "-d", profile.Domain, "-nocolor"}
 
-	outb, err := runTool("amass", args, nil, timeoutAmass)
+	outb, err := run.runTool("amass", args, nil, timeoutAmass)
 
 	defer outb.Close()
 	results, parseErr := parseAmassOutput(outb, profile.Domain)

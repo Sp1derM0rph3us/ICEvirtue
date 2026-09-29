@@ -9,35 +9,12 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 const DefaultWAFProcessTimeout = 30 * time.Second
-
-var wafProcessTimeout atomic.Int64
-
-func init() {
-	wafProcessTimeout.Store(int64(DefaultWAFProcessTimeout))
-}
-
-// GetWAFProcessTimeout reads the per-process limit. A WAF batch snapshots it
-// once, so a future configuration change applies to the next batch.
-func GetWAFProcessTimeout() time.Duration {
-	return time.Duration(wafProcessTimeout.Load())
-}
-
-// SetWAFProcessTimeout is the single validated entry point for the CLI flag
-// and any future settings interface.
-func SetWAFProcessTimeout(timeout time.Duration) error {
-	if timeout <= 0 {
-		return fmt.Errorf("WAF process timeout must be greater than zero")
-	}
-	wafProcessTimeout.Store(int64(timeout))
-	return nil
-}
 
 // wafObservation is emitted only when WAFW00F produced a valid result. A failed
 // invocation must not overwrite the last successful observation with "none".
@@ -88,14 +65,14 @@ func parseWAFW00FOutput(out io.Reader) (string, error) {
 	return name, nil
 }
 
-func detectWAF(endpoint string, processTimeout time.Duration) (string, error) {
+func (run *runner) detectWAF(endpoint string, processTimeout time.Duration) (string, error) {
 	u, err := url.Parse(endpoint)
 	if err != nil || u.Hostname() == "" || (u.Scheme != "http" && u.Scheme != "https") {
 		return "", fmt.Errorf("invalid HTTP endpoint for WAF detection")
 	}
 	// WAFW00F's default is first prioritized product match. -r prevents a
 	// redirect from silently probing a different, possibly out-of-scope host.
-	out, err := runTool("wafw00f", []string{"-r", "--no-colors", "-o", "-", "-f", "json", endpoint}, nil, processTimeout)
+	out, err := run.runTool("wafw00f", []string{"-r", "--no-colors", "-o", "-", "-f", "json", endpoint}, nil, processTimeout)
 	defer out.Close()
 	if err != nil {
 		return "", err
@@ -106,14 +83,14 @@ func detectWAF(endpoint string, processTimeout time.Duration) (string, error) {
 // RunWAFDetection scans every HTTPX-confirmed endpoint, including statuses not
 // forwarded to the later fuzzing and Nuclei stages. Parallelism is bounded so
 // large profiles do not launch one Python process per asset simultaneously.
-func RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
+func (run *runner) RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
 	if len(hosts) == 0 {
 		return nil, nil
 	}
 	if _, err := resolveTool("wafw00f"); err != nil {
 		return nil, err
 	}
-	processTimeout := GetWAFProcessTimeout()
+	processTimeout := run.wafTimeout
 	const workers = 4
 	type result struct {
 		index int
@@ -128,7 +105,7 @@ func RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
 		go func() {
 			defer wg.Done()
 			for index := range jobs {
-				name, err := detectWAF(hosts[index].URL, processTimeout)
+				name, err := run.detectWAF(hosts[index].URL, processTimeout)
 				results <- result{index: index, name: name, err: err}
 			}
 		}()

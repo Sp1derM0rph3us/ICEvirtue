@@ -13,11 +13,12 @@ import (
 	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/api"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/engine"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 )
 
 // originList collects a repeatable --trusted-origin flag.
@@ -34,19 +35,13 @@ func (o *originList) Set(value string) error {
 
 func main() {
 	log.SetOutput(io.MultiWriter(os.Stderr, serverlogs.Default))
-	flag.BoolVar(&engine.Verbose, "verbose", false, "Print detailed scan findings to the terminal")
-	flag.StringVar(&engine.DnsxList, "dnsx-list", "", "Comma-separated absolute paths to wordlists for active dnsx bruteforcing (Full Mode only)")
-	flag.StringVar(&engine.DirectoryList, "directory-list", "", "Comma-separated absolute paths to wordlists for directory fuzzing")
-	flag.BoolVar(&engine.SkipAmass, "skip-amass", false, "Skip Amass execution during subdomain enumeration (Full Mode only)")
-	flag.BoolVar(&engine.SkipNuclei, "skip-nuclei", false, "Skip Nuclei execution during vulnerability scanning")
-	flag.BoolVar(&engine.WideTargets, "wide-targets", false, "Feed every host that answered HTTP except 404s into fuzzing, Nuclei and secret hunting, instead of only 200/301/302/307")
 	flag.StringVar(&engine.ToolHome, "tool-home", "", "Directory the external tools use for their config (default /opt/icevirtue, falling back to $HOME)")
 	flag.StringVar(&engine.ToolPaths, "tool-paths", "", "Comma-separated name=path overrides for external tools (e.g. httpx=/usr/bin/httpx-toolkit)")
-	flag.IntVar(&engine.WaymoreResponseLimit, "waymore-response-limit", 5000, "Maximum archived responses Waymore downloads (default 5000)")
 	flag.StringVar(&engine.WaymoreConfig, "waymore-config", "", "Optional Waymore config.yml containing provider API keys and filters")
 
 	var apiPort int
-	var wafProcessTimeout time.Duration
+	var uploadDir string
+	flag.StringVar(&uploadDir, "upload-dir", "uploads", "Private wordlist storage directory (default uploads under the service working directory)")
 	var dbPath string
 	var jwtSecretPath string
 	var webDir string
@@ -61,7 +56,6 @@ func main() {
 	flag.BoolVar(&secureCookies, "secure-cookies", false,
 		"Mark the session cookie Secure. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. Leaving it off over plain HTTP is required, because a browser accepts a Secure cookie and then never sends it back.")
 	flag.DurationVar(&sessionTTL, "session-ttl", auth.DefaultSessionTTL, "How long a dashboard session lasts before it has to be re-established")
-	flag.DurationVar(&wafProcessTimeout, "waf-process-timeout", engine.DefaultWAFProcessTimeout, "Maximum wall-clock time for each wafw00f process (default 30s)")
 	flag.Var(&trustedOrigins, "trusted-origin",
 		"An Origin to accept on state-changing requests in addition to the request's own host. Repeatable. Needed when a reverse proxy rewrites Host, because otherwise every write is refused with 403.")
 	flag.BoolVar(&reloadTemplates, "reload-templates", false,
@@ -70,17 +64,17 @@ func main() {
 	if sessionTTL < time.Second || sessionTTL > auth.MaxSessionTTL {
 		log.Fatal("[-] Session TTL must be between one second and seven days")
 	}
-	if err := engine.SetWAFProcessTimeout(wafProcessTimeout); err != nil {
-		log.Fatalf("[-] Invalid WAF process timeout: %v", err)
-	}
-
-	engine.PreflightTools()
 
 	if err := auth.Init(jwtSecretPath); err != nil {
 		log.Fatalf("[-] %v", err)
 	}
 
-	err := database.InitDatabase(dbPath)
+	unlock, err := database.LockServer(dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer unlock()
+	err = database.InitDatabase(dbPath)
 	if err != nil {
 		log.Fatalf("[-] Failed to initialize database: %v", err)
 	}
@@ -91,9 +85,26 @@ func main() {
 		log.Fatalf("[-] Failed to migrate existing data: %v", err)
 	}
 
-	database.DB.Model(&models.Profile{}).Where("is_scanning = ?", true).Update("is_scanning", false)
+	store, err := wordlists.New(database.DB, uploadDir, webDir)
+	if err != nil {
+		log.Fatalf("[-] Upload storage: %v", err)
+	}
+	defer store.Close()
+	if err = store.Reconcile(); err != nil {
+		log.Fatalf("[-] Upload recovery: %v", err)
+	}
+	configuration, err := appconfig.Load(database.DB)
+	if err != nil {
+		log.Fatal(err)
+	}
+	engine.PreflightTools(configuration)
+	coordinator := engine.NewCoordinator(database.DB, store)
+	if err = coordinator.Recover(); err != nil {
+		log.Fatal(err)
+	}
+	coordinator.Start()
 
-	sched := scheduler.NewScheduler()
+	sched := scheduler.NewScheduler(coordinator)
 	if err := sched.Start(); err != nil {
 		log.Fatalf("[-] Failed to start scheduler: %v", err)
 	}
@@ -103,6 +114,7 @@ func main() {
 	}
 
 	cfg := api.Config{
+		Wordlists: store,
 		// Templates live outside the tree served under /static. Serving the whole web
 		// folder meant GET /static/template.html handed the entire authenticated
 		// dashboard to anyone, and GET /static/ listed the directory.
@@ -133,7 +145,7 @@ func main() {
 	sched.Stop()
 
 	log.Println("[*] Releasing any active scan locks...")
-	database.DB.Model(&models.Profile{}).Where("is_scanning = ?", true).Update("is_scanning", false)
+	coordinator.Stop()
 
 	log.Println("[+] Shutdown complete. Goodbye.")
 }

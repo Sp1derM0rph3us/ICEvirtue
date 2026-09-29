@@ -29,7 +29,7 @@ type NucleiResult struct {
 // The results and the error are both meaningful: nuclei streams JSONL per match,
 // so a run that failed or hit its timeout still returns every finding it had
 // already reported. On a two hour budget that is usually most of them.
-func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vulnerability, error) {
+func (run *runner) RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vulnerability, error) {
 	if len(hosts) == 0 {
 		return nil, fmt.Errorf("no live hosts provided to RunNuclei")
 	}
@@ -44,7 +44,7 @@ func RunNuclei(profile *models.Profile, hosts []models.AliveHost) ([]models.Vuln
 	args := []string{"-silent", "-jsonl"}
 	stdin := strings.NewReader(strings.Join(urls, "\n"))
 
-	outb, err := runTool("nuclei", args, stdin, timeoutNuclei)
+	outb, err := run.runTool("nuclei", args, stdin, timeoutNuclei)
 
 	defer outb.Close()
 	results, parseErr := parseNucleiOutput(outb, profile.ID)

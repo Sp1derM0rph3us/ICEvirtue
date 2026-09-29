@@ -14,6 +14,7 @@ import (
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
@@ -24,14 +25,15 @@ import (
 )
 
 type pageData struct {
+	PasswordPolicy                                           models.PasswordPolicy
 	Title, Subtitle, BackURL, BackLabel, Error, Notice, CSRF string
-	User                        *models.User
-	Target                      models.User
-	CanWrite, IsAdmin, Creating bool
-	Users                       []models.User
-	Logs                        []serverlogs.Entry
-	Page, Pages, Previous, Next int
-	Total                       int64
+	User                                                     *models.User
+	Target                                                   models.User
+	CanWrite, IsAdmin, Creating                              bool
+	Users                                                    []models.User
+	Logs                                                     []serverlogs.Entry
+	Page, Pages, Previous, Next                              int
+	Total                                                    int64
 }
 
 func homeData(u *models.User) pageData {
@@ -43,7 +45,7 @@ func homeData(u *models.User) pageData {
 	return d
 }
 
-var settingsPages = []string{"settings", "user_settings", "admin", "admin_users", "admin_user", "admin_logs"}
+var settingsPages = []string{"settings", "user_settings", "admin", "admin_users", "admin_user", "admin_logs", "application_configuration"}
 
 func parseSettingsPages(fsys fs.FS) (map[string]*template.Template, error) {
 	pages := make(map[string]*template.Template)
@@ -67,6 +69,9 @@ func (a *API) settingsRoutes(r chi.Router) {
 	r.Route("/settings/admin", func(r chi.Router) {
 		r.Use(requirePermission(access.ManageUsers))
 		r.Get("/", a.adminPage)
+		r.With(requirePermission(access.ManageConfiguration)).Get("/configuration", func(w http.ResponseWriter, r *http.Request) {
+			a.settingsRender(w, r, "application_configuration", "Application configurations", pageData{Subtitle: "Modify settings that affect how the application runs", BackURL: "/settings/admin", BackLabel: "Back to admin dashboard"})
+		})
 		r.Get("/users", a.usersPage)
 		r.Get("/users/new", a.newUserPage)
 		r.With(a.requireForm).Post("/users", a.createUser)
@@ -108,6 +113,14 @@ func (a *API) requireForm(next http.Handler) http.Handler {
 }
 
 func (a *API) settingsRender(w http.ResponseWriter, r *http.Request, name, title string, d pageData) {
+	if name == "admin_user" || name == "user_settings" {
+		c, err := appconfig.Load(database.DB)
+		if err != nil {
+			http.Error(w, "could not load password policy", 500)
+			return
+		}
+		d.PasswordPolicy = c.Password
+	}
 	d.User = currentUser(r)
 	d.Title = title
 	// Each settings page carries its own subtitle. A handler may set one on the

@@ -49,10 +49,15 @@ func isJSFile(url string) bool {
 // findings. Scanning then feeds the merged set to the secret scanners. No tool
 // failure in either sub-phase stops the other tools, and the stage never halts
 // the run: nothing downstream consumes its output.
-func stageSecrets(profile *models.Profile, targets []models.AliveHost) ([]models.SecretFinding, *stageReport) {
+func (run *runner) stageSecrets(profile *models.Profile, targets []models.AliveHost) ([]models.SecretFinding, *stageReport) {
+	if run.config.Scan.SkipSecrets {
+		report := newStageReport("Stage 05 Secret Hunting", profile.Domain)
+		report.skip("secret hunting", "disabled in application settings")
+		return nil, report
+	}
 	log.Printf("[*] [Target: %s] Stage 05 Secret Hunting starting...", profile.Domain)
 
-	sources := collectJSSources(profile, targets)
+	sources := run.collectJSSources(profile, targets)
 	defer sources.cleanup()
 	report := newStageReport("Stage 05 Secret Hunting", profile.Domain)
 
@@ -64,12 +69,12 @@ func stageSecrets(profile *models.Profile, targets []models.AliveHost) ([]models
 
 	log.Printf("[*] [Target: %s] Scanning %d live URL(s) and %d archived body/bodies...", profile.Domain, len(sources.live), len(sources.archived))
 
-	houndSecrets, err := scanWithSecretHoundSources(profile, sources.live, sources.archived)
+	houndSecrets, err := run.scanWithSecretHoundSources(profile, sources.live, sources.archived)
 	report.record("secrethound", len(houndSecrets), err)
 
 	var mantraSecrets []models.SecretFinding
 	if len(sources.live) > 0 {
-		mantraSecrets, err = scanWithMantra(profile, sources.live)
+		mantraSecrets, err = run.scanWithMantra(profile, sources.live)
 		report.record("mantra", len(mantraSecrets), err)
 	} else {
 		report.skip("mantra", "no live JS URLs were discovered")
@@ -82,7 +87,7 @@ func stageSecrets(profile *models.Profile, targets []models.AliveHost) ([]models
 
 // collectJSSources gathers candidate JavaScript URLs from every source it can and
 // returns the merged, de-duplicated set. It logs its own report.
-func collectJSSources(profile *models.Profile, targets []models.AliveHost) jsSources {
+func (run *runner) collectJSSources(profile *models.Profile, targets []models.AliveHost) jsSources {
 	report := newStageReport("Stage 05 JS Source Collection", profile.Domain)
 	sources := jsSources{archived: make(map[string][]archiveEvidence)}
 
@@ -99,14 +104,14 @@ func collectJSSources(profile *models.Profile, targets []models.AliveHost) jsSou
 	}
 
 	// Waymore also runs when no live hosts were found.
-	historical, archived, cleanup, err := collectWaymore(profile)
+	historical, archived, cleanup, err := run.collectWaymore(profile)
 	sources.archived, sources.cleanup = archived, cleanup
 	report.record("waymore", len(historical)+len(archived), err)
 
 	// Historical URLs come from archives and are mostly dead, so they are the one
 	// source worth validating before use.
 	if len(historical) > 0 {
-		alive, err := validateJSURLs(profile, historical)
+		alive, err := run.validateJSURLs(profile, historical)
 		report.record("httpx[js-validation]", len(alive), err)
 		add(alive)
 	} else {
@@ -119,11 +124,11 @@ func collectJSSources(profile *models.Profile, targets []models.AliveHost) jsSou
 	}
 
 	if len(hostURLs) > 0 {
-		crawled, err := collectKatana(profile, hostURLs)
+		crawled, err := run.collectKatana(profile, hostURLs)
 		add(crawled)
 		report.record("katana", len(crawled), err)
 
-		scripts, err := collectSubjs(profile, hostURLs)
+		scripts, err := run.collectSubjs(profile, hostURLs)
 		add(scripts)
 		report.record("subjs", len(scripts), err)
 	} else {
@@ -139,11 +144,11 @@ func collectJSSources(profile *models.Profile, targets []models.AliveHost) jsSou
 }
 
 // validateJSURLs keeps only the URLs that currently answer with a 200.
-func validateJSURLs(profile *models.Profile, urls []string) ([]string, error) {
+func (run *runner) validateJSURLs(profile *models.Profile, urls []string) ([]string, error) {
 	log.Printf("[*] [Target: %s] Validating %d historical JS URL(s) via httpx...", profile.Domain, len(urls))
 
 	stdin := strings.NewReader(strings.Join(urls, "\n"))
-	outb, err := runTool("httpx", []string{"-silent", "-mc", "200"}, stdin, timeoutHttpx)
+	outb, err := run.runTool("httpx", []string{"-silent", "-mc", "200"}, stdin, timeoutHttpx)
 
 	allowed := make(map[string]bool, len(urls))
 	for _, candidate := range urls {
@@ -161,11 +166,11 @@ func validateJSURLs(profile *models.Profile, urls []string) ([]string, error) {
 }
 
 // collectKatana crawls the live hosts and keeps the JS endpoints it finds.
-func collectKatana(profile *models.Profile, hostURLs []string) ([]string, error) {
+func (run *runner) collectKatana(profile *models.Profile, hostURLs []string) ([]string, error) {
 	log.Printf("[*] [Target: %s] Running katana against %d host(s)...", profile.Domain, len(hostURLs))
 
 	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
-	outb, err := runTool("katana", []string{"-silent", "-j", "-d", "2"}, stdin, timeoutKatana)
+	outb, err := run.runTool("katana", []string{"-silent", "-j", "-d", "2"}, stdin, timeoutKatana)
 
 	defer outb.Close()
 	var urls []string
@@ -184,11 +189,11 @@ func collectKatana(profile *models.Profile, hostURLs []string) ([]string, error)
 }
 
 // collectSubjs scrapes script references straight out of the live hosts.
-func collectSubjs(profile *models.Profile, hostURLs []string) ([]string, error) {
+func (run *runner) collectSubjs(profile *models.Profile, hostURLs []string) ([]string, error) {
 	log.Printf("[*] [Target: %s] Running subjs...", profile.Domain)
 
 	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
-	outb, err := runTool("subjs", nil, stdin, timeoutSubjs)
+	outb, err := run.runTool("subjs", nil, stdin, timeoutSubjs)
 
 	defer outb.Close()
 	urls, parseErr := parsePlainURLs(outb)
@@ -196,7 +201,7 @@ func collectSubjs(profile *models.Profile, hostURLs []string) ([]string, error) 
 }
 
 // scanWithMantra looks for secrets in the given JS files.
-func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
+func (run *runner) scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
 	log.Printf("[*] [Target: %s] Running mantra...", profile.Domain)
 
 	urls := make([]string, 0, len(jsURLs))
@@ -214,7 +219,7 @@ func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFi
 
 	stdin := strings.NewReader(strings.Join(urls, "\n") + "\n")
 	// -s suppresses the banner. Mantra has no JSON flag; findings are text lines.
-	outb, runErr := runTool("mantra", []string{"-s"}, stdin, timeoutMantra)
+	outb, runErr := run.runTool("mantra", []string{"-s"}, stdin, timeoutMantra)
 
 	defer outb.Close()
 	var secrets []models.SecretFinding
@@ -267,11 +272,11 @@ func scanWithMantra(profile *models.Profile, jsURLs []string) ([]models.SecretFi
 
 // SecretHound recognizes .urls as a URL list even when it contains one entry.
 // Its JSON output is written on close, so read the file after the process exits.
-func scanWithSecretHound(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
-	return scanWithSecretHoundSources(profile, jsURLs, nil)
+func (run *runner) scanWithSecretHound(profile *models.Profile, jsURLs []string) ([]models.SecretFinding, error) {
+	return run.scanWithSecretHoundSources(profile, jsURLs, nil)
 }
 
-func scanWithSecretHoundSources(profile *models.Profile, jsURLs []string, archived map[string][]archiveEvidence) ([]models.SecretFinding, error) {
+func (run *runner) scanWithSecretHoundSources(profile *models.Profile, jsURLs []string, archived map[string][]archiveEvidence) ([]models.SecretFinding, error) {
 	log.Printf("[*] [Target: %s] Running secrethound...", profile.Domain)
 
 	urls := make([]string, 0, len(jsURLs))
@@ -292,7 +297,7 @@ func scanWithSecretHoundSources(profile *models.Profile, jsURLs []string, archiv
 		return nil, fmt.Errorf("no valid HTTP(S) JS URLs or archived files for SecretHound")
 	}
 
-	dir, err := os.MkdirTemp("", "icevirtue-secrethound-")
+	dir, err := os.MkdirTemp(run.scratch, "icevirtue-secrethound-")
 	if err != nil {
 		return nil, err
 	}
@@ -304,7 +309,7 @@ func scanWithSecretHoundSources(profile *models.Profile, jsURLs []string, archiv
 		return nil, err
 	}
 
-	runErr := runToolToFiles("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, timeoutSecretHound)
+	runErr := run.runToolToFiles("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, timeoutSecretHound)
 	data, readErr := os.ReadFile(outputPath)
 	if readErr != nil {
 		return nil, errors.Join(runErr, fmt.Errorf("reading SecretHound JSON: %w", readErr))

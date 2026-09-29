@@ -5,8 +5,8 @@
 <input type="hidden" name="csrf" value="{{.CSRF}}"><input type="hidden" name="version" value="{{.Target.AuthVersion}}">
 <label>Username<input name="username" value="{{.Target.Username}}" required minlength="3" maxlength="64" autocomplete="username" spellcheck="false"></label>
 <label>Current password<input type="password" name="current_password" required autocomplete="current-password"></label>
-<label>New password <span class="settings-help">Optional; leave blank to keep it</span><input type="password" name="password" minlength="8" maxlength="72" autocomplete="new-password" aria-describedby="password-help"></label>
-<label>Confirm new password<input type="password" name="confirm_password" minlength="8" maxlength="72" autocomplete="new-password"></label>
-<p class="settings-help" id="password-help">Use 8–72 bytes for a new password. Usernames use 3–64 letters, numbers, dots, underscores, @ or hyphens.</p>
+<label>New password <span class="settings-help">Optional; leave blank to keep it</span><input type="password" name="password" autocomplete="new-password" aria-describedby="password-help"></label>
+<label>Confirm new password<input type="password" name="confirm_password" autocomplete="new-password"></label>
+<p class="settings-help" id="password-help">Use {{.PasswordPolicy.Minimum}}–{{.PasswordPolicy.Maximum}} Unicode characters, at most 72 UTF-8 bytes, for a new password. Usernames use 3–64 letters, numbers, dots, underscores, @ or hyphens.</p>
 <div class="settings-actions"><button class="chroma-button" type="submit">Save and sign out</button><a class="chroma-button-secondary" href="/settings">Cancel</a></div>
-</form></section>{{end}}
+</form></section><script>(()=>{const minimum={{.PasswordPolicy.Minimum}},maximum={{.PasswordPolicy.Maximum}};for(const input of document.querySelectorAll('input[autocomplete="new-password"]')){const hint=document.createElement('span');hint.className='settings-help';hint.setAttribute('aria-live','polite');input.after(hint);const update=()=>{const n=Array.from(input.value).length,b=new TextEncoder().encode(input.value).length;hint.textContent=`${n} characters · ${b}/72 UTF-8 bytes. Passwords are never truncated.`;input.setCustomValidity(input.value&&(b>72||n<minimum||n>maximum)?`Use ${minimum}–${maximum} Unicode characters and at most 72 UTF-8 bytes.`:'')};input.addEventListener('input',update);update()}})();</script>{{end}}

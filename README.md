@@ -12,13 +12,13 @@ Two binaries make up the project. `ICEvirtue` is the engine and the web dashboar
 
 The application follows a continuous reconnaissance workflow separated into five stages, each feeding the next.
 
-**Stage 01, Basic Recon.** ICEvirtue runs [Subfinder](https://github.com/projectdiscovery/subfinder) for passive subdomain discovery. In Full Mode it also passes `-all` to Subfinder and runs [Amass](https://github.com/owasp-amass/amass), unless you started the engine with `--skip-amass`. If you supplied `--dnsx-list`, it additionally runs [DNSX](https://github.com/projectdiscovery/dnsx) once per wordlist for active DNS bruteforcing. Results from all three sources are merged and de-duplicated before anything else happens.
+**Stage 01, Basic Recon.** ICEvirtue runs [Subfinder](https://github.com/projectdiscovery/subfinder) for passive subdomain discovery. In Full Mode it also passes `-all` to Subfinder and runs [Amass](https://github.com/owasp-amass/amass), unless Amass is disabled in Application configurations. If DNSX is enabled with selected uploaded wordlists, it additionally runs [DNSX](https://github.com/projectdiscovery/dnsx) once per wordlist for active DNS bruteforcing. Results from all three sources are merged and de-duplicated before anything else happens.
 
 **Stage 02, Web Validation.** Every discovered name is probed with [HTTPX](https://github.com/projectdiscovery/httpx) to collect status code, page title, web server, resolved IPs and Web Application Firewall brand. Every HTTP-responsive endpoint then undergoes active [WAFW00F](https://github.com/EnableSecurity/wafw00f) detection, regardless of status code. Each WAFW00F process has a 30-second wall-clock limit by default; timed-out endpoints do not delay the next worker job. The first prioritized product match is saved; a generic-only match is shown as **Unknown WAF**, and a successful probe with no match as **No WAF detected**. Failed WAF probes preserve the last successful observation. WAFW00F probes do not follow redirects, to avoid scanning a different host. All subdomains are saved to the profile whether they are alive or not, but only hosts answering `200`, `301`, `302` or `307` are carried forward to later stages.
 
-**Stage 03, Directory and File Fuzzing.** If you supplied `--directory-list`, a built-in concurrent fuzzer walks the carried-forward hosts. You can pass several wordlists and the engine merges and de-duplicates them, so overlapping lists cost you nothing. Requests do not follow redirects, and a path is recorded when it answers `200`, `301`, `302`, `403` or `405`. Without `--directory-list` the stage is skipped.
+**Stage 03, Directory and File Fuzzing.** If directory discovery is enabled with selected uploaded wordlists, a built-in concurrent fuzzer walks the carried-forward hosts. You can pass several wordlists and the engine merges and de-duplicates them, so overlapping lists cost you nothing. Requests do not follow redirects, and a path is recorded when it answers `200`, `301`, `302`, `403` or `405`. Directory discovery starts disabled until wordlists are uploaded and selected.
 
-**Stage 04, Vulnerability Scanning.** Unless you passed `--skip-nuclei`, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
+**Stage 04, Vulnerability Scanning.** Unless Nuclei is disabled in Application configurations, [Nuclei](https://github.com/projectdiscovery/nuclei) is run against the carried-forward hosts to identify vulnerabilities and misconfigurations. Template ID, matched URL, severity, name and description are stored per finding.
 
 **Stage 05, Secret Hunting.** ICEvirtue uses [Waymore](https://github.com/xnl-h4ck3r/waymore) to discover historical JS/data URLs and download archived responses. It validates historical URLs that are still live with HTTPX, crawls live hosts with [Katana](https://github.com/projectdiscovery/katana), and extracts script references with [Subjs](https://github.com/lc/subjs). [SecretHound](https://github.com/rafabd1/SecretHound) scans live URLs and archived files in one run; [Mantra](https://github.com/brosck/mantra) scans live URLs only. The stage is best effort: partial tool output remains usable.
 
@@ -56,7 +56,7 @@ Discovery produced no subdomains at all, meaning every source either failed or c
 
 Validation found no host that answered HTTP. Every later stage needs a live host, and stage 05 validates its archived URLs against live hosts too, so there is nothing productive left to attempt.
 
-Anything else is reported and moved past. A tool that is missing, errors out, or exceeds its time budget is recorded as a failure for that stage, and a stage with no work to do is recorded as skipped with the reason. Skipping is not failing: leaving out `--dnsx-list` or passing `--skip-nuclei` shows up as `skipped`, not as a problem.
+Anything else is reported and moved past. A tool that is missing, errors out, or exceeds its time budget is recorded as a failure for that stage, and a stage with no work to do is recorded as skipped with the reason. Skipping is not failing: disabling DNSX or Nuclei in Application configurations shows up as `skipped`, not as a problem.
 
 Because these tools stream their results, a tool that dies partway through still contributes everything it emitted first. Those runs are marked `PARTIAL` in the stage summary, so a Nuclei scan killed at the end of its two hour budget keeps the findings it had already reported rather than throwing the whole scan away. The same applies when a run halts: everything collected before the halt is saved to the profile and appears in the dashboard, so a run that stops at validation still leaves you its subdomains.
 
@@ -67,23 +67,23 @@ Each stage logs a summary showing exactly which tools contributed what:
       subfinder      ok         3987
       amass          FAILED        0  amass not found: install it and make sure it is on PATH (searched: ...)
       dnsx[wl1.txt]  ok           57
-      dnsx[wl2.txt]  skipped         no --dnsx-list was provided
+      dnsx[wl2.txt]  skipped         DNSX is disabled or no wordlist selected
 ```
 
 ## Requirements
 
-You need Go 1.25 or newer to build, and **all of the external tools listed above have to be installed and reachable on the `PATH` of the user ICEvirtue runs as**. This is the single most common reason a fresh install does not work, so ICEvirtue prints a preflight summary at startup telling you exactly which tools it found and which it could not, before any scan is ever triggered. Check that line first when a stage fails.
+You need Go 1.26 or newer to build, and **all of the external tools listed above have to be installed and reachable on the `PATH` of the user ICEvirtue runs as**. This is the single most common reason a fresh install does not work, so ICEvirtue prints a preflight summary at startup telling you exactly which tools it found and which it could not, before any scan is ever triggered. Check that line first when a stage fails.
 
 Not every tool is needed in every configuration. Which ones ICEvirtue actually requires depends on the flags you start it with:
 
 | Tool | Stage | Needed when |
 |---|---|---|
 | `subfinder` | 01 | always |
-| `amass` | 01 | unless `--skip-amass` |
-| `dnsx` | 01 | only if `--dnsx-list` is given |
+| `amass` | 01 | unless disabled in settings |
+| `dnsx` | 01 | when enabled with selected uploaded wordlists |
 | `httpx` | 02, 05 | always |
 | `wafw00f` | 02 | attempted for every HTTPX-responsive endpoint; active probes are sent |
-| `nuclei` | 04 | unless `--skip-nuclei` |
+| `nuclei` | 04 | unless disabled in settings |
 | `waymore`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | attempted when inputs permit, failures are non-fatal |
 
 Stage 03 needs no external tool at all, since the fuzzer is built in.
@@ -124,7 +124,7 @@ sudo apt install httpx-toolkit
 sudo ln -s /usr/bin/httpx-toolkit /usr/local/bin/httpx
 ```
 
-One more thing worth knowing: `katana`, `subjs` and `mantra` commonly come from `go install` and land in `$GOPATH/bin`, usually `~/go/bin`. Waymore is a Python tool installed separately. Ensure all binaries are on the systemd service's `PATH`, or pin them with `--tool-paths`. Use `--waymore-config /path/to/config.yml` for Waymore API keys; without it ICEvirtue uses a temporary config that does not exclude common JS paths. `--waymore-response-limit` sets Waymore's maximum response count (default 5000); it is not a byte-size limit.
+One more thing worth knowing: `katana`, `subjs` and `mantra` commonly come from `go install` and land in `$GOPATH/bin`, usually `~/go/bin`. Waymore is a Python tool installed separately. Ensure all binaries are on the systemd service's `PATH`, or pin them with `--tool-paths`. Use `--waymore-config /path/to/config.yml` for Waymore API keys; without it ICEvirtue uses a temporary config that does not exclude common JS paths. Tools Settings sets Waymore's maximum response count (default 5000); it is not a byte-size limit.
 
 ## Installation
 
@@ -190,54 +190,42 @@ Because the password is passed as a command line argument it will land in your s
 
 ## Running ICEvirtue
 
-The simplest useful invocation gives the engine wordlists for both active DNS bruteforcing and directory fuzzing, and turns on per-finding logging:
+Start the server against the database used by the administration CLI:
 
 ```Shell
-ICEvirtue --directory-list /path/to/wl1,/path/to/wl2 --dnsx-list /path/to/wl1,/path/to/wl2 --verbose
+ICEvirtue --db-path /opt/icevirtue/icevirtue.db --upload-dir /opt/icevirtue/uploads
 ```
 
-That runs the full pipeline. The dashboard listens on port `8888/tcp` by default, so open `http://localhost:8888` and log in with the user you created. If that port is taken, or you simply prefer another one, use `--api-port`:
+Open the dashboard on port `8888` (or choose another with `--api-port`) and navigate to **Settings → Admin dashboard → Application configurations**. Configure password policy, global scan skips, wordlists and tool limits there. DNSX and directory discovery start disabled with empty wordlist selections. Upload lists, select them, enable the desired stages, and save.
 
-```Shell
-ICEvirtue --api-port 2077
-```
-
-You can trim the pipeline down when a target's infrastructure is fragile, when your VPS is small, or when you are just testing. `--skip-amass` and `--skip-nuclei` each remove one stage's heaviest tool and can be combined freely:
-
-```Shell
-ICEvirtue --directory-list /path/to/wl1 --skip-nuclei --skip-amass
-```
-
-Two stages are opt-in rather than opt-out. Leaving out `--dnsx-list` skips active DNS bruteforcing, and leaving out `--directory-list` skips directory fuzzing entirely. Both log a line saying so, so a skipped stage never looks like a silent failure.
+Settings persist in SQLite. Running scans keep their original configuration; queued scans take a snapshot when they start. Manual and scheduled scans share a queue of up to 100 waiting jobs, with two concurrent scans by default. [Configuration API, limits and upgrade instructions](docs/application-configuration.md).
 
 ### ICEvirtue Flag Reference
+
+Scan behavior flags have moved to the admin configuration API and dashboard.
 
 | Flag | Default | What it does |
 |---|---|---|
 | `--api-port` | `8888` | TCP port the web dashboard listens on. |
 | `--db-path` | `icevirtue.db` | Path to the SQLite database. Must match the path used by `ICEvirtue-admin`. |
-| `--directory-list` | *(empty)* | Comma-separated absolute paths to wordlists for directory fuzzing. Multiple lists are merged and de-duplicated. Omit to skip stage 03. |
-| `--dnsx-list` | *(empty)* | Comma-separated absolute paths to wordlists for active `dnsx` bruteforcing, used in Full Mode only. `dnsx` runs once per list. Omit to skip DNS bruteforcing. |
 | `--jwt-secret` | *(auto)* | Path to the key that signs dashboard session cookies. See "Where State Lives" for how the default is chosen. |
 | `--secure-cookies` | `false` | Mark the session cookie `Secure`. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. It defaults off because a browser accepts a `Secure` cookie over plain HTTP and then never sends it back, so turning it on without TLS makes login silently impossible. |
 | `--session-ttl` | `24h` | How long a dashboard session lasts before it has to be re-established. |
 | `--trusted-origin` | *(empty)* | An `Origin` to accept on state-changing requests in addition to the request's own host. Repeatable. **Required behind a reverse proxy that rewrites `Host`**, otherwise every write is refused with 403. See "Behind A Reverse Proxy". |
-| `--skip-amass` | `false` | Skip Amass during stage 01. Everything else in that stage still runs. |
-| `--skip-nuclei` | `false` | Skip stage 04 entirely. |
 | `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
 | `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
-| `--verbose` | `false` | Log every individual finding as it is diffed, marking each as new or already known, instead of only the per-stage totals. |
-| `--waf-process-timeout` | `30s` | Maximum wall-clock time for each WAFW00F process. Accepts Go duration values such as `45s` or `1m`; does not change WAFW00F's per-request timeout. |
+| `--upload-dir` | `uploads` | Private wordlist storage under the service working directory; keep outside the web directory. |
+| `--waymore-config` | *(empty)* | Server-managed Waymore provider configuration file. |
+| `--reload-templates` | `false` | Development-only template reloading. |
 | `--web-dir` | `web` | Directory holding the dashboard's `templates/` and `static/` folders. |
-| `--wide-targets` | `false` | Widen which hosts reach stages 03 to 05. See below. |
 
-By default only hosts answering `200`, `301`, `302` or `307` are handed to fuzzing, Nuclei and secret hunting. `--wide-targets` replaces that with everything HTTPX reported except a plain `404`, which brings `401`, `403`, `405`, `500` and `503` hosts into scope. A `403` on `/` tells you nothing about what `/admin` returns, and finding exactly that is the point of directory fuzzing, so the wide filter is usually what you want on a target you are allowed to be thorough with. It costs scan time proportional to how many extra hosts it lets through, and the stage log tells you how many that was:
+By default only hosts answering `200`, `301`, `302` or `307` are handed to fuzzing, Nuclei and secret hunting. The wide-target option in Scan configuration replaces that with everything HTTPX reported except a plain `404`, which brings `401`, `403`, `405`, `500` and `503` hosts into scope. A `403` on `/` tells you nothing about what `/admin` returns, and finding exactly that is the point of directory fuzzing, so the wide filter is usually what you want on a target you are allowed to be thorough with. It costs scan time proportional to how many extra hosts it lets through, and the stage log tells you how many that was:
 
 ```
 [*] [Target: example.com] Target filter wide (any status except 404) selected 47 of 52 alive host(s)
 ```
 
-Paths given to `--directory-list` and `--dnsx-list` should be absolute, since they are read relative to the working directory otherwise. Both accept a trailing comma, and empty entries are ignored.
+Upload wordlists through Application configurations. Administrators select opaque file IDs; server paths are never accepted by the API.
 
 ## ICEvirtue-admin Reference
 
@@ -250,7 +238,7 @@ ICEvirtue-admin create --username 'netrunner' --password 'super-secret-password'
 | Flag | Default | What it does |
 |---|---|---|
 | `--username` | *(required)* | Username for the new dashboard account. |
-| `--password` | *(required)* | Password of 12–72 bytes. Stored as a bcrypt hash, never in plain text. |
+| `--password` | *(required)* | Password matching the stored policy (default 8–26 Unicode characters, always at most 72 UTF-8 bytes). Stored as a bcrypt hash, never in plain text. |
 | `--db-path` | `./icevirtue.db` | Database to write the account into. Created and migrated if it does not exist. |
 
 Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. The CLI creates an Admin account for initial provisioning and recovery. Use Settings → Admin dashboard → Users to create Viewer or Operator accounts and manage existing accounts.
@@ -273,7 +261,7 @@ StateDirectory=icevirtue
 WorkingDirectory=/opt/icevirtue
 Environment=HOME=/opt/icevirtue
 Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/ICEvirtue --db-path /opt/icevirtue/icevirtue.db --api-port 8888 --directory-list /path/to/wl1 --dnsx-list /path/to/wl1
+ExecStart=/usr/bin/ICEvirtue --db-path /opt/icevirtue/icevirtue.db --api-port 8888 --upload-dir /opt/icevirtue/uploads
 Restart=on-failure
 
 [Install]
@@ -367,7 +355,7 @@ SSE streams check revocation before sending data and every two seconds while idl
 Account pages are separate templates outside the public static tree. Forms use
 ordinary server POSTs with session-bound CSRF tokens, server validation and escaped
 HTML responses. Account management does not depend on client-side JavaScript.
-New passwords must contain 12–72 bytes. Usernames must contain 3–64 letters, numbers,
+New passwords must meet the saved application policy: initially 8–26 Unicode characters, with an independent 72-byte UTF-8 cap. Existing passwords remain valid. Usernames must contain 3–64 letters, numbers,
 dots, underscores, @ or hyphens, beginning with a letter or number.
 
 Server logs show the latest 2,000 process log entries, newest first, in pages of 100.

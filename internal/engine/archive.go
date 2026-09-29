@@ -17,7 +17,7 @@ import (
 )
 
 // WaymoreResponseLimit is a count, matching waymore's -l flag, not a byte size.
-var WaymoreResponseLimit = 5000
+
 var WaymoreConfig string
 
 const archiveURLPattern = `(?i)\.(?:js|json|ts|tsx)(?:[?#]|$)`
@@ -35,8 +35,8 @@ type jsSources struct {
 	cleanup  func()
 }
 
-func collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvidence, func(), error) {
-	dir, err := os.MkdirTemp("", "icevirtue-waymore-")
+func (run *runner) collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvidence, func(), error) {
+	dir, err := os.MkdirTemp(run.scratch, "icevirtue-waymore-")
 	if err != nil {
 		return nil, nil, func() {}, err
 	}
@@ -59,7 +59,7 @@ func collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvid
 			return nil, nil, cleanup, err
 		}
 	}
-	limit := WaymoreResponseLimit
+	limit := run.config.Tools.WaymoreResponseLimit
 	if limit <= 0 {
 		limit = 5000
 	}
@@ -67,7 +67,7 @@ func collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvid
 		"-oR", responses, "-ow", "-ci", "d", "-l", strconv.Itoa(limit),
 		"-ra", archiveURLPattern, "-f", "-c", config}
 	log.Printf("[*] [Target: %s] Running waymore with a %d response limit...", profile.Domain, limit)
-	runErr := runToolToFiles("waymore", args, timeoutWaymore)
+	runErr := run.runToolToFiles("waymore", args, timeoutWaymore)
 	urls, urlErr := readWaymoreURLs(urlFile, profile.Domain)
 	archived, indexErr := readWaymoreIndex(responses, profile.Domain)
 	return urls, archived, cleanup, errors.Join(runErr, urlErr, indexErr)

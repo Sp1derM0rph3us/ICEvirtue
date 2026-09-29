@@ -4,13 +4,14 @@ package access
 type Permission string
 
 const (
-	Viewer                 = "viewer"
-	Operator               = "operator"
-	Admin                  = "admin"
-	Read        Permission = "read"
-	Write       Permission = "write"
-	ManageUsers Permission = "manage_users"
-	ReadLogs    Permission = "read_logs"
+	Viewer                         = "viewer"
+	Operator                       = "operator"
+	Admin                          = "admin"
+	Read                Permission = "read"
+	Write               Permission = "write"
+	ManageUsers         Permission = "manage_users"
+	ReadLogs            Permission = "read_logs"
+	ManageConfiguration Permission = "manage_configuration"
 )
 
 func ValidRole(role string) bool { return role == Viewer || role == Operator || role == Admin }
@@ -24,7 +25,7 @@ func Allows(role string, permission Permission) bool {
 		return true
 	case Write:
 		return role == Operator || role == Admin
-	case ManageUsers, ReadLogs:
+	case ManageUsers, ReadLogs, ManageConfiguration:
 		return role == Admin
 	default:
 		return false
