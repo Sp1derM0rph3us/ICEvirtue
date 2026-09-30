@@ -7,6 +7,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"strconv"
@@ -182,14 +183,20 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 	return r, nil
 }
 
-func StartServer(port int, sched *scheduler.Scheduler, cfg Config) error {
+// StartServer serves the dashboard on the given IPv4 and IPv6 addresses — one
+// listener each, same port and handler.
+//
+// Both default to loopback in main, so out of the box the dashboard answers only
+// on the host. An operator widens that per family with --ipv4/--ipv6 (for
+// example 0.0.0.0 or ::). A family whose listener cannot be bound is logged and
+// skipped; startup fails only when neither could be bound.
+func StartServer(ipv4, ipv6 string, port int, sched *scheduler.Scheduler, cfg Config) error {
 	handler, err := NewRouter(cfg, sched)
 	if err != nil {
 		return err
 	}
 
 	srv := &http.Server{
-		Addr:    fmt.Sprintf(":%d", port),
 		Handler: handler,
 		// The Slowloris guard. Every timeout used to be zero, i.e. infinite.
 		ReadHeaderTimeout: 10 * time.Second,
@@ -199,8 +206,35 @@ func StartServer(port int, sched *scheduler.Scheduler, cfg Config) error {
 		// completeness".
 	}
 
-	log.Printf("[+] Web dashboard listening on %s", srv.Addr)
-	return srv.ListenAndServe()
+	// tcp4 and tcp6 explicitly, never "tcp": that keeps the IPv6 socket v6-only, so
+	// a wildcard pair (0.0.0.0 and ::) does not fight over the same port.
+	wanted := []struct{ network, addr string }{
+		{"tcp4", net.JoinHostPort(ipv4, strconv.Itoa(port))},
+		{"tcp6", net.JoinHostPort(ipv6, strconv.Itoa(port))},
+	}
+
+	var listeners []net.Listener
+	for _, b := range wanted {
+		ln, err := net.Listen(b.network, b.addr)
+		if err != nil {
+			log.Printf("[-] Could not listen on %s: %v", b.addr, err)
+			continue
+		}
+		log.Printf("[+] Web dashboard listening on %s", b.addr)
+		listeners = append(listeners, ln)
+	}
+	if len(listeners) == 0 {
+		return fmt.Errorf("no listen address could be bound (ipv4 %q, ipv6 %q, port %d)", ipv4, ipv6, port)
+	}
+
+	// One handler served on every bound listener. The first listener to error
+	// returns and brings the process down, matching the previous single-socket
+	// behaviour.
+	errCh := make(chan error, len(listeners))
+	for _, ln := range listeners {
+		go func(l net.Listener) { errCh <- srv.Serve(l) }(ln)
+	}
+	return <-errCh
 }
 
 // ---------------------------------------------------------------------- authentication
