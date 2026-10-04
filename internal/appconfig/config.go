@@ -16,7 +16,7 @@ type ValidationError string
 
 func (e ValidationError) Error() string { return string(e) }
 func Defaults() models.ApplicationConfiguration {
-	return models.ApplicationConfiguration{ID: 1, Revision: 1, Password: models.PasswordPolicy{Minimum: 8, Maximum: 26}, Scan: models.ScanSettings{SkipDNSX: true, SkipDirectory: true, DNSXWordlists: []string{}, DirectoryWordlists: []string{}}, Tools: models.ToolSettings{WAFTimeoutSeconds: 30, WaymoreResponseLimit: 5000, MaxConcurrentScans: 2}}
+	return models.ApplicationConfiguration{ID: 1, Revision: 1, Password: models.PasswordPolicy{Minimum: 8, Maximum: 26}, Scan: models.ScanSettings{SkipDNSX: true, SkipDirectory: true, DNSXWordlists: []string{}, DirectoryWordlists: []string{}}, Tools: models.ToolSettings{WAFTimeoutSeconds: 30, WaymoreResponseLimit: 5000, MaxConcurrentScans: 2, SubfinderTimeoutMinutes: 20, AmassTimeoutMinutes: 60, DNSXTimeoutMinutes: 30, HTTPXTimeoutMinutes: 30, NucleiTimeoutMinutes: 120, WaymoreTimeoutMinutes: 60, KatanaTimeoutMinutes: 45, SubjsTimeoutMinutes: 15, MantraTimeoutMinutes: 30, SecretHoundTimeoutMinutes: 30, FuzzerTimeoutMinutes: 120}}
 }
 func Seed(db *gorm.DB) error {
 	c := Defaults()
@@ -59,6 +59,28 @@ func Validate(db *gorm.DB, c models.ApplicationConfiguration) error {
 	}
 	if c.Tools.MaxConcurrentScans < 1 || c.Tools.MaxConcurrentScans > 4 {
 		return ValidationError("concurrent scans must be 1–4")
+	}
+	// Per-tool wall-clock budgets, in minutes. The floor of 1 is what prevents a
+	// 0-minute budget, which would make every run of that tool fail instantly.
+	for _, tm := range []struct {
+		name  string
+		value int
+	}{
+		{"Subfinder", c.Tools.SubfinderTimeoutMinutes},
+		{"Amass", c.Tools.AmassTimeoutMinutes},
+		{"DNSX", c.Tools.DNSXTimeoutMinutes},
+		{"httpx", c.Tools.HTTPXTimeoutMinutes},
+		{"Nuclei", c.Tools.NucleiTimeoutMinutes},
+		{"Waymore", c.Tools.WaymoreTimeoutMinutes},
+		{"katana", c.Tools.KatanaTimeoutMinutes},
+		{"subjs", c.Tools.SubjsTimeoutMinutes},
+		{"Mantra", c.Tools.MantraTimeoutMinutes},
+		{"SecretHound", c.Tools.SecretHoundTimeoutMinutes},
+		{"directory fuzzer", c.Tools.FuzzerTimeoutMinutes},
+	} {
+		if tm.value < 1 || tm.value > 1440 {
+			return ValidationError(fmt.Sprintf("%s timeout must be 1–1440 minutes", tm.name))
+		}
 	}
 	for _, s := range []struct {
 		ids  []string

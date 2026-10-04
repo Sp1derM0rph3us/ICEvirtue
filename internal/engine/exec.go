@@ -25,26 +25,30 @@ var ToolHome string
 // directory instead of depending on the real permissions of /opt.
 var defaultToolHome = "/opt/icevirtue"
 
-// Per-tool wall-clock budgets. Without these a hung tool pins is_scanning=true
-// forever, since the lock is only released when the phase returns. subfinder
-// self-caps at 10 minutes so its budget must comfortably exceed that; amass and
-// katana are the genuinely unbounded ones.
-const (
-	timeoutSubfinder   = 20 * time.Minute
-	timeoutAmass       = 60 * time.Minute
-	timeoutDnsx        = 30 * time.Minute
-	timeoutHttpx       = 30 * time.Minute
-	timeoutNuclei      = 120 * time.Minute
-	timeoutWaymore     = 60 * time.Minute
-	timeoutKatana      = 45 * time.Minute
-	timeoutSubjs       = 15 * time.Minute
-	timeoutMantra      = 30 * time.Minute
-	timeoutSecretHound = 30 * time.Minute
-)
+// toolTimeout converts an administrator-configured per-tool budget (minutes,
+// from ToolSettings) into the wall-clock deadline a tool runs under. Without a
+// deadline a hung tool pins is_scanning=true forever, since the scan lock is
+// only released when the phase returns. The one-minute floor is defence in
+// depth against a 0-minute budget, which would make every run of the tool fail
+// instantly; appconfig.Validate and the startup migration also enforce it.
+func toolTimeout(minutes int) time.Duration {
+	if minutes < 1 {
+		minutes = 1
+	}
+	return time.Duration(minutes) * time.Minute
+}
 
 // maxStreamCapture bounds how much of a failing tool's output we keep for the
 // error message, so a tool that floods a stream cannot exhaust memory.
 const maxStreamCapture = 64 * 1024
+
+// maxToolOutputBytes caps a single tool's captured stdout. A tool that streams
+// more than this is cancelled on its own context — not the scan's — so one
+// runaway tool fails in isolation instead of filling scan scratch and taking
+// the rest of the stage down with it. It is deliberately generous: a backstop
+// against a runaway stream, not a tuning knob. The scratch free-disk floor
+// remains the scan-wide safety net. A var so tests can lower it.
+var maxToolOutputBytes int64 = 1 << 30
 
 var (
 	toolHomeOnce     sync.Once
@@ -241,7 +245,7 @@ func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reade
 		if err != nil {
 			return stdout, fmt.Errorf("%s output file: %w", name, err)
 		}
-		output = &toolOutput{File: file, stop: cancel}
+		output = &toolOutput{File: file, stop: cancel, limit: maxToolOutputBytes}
 		stdout = output
 	}
 	cmd.Stdout = outb
@@ -281,12 +285,13 @@ type toolOutput struct {
 	*os.File
 	writeErr error
 	written  int64
+	limit    int64
 	stop     context.CancelFunc
 }
 
 func (o *toolOutput) Write(p []byte) (int, error) {
-	if o.written+int64(len(p)) > 4<<30 {
-		o.writeErr = fmt.Errorf("tool output exceeds 4 GiB storage limit")
+	if o.limit > 0 && o.written+int64(len(p)) > o.limit {
+		o.writeErr = fmt.Errorf("tool output exceeds %d byte budget", o.limit)
 		if o.stop != nil {
 			o.stop()
 		}

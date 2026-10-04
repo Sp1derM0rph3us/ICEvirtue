@@ -18,12 +18,10 @@ import (
 	_ "github.com/glebarez/go-sqlite"
 )
 
-const fuzzScratchBytes int64 = 4 << 30
-
 // Words are deduplicated on disk, requests flow through a fixed worker pool,
 // and findings are committed in bounded batches rather than retained per scan.
 func (run *runner) RunDirectoryFuzzing(profile *models.Profile, hosts []models.AliveHost, paths []string) (int, error) {
-	ctx, cancel := context.WithTimeout(run.ctx, 2*time.Hour)
+	ctx, cancel := context.WithTimeout(run.ctx, toolTimeout(run.config.Tools.FuzzerTimeoutMinutes))
 	defer cancel()
 	dir, e := os.MkdirTemp(run.scratch, "icevirtue-fuzzer-")
 	if e != nil {

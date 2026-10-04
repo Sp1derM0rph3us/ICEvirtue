@@ -91,7 +91,7 @@ func TestConfigurationAuthorizationAndStrictUpdates(t *testing.T) {
 func TestConfigurationConcurrentRevisionAndCrossOrigin(t *testing.T) {
 	h, _ := configurationServer(t)
 	_, cookie := roleUser(t, "admin")
-	body := `{"revision":1,"settings":{"waf_timeout_seconds":45,"waymore_response_limit":100,"max_concurrent_scans":3}}`
+	body := `{"revision":1,"settings":{"waf_timeout_seconds":45,"waymore_response_limit":100,"max_concurrent_scans":3,"subfinder_timeout_minutes":20,"amass_timeout_minutes":60,"dnsx_timeout_minutes":30,"httpx_timeout_minutes":30,"nuclei_timeout_minutes":120,"waymore_timeout_minutes":60,"katana_timeout_minutes":45,"subjs_timeout_minutes":15,"mantra_timeout_minutes":30,"secrethound_timeout_minutes":30,"fuzzer_timeout_minutes":120}}`
 	var wg sync.WaitGroup
 	codes := make(chan int, 2)
 	for i := 0; i < 2; i++ {

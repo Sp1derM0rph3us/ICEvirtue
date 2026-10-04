@@ -104,11 +104,7 @@ func (run *runner) OrchestrateScan(profile *models.Profile) {
 	status := &runStatus{}
 	defer func() {
 		if run.ctx.Err() != nil {
-			if errors.Is(context.Cause(run.ctx), errScratchLimit) {
-				status.halt("scratch storage limit reached")
-			} else {
-				status.halt("interrupted")
-			}
+			status.halt(haltReasonFor(run.ctx))
 		}
 		database.DB.Model(&p).Updates(map[string]interface{}{
 			"is_scanning":      false,
@@ -185,6 +181,19 @@ func (run *runner) OrchestrateScan(profile *models.Profile) {
 			fmt.Sprintf("%s · %d new credential(s) in JavaScript", profile.Domain, newSecrets), "", &p.ID)
 	}
 
+	// A scan cancelled mid-run (scratch exhaustion or a restart) must not report
+	// completion: the deferred handler records the halt on the profile, so the
+	// log and the dashboard status would otherwise disagree.
+	if run.ctx.Err() != nil {
+		reason := haltReasonFor(run.ctx)
+		logf("======================")
+		logf("[-] [Target: %s] Run halted before completion: %s", profile.Domain, reason)
+		logf("======================\n")
+		notifications.Create(notifications.ScanHalted, "Scan halted",
+			profile.Domain+" · "+reason, "", &p.ID)
+		return
+	}
+
 	logf("======================")
 	logf("[+] PIPELINE COMPLETE for %s", profile.Domain)
 	logf("[+] New Subdomains: %d", newSubdomains)
@@ -198,6 +207,15 @@ func (run *runner) OrchestrateScan(profile *models.Profile) {
 	newFindings := newSubdomains + newHosts + newVulns + newDirs + newSecrets
 	notifications.Create(notifications.ScanFinished, "Scan finished",
 		fmt.Sprintf("%s · %d new finding(s)", profile.Domain, newFindings), "", &p.ID)
+}
+
+// haltReasonFor maps a cancelled scan context to the short status shown on the
+// profile, distinguishing a scratch-storage halt from any other interruption.
+func haltReasonFor(ctx context.Context) string {
+	if errors.Is(context.Cause(ctx), errScratchLimit) {
+		return "scratch storage limit reached"
+	}
+	return "interrupted"
 }
 
 // stageDiscovery enumerates subdomains from every source available to it.

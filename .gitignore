@@ -44,6 +44,7 @@ resume.cfg
 .agent/
 .claude/
 .config/
+fedora_setup.sh
 *_REPORT.md
 
 # Superdesign design workspace: init context, design-system.md, HTML mockups,

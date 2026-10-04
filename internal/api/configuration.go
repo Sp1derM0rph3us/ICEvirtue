@@ -56,6 +56,7 @@ func (a *API) configurationRoutes(r chi.Router) {
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(noStore, a.requireAPIAuth, requirePermission(access.ManageConfiguration), a.requireSameOrigin, requireConfigCSRF)
 		r.Get("/configuration", a.getConfiguration)
+		r.Post("/configuration/reset", a.resetConfiguration)
 		r.With(requireJSONBody).Put("/configuration/{section}", a.saveConfiguration)
 		r.Get("/wordlists", a.listWordlists)
 		r.Post("/wordlists", a.uploadWordlist)
@@ -98,7 +99,7 @@ func (a *API) getConfiguration(w http.ResponseWriter, r *http.Request) {
 		configError(w, e)
 		return
 	}
-	respondJSON(w, 200, map[string]any{"configuration": c, "limits": map[string]any{"password_minimum": 8, "password_maximum": 72, "password_byte_cap": 72, "max_file_bytes": wordlists.MaxFileBytes, "max_total_bytes": wordlists.MaxTotalBytes, "max_files": wordlists.MaxFiles, "max_queue": 100, "waf_timeout_seconds": []int{1, 300}, "waymore_response_limit": []int{1, 50000}, "max_concurrent_scans": []int{1, 4}}})
+	respondJSON(w, 200, map[string]any{"configuration": c, "limits": map[string]any{"password_minimum": 8, "password_maximum": 72, "password_byte_cap": 72, "max_file_bytes": wordlists.MaxFileBytes, "max_total_bytes": wordlists.MaxTotalBytes, "max_files": wordlists.MaxFiles, "max_queue": 100, "waf_timeout_seconds": []int{1, 300}, "waymore_response_limit": []int{1, 50000}, "max_concurrent_scans": []int{1, 4}, "tool_timeout_minutes": []int{1, 1440}}})
 }
 func (a *API) saveConfiguration(w http.ResponseWriter, r *http.Request) {
 	section := chi.URLParam(r, "section")
@@ -153,6 +154,34 @@ func (a *API) saveConfiguration(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	slog.Info("application configuration saved", "actor", c.UpdatedBy, "section", section, "revision", c.Revision, "settings", settings)
+	respondJSON(w, 200, c)
+}
+
+// resetConfiguration replaces every setting with its default in one write. It is
+// the destructive action behind the Reset control: the whole configuration row
+// is overwritten, so it carries the same admin authorization, same-origin and
+// CSRF protection as a save, and takes the current revision so a concurrent edit
+// still loses to the optimistic lock rather than being silently discarded.
+func (a *API) resetConfiguration(w http.ResponseWriter, r *http.Request) {
+	var c models.ApplicationConfiguration
+	err := database.DB.Transaction(func(tx *gorm.DB) error {
+		if e := configAuthorize(r)(tx); e != nil {
+			return e
+		}
+		current, e := appconfig.Load(tx)
+		if e != nil {
+			return e
+		}
+		c = appconfig.Defaults()
+		c.Revision = current.Revision
+		c.UpdatedBy = currentUser(r).PublicID
+		return appconfig.Save(tx, &c, current.Revision)
+	})
+	if err != nil {
+		configError(w, err)
+		return
+	}
+	slog.Info("application configuration reset to defaults", "actor", c.UpdatedBy, "revision", c.Revision)
 	respondJSON(w, 200, c)
 }
 

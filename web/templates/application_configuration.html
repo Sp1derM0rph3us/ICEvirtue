@@ -18,6 +18,14 @@
 #application-settings #config-message.error { color: var(--ui-coral); }
 #application-settings section { scroll-margin-top: 84px; }
 
+/* Confirmation dialog for the destructive reset. */
+#application-settings .cfg-dialog { position: fixed; top: 50%; left: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); margin: 0; border: 1px solid var(--ui-line); border-radius: 4px; padding: 0; background: var(--ui-surface-soft); color: var(--ui-ink); max-width: 440px; width: calc(100% - 32px); }
+#application-settings .cfg-dialog::backdrop { background: rgba(0,0,0,.45); }
+#application-settings .cfg-dialog-body { padding: 20px 22px; display: grid; gap: 12px; }
+#application-settings .cfg-dialog-body h2 { margin: 0; font-size: 1.05rem; }
+#application-settings .cfg-dialog-body p { margin: 0; color: var(--ui-muted); font-size: .9rem; }
+#application-settings .cfg-dialog-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+
 /* Forms: fieldsets are layout-only; action buttons size to their content. */
 #application-settings fieldset { display: grid; gap: 16px; min-width: 0; border: 0; margin: 0; padding: 0; }
 #application-settings .settings-actions button { justify-self: start; }
@@ -25,6 +33,10 @@
 /* Toggles use the brand accent, not the danger colour. Laid out across the row. */
 #application-settings .cfg-checks { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 10px 24px; }
 #application-settings .settings-checkbox input { accent-color: var(--ui-rose); }
+
+/* Per-tool timeout inputs in a compact two-column grid. */
+#application-settings .cfg-timeouts { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 12px 24px; }
+#application-settings .cfg-subhead { font-family: var(--font-display); font-size: .9rem; font-weight: 600; margin: 4px 0 0; }
 
 /* Wordlist selects side by side; native multi-selects styled to match. */
 #application-settings .cfg-wl-selects { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 16px; }
@@ -54,7 +66,7 @@
 @media (max-width: 820px) {
   #application-settings .settings-edit-grid { grid-template-columns: 1fr; }
   #application-settings .cfg-nav { position: static; }
-  #application-settings .cfg-checks, #application-settings .cfg-wl-selects { grid-template-columns: 1fr; }
+  #application-settings .cfg-checks, #application-settings .cfg-wl-selects, #application-settings .cfg-timeouts { grid-template-columns: 1fr; }
 }
 </style>
 <div id="application-settings" data-csrf="{{.CSRF}}">
@@ -70,7 +82,7 @@
         <p class="settings-help">Changes apply to new passwords and to scans that start after saving. Running scans keep their original settings.</p>
         <div class="cfg-toolbar-actions">
             <span id="config-message" role="status" aria-live="polite"></span>
-            <button type="button" id="reload-config" class="chroma-button-secondary">Reload saved settings</button>
+            <button type="button" id="reload-config" class="chroma-button-secondary chroma-button-danger">Reload saved settings</button>
         </div>
     </div>
 
@@ -133,12 +145,38 @@
             <label>WAF process timeout (seconds)<input name="waf_timeout_seconds" type="number" min="1" max="300" required></label>
             <label>Waymore response limit<input name="waymore_response_limit" type="number" min="1" max="50000" required></label>
             <label>Maximum concurrent scans<input name="max_concurrent_scans" type="number" min="1" max="4" required></label>
-            <p class="settings-help">The shared queue accepts up to 100 waiting scans. Lowering concurrency lets active scans finish before starting more work. Directory discovery uses at most 50 simultaneous requests per scan and stops after two hours, retaining partial findings.</p>
+            <p class="settings-help">The shared queue accepts up to 100 waiting scans. Lowering concurrency lets active scans finish before starting more work. Directory discovery uses at most 50 simultaneous requests per scan.</p>
+
+            <h3 class="cfg-subhead">Tool timeouts (minutes)</h3>
+            <p class="settings-help">Each tool is stopped if it exceeds its budget; the stage keeps whatever it produced by then. Range 1–1440 minutes. Changes apply to scans that start after saving.</p>
+            <div class="cfg-timeouts">
+                <label>Subfinder<input name="subfinder_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Amass<input name="amass_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>DNSX brute force<input name="dnsx_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>httpx probing<input name="httpx_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Nuclei<input name="nuclei_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Waymore<input name="waymore_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Katana<input name="katana_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>subjs<input name="subjs_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Mantra<input name="mantra_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>SecretHound<input name="secrethound_timeout_minutes" type="number" min="1" max="1440" required></label>
+                <label>Directory fuzzer<input name="fuzzer_timeout_minutes" type="number" min="1" max="1440" required></label>
+            </div>
             <div class="settings-actions"><button class="chroma-button" type="submit">Save tool settings</button></div>
         </fieldset></form>
     </section>
 </div>
 </div>
+<dialog id="reset-dialog" class="cfg-dialog" aria-labelledby="reset-dialog-title">
+    <div class="cfg-dialog-body">
+        <h2 id="reset-dialog-title">Reset all settings?</h2>
+        <p>This will reset all settings to their default values and cannot be undone. Running scans keep their current configuration.</p>
+        <div class="cfg-dialog-actions">
+            <button type="button" id="reset-cancel" class="chroma-button-secondary">Cancel</button>
+            <button type="button" id="reset-confirm" class="chroma-button-secondary chroma-button-danger">Reset to defaults</button>
+        </div>
+    </div>
+</dialog>
 </div>
 <script>
 (() => {
@@ -152,7 +190,10 @@
  function fill(form,settings){for(const [key,value] of Object.entries(settings)){const el=form.elements[key];if(!el)continue;if(el.multiple){for(const option of el.options)option.selected=value.includes(option.value)}else if(el.type==='checkbox')el.checked=value;else el.value=value}}
  async function load(){try{const data=await request('configuration');await refreshLists();revision=data.configuration.revision;fill(forms['password-policy'],data.configuration.password_policy);fill(forms.scan,data.configuration.scan);fill(forms.tools,data.configuration.tools);for(const form of Object.values(forms))form.querySelector('fieldset').disabled=false;notify('Saved settings loaded.')}catch(e){notify(e.message,true)}}
  for(const [section,form] of Object.entries(forms)){form.addEventListener('submit',async event=>{event.preventDefault();if(saving)return;const settings={};for(const el of form.elements){if(!el.name)continue;settings[el.name]=el.multiple?selections(el):el.type==='checkbox'?el.checked:Number(el.value)}saving=true;const button=form.querySelector('button');button.disabled=true;try{const result=await request('configuration/'+section,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,settings})});revision=result.revision;notify('Settings saved. Running scans keep their original configuration.')}catch(e){notify(e.message+' Your inputs have been preserved.',true)}finally{saving=false;button.disabled=false}})}
- document.getElementById('reload-config').addEventListener('click',()=>{if(!saving)load()});
+ const resetDialog=document.getElementById('reset-dialog');
+ document.getElementById('reload-config').addEventListener('click',()=>{if(!saving)resetDialog.showModal()});
+ document.getElementById('reset-cancel').addEventListener('click',()=>resetDialog.close());
+ document.getElementById('reset-confirm').addEventListener('click',async()=>{if(saving)return;saving=true;const btn=document.getElementById('reset-confirm');btn.disabled=true;try{await request('configuration/reset',{method:'POST'});resetDialog.close();const data=await request('configuration');revision=data.configuration.revision;fill(forms['password-policy'],data.configuration.password_policy);fill(forms.scan,data.configuration.scan);fill(forms.tools,data.configuration.tools);await refreshLists();notify('All settings reset to defaults.')}catch(e){notify(e.message,true)}finally{saving=false;btn.disabled=false}});
  document.getElementById('upload-form').addEventListener('submit',event=>{event.preventDefault();const form=event.currentTarget,file=form.elements.file.files[0];if(!file){document.getElementById('upload-status').textContent='Choose a file to upload first.';return}if(file.size>1073741824){notify('File exceeds the 1 GiB upload limit.',true);return}const button=form.querySelector('button'),status=document.getElementById('upload-status'),progress=document.getElementById('upload-progress');button.disabled=true;progress.hidden=false;progress.value=0;status.textContent='Uploading…';const xhr=new XMLHttpRequest();xhr.open('POST','/api/admin/wordlists?kind='+encodeURIComponent(form.elements.kind.value));xhr.setRequestHeader('X-CSRF-Token',csrf);xhr.timeout=3600000;xhr.upload.onprogress=e=>{if(e.lengthComputable)progress.value=100*e.loaded/e.total};xhr.upload.onload=()=>{status.textContent='Validating and saving…'};xhr.onload=async()=>{button.disabled=false;progress.hidden=true;if(xhr.status===201){status.textContent='Upload complete. Select the list and save scan configuration to use it.';form.elements.file.value='';fileNameEl.textContent='No file selected';fileNameEl.classList.remove('has-file');try{await refreshLists()}catch(e){notify(e.message,true)}}else{let text=xhr.responseText;try{text=JSON.parse(text).error}catch{}status.textContent=text||'Upload failed.'}};xhr.onerror=xhr.ontimeout=()=>{button.disabled=false;progress.hidden=true;status.textContent='Upload interrupted. Reload stored wordlists before retrying.'};const data=new FormData();data.append('file',file);xhr.send(data)});
  const fileInput=document.getElementById('wordlist-file'),fileNameEl=document.getElementById('wordlist-file-name');
  fileInput.addEventListener('change',()=>{const f=fileInput.files[0];fileNameEl.textContent=f?f.name:'No file selected';fileNameEl.classList.toggle('has-file',!!f)});

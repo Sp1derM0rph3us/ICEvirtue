@@ -36,7 +36,7 @@ func (run *runner) RunDnsx(profile *models.Profile, wordlistPath string) ([]stri
 	}
 	args := []string{"-silent", "-d", profile.Domain, "-w", normalized}
 
-	outb, err := run.runTool("dnsx", args, nil, timeoutDnsx)
+	outb, err := run.runTool("dnsx", args, nil, toolTimeout(run.config.Tools.DNSXTimeoutMinutes))
 
 	defer outb.Close()
 	results, parseErr := parseDnsxOutput(outb)

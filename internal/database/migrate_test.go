@@ -12,6 +12,7 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -399,5 +400,51 @@ func TestRunDataMigrationsBackfillsSubdomainLastChangedOnce(t *testing.T) {
 	DB.Model(&models.SchemaMigration{}).Where("version = ?", subdomainLastChangedV1).Count(&markers)
 	if markers != 1 {
 		t.Errorf("migration ledger holds %d row(s) for %s, want 1", markers, subdomainLastChangedV1)
+	}
+}
+
+func TestToolTimeoutsMigrationBackfillsZeros(t *testing.T) {
+	newMigrateEnv(t)
+
+	// Simulate an upgraded install: the new timeout columns start at zero on the
+	// existing config row, except one an admin has already set. Zero them through
+	// the model with Save so GORM owns the column names.
+	c, err := appconfig.Load(DB)
+	if err != nil {
+		t.Fatalf("loading config: %v", err)
+	}
+	c.Tools.SubfinderTimeoutMinutes = 0
+	c.Tools.AmassTimeoutMinutes = 0
+	c.Tools.DNSXTimeoutMinutes = 0
+	c.Tools.HTTPXTimeoutMinutes = 0
+	c.Tools.NucleiTimeoutMinutes = 0
+	c.Tools.WaymoreTimeoutMinutes = 0
+	c.Tools.KatanaTimeoutMinutes = 0
+	c.Tools.SubjsTimeoutMinutes = 0
+	c.Tools.MantraTimeoutMinutes = 0
+	c.Tools.SecretHoundTimeoutMinutes = 0
+	c.Tools.FuzzerTimeoutMinutes = 90 // an admin-set value that must survive
+	if err := DB.Save(&c).Error; err != nil {
+		t.Fatalf("zeroing timeouts: %v", err)
+	}
+
+	if err := runToolTimeoutsMigration(); err != nil {
+		t.Fatalf("running migration: %v", err)
+	}
+
+	got, err := appconfig.Load(DB)
+	if err != nil {
+		t.Fatalf("reloading config: %v", err)
+	}
+	if got.Tools.NucleiTimeoutMinutes != 120 || got.Tools.KatanaTimeoutMinutes != 45 {
+		t.Errorf("zeros not backfilled: nuclei=%d katana=%d", got.Tools.NucleiTimeoutMinutes, got.Tools.KatanaTimeoutMinutes)
+	}
+	if got.Tools.FuzzerTimeoutMinutes != 90 {
+		t.Errorf("admin value overwritten: fuzzer=%d", got.Tools.FuzzerTimeoutMinutes)
+	}
+
+	// A second run is guarded by the ledger and must be a no-op, not an error.
+	if err := runToolTimeoutsMigration(); err != nil {
+		t.Fatalf("rerunning migration: %v", err)
 	}
 }

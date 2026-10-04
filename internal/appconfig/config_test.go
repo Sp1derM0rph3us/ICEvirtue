@@ -45,3 +45,27 @@ func TestSeedDoesNotOverwriteSavedConfiguration(t *testing.T) {
 		t.Fatalf("restart lost settings: %+v %v", c, e)
 	}
 }
+
+func TestToolTimeoutValidation(t *testing.T) {
+	// Defaults validate, and the wordlist stages are skipped with empty lists, so
+	// Validate never queries the database and a nil handle is safe here.
+	if e := appconfig.Validate(nil, appconfig.Defaults()); e != nil {
+		t.Fatalf("defaults should validate: %v", e)
+	}
+	for _, tc := range []struct {
+		name   string
+		mutate func(*models.ApplicationConfiguration)
+		valid  bool
+	}{
+		{"zero nuclei", func(c *models.ApplicationConfiguration) { c.Tools.NucleiTimeoutMinutes = 0 }, false},
+		{"katana over max", func(c *models.ApplicationConfiguration) { c.Tools.KatanaTimeoutMinutes = 1441 }, false},
+		{"fuzzer at floor", func(c *models.ApplicationConfiguration) { c.Tools.FuzzerTimeoutMinutes = 1 }, true},
+		{"subfinder at ceiling", func(c *models.ApplicationConfiguration) { c.Tools.SubfinderTimeoutMinutes = 1440 }, true},
+	} {
+		c := appconfig.Defaults()
+		tc.mutate(&c)
+		if e := appconfig.Validate(nil, c); (e == nil) != tc.valid {
+			t.Errorf("%s: valid=%v got %v", tc.name, tc.valid, e)
+		}
+	}
+}

@@ -15,12 +15,6 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
-type KatanaResult struct {
-	Request struct {
-		Endpoint string `json:"endpoint"`
-	} `json:"request"`
-}
-
 type SecretHoundResult struct {
 	Type        string   `json:"type"`
 	Risk        string   `json:"risk"`
@@ -148,7 +142,7 @@ func (run *runner) validateJSURLs(profile *models.Profile, urls []string) ([]str
 	log.Printf("[*] [Target: %s] Validating %d historical JS URL(s) via httpx...", profile.Domain, len(urls))
 
 	stdin := strings.NewReader(strings.Join(urls, "\n"))
-	outb, err := run.runTool("httpx", []string{"-silent", "-mc", "200"}, stdin, timeoutHttpx)
+	outb, err := run.runTool("httpx", []string{"-silent", "-mc", "200"}, stdin, toolTimeout(run.config.Tools.HTTPXTimeoutMinutes))
 
 	allowed := make(map[string]bool, len(urls))
 	for _, candidate := range urls {
@@ -166,26 +160,54 @@ func (run *runner) validateJSURLs(profile *models.Profile, urls []string) ([]str
 }
 
 // collectKatana crawls the live hosts and keeps the JS endpoints it finds.
+//
+// katana runs with field selection (-f url) so it emits one URL per line rather
+// than full request/response JSON. The parser only ever needed the URL, and the
+// bodies were large enough to exhaust scan scratch on a wide crawl.
 func (run *runner) collectKatana(profile *models.Profile, hostURLs []string) ([]string, error) {
 	log.Printf("[*] [Target: %s] Running katana against %d host(s)...", profile.Domain, len(hostURLs))
 
-	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
-	outb, err := run.runTool("katana", []string{"-silent", "-j", "-d", "2"}, stdin, timeoutKatana)
-
+	outb, err := run.runKatana(hostURLs, "-f")
+	if err != nil && isUnknownFlagErr(err) {
+		// Older katana builds spell the field selector -field. Retry once, and
+		// only when the build rejected the flag, so a crawl that failed for any
+		// other reason (timeout, cancellation) is never silently run again.
+		outb.Close()
+		outb, err = run.runKatana(hostURLs, "-field")
+	}
 	defer outb.Close()
+
+	urls, parseErr := parseKatanaURLs(outb)
+	return urls, errors.Join(err, parseErr)
+}
+
+// runKatana crawls the hosts selecting only the URL field. stdin is rebuilt per
+// call so the fallback retry reads the full host list, not a drained reader.
+func (run *runner) runKatana(hostURLs []string, fieldFlag string) (io.ReadCloser, error) {
+	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
+	return run.runTool("katana", []string{"-silent", "-d", "2", fieldFlag, "url"}, stdin, toolTimeout(run.config.Tools.KatanaTimeoutMinutes))
+}
+
+// parseKatanaURLs keeps the JS endpoints from katana's one-URL-per-line output.
+func parseKatanaURLs(out io.Reader) ([]string, error) {
+	parsed, err := parsePlainURLs(out)
+	if err != nil {
+		return nil, err
+	}
 	var urls []string
-	scanner := newLineScanner(outb)
-	for scanner.Scan() {
-		var res KatanaResult
-		if jsonErr := json.Unmarshal(scanner.Bytes(), &res); jsonErr != nil {
-			continue
-		}
-		if url := res.Request.Endpoint; url != "" && isJSFile(url) {
-			urls = append(urls, url)
+	for _, u := range parsed {
+		if isJSFile(u) {
+			urls = append(urls, u)
 		}
 	}
+	return urls, nil
+}
 
-	return urls, errors.Join(err, scanner.Err())
+// isUnknownFlagErr reports whether a tool error is the flag parser rejecting an
+// unrecognised flag, which is how katana fails instantly on a version mismatch.
+func isUnknownFlagErr(err error) bool {
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "not defined") || strings.Contains(msg, "unknown flag")
 }
 
 // collectSubjs scrapes script references straight out of the live hosts.
@@ -193,7 +215,7 @@ func (run *runner) collectSubjs(profile *models.Profile, hostURLs []string) ([]s
 	log.Printf("[*] [Target: %s] Running subjs...", profile.Domain)
 
 	stdin := strings.NewReader(strings.Join(hostURLs, "\n"))
-	outb, err := run.runTool("subjs", nil, stdin, timeoutSubjs)
+	outb, err := run.runTool("subjs", nil, stdin, toolTimeout(run.config.Tools.SubjsTimeoutMinutes))
 
 	defer outb.Close()
 	urls, parseErr := parsePlainURLs(outb)
@@ -219,7 +241,7 @@ func (run *runner) scanWithMantra(profile *models.Profile, jsURLs []string) ([]m
 
 	stdin := strings.NewReader(strings.Join(urls, "\n") + "\n")
 	// -s suppresses the banner. Mantra has no JSON flag; findings are text lines.
-	outb, runErr := run.runTool("mantra", []string{"-s"}, stdin, timeoutMantra)
+	outb, runErr := run.runTool("mantra", []string{"-s"}, stdin, toolTimeout(run.config.Tools.MantraTimeoutMinutes))
 
 	defer outb.Close()
 	var secrets []models.SecretFinding
@@ -309,7 +331,7 @@ func (run *runner) scanWithSecretHoundSources(profile *models.Profile, jsURLs []
 		return nil, err
 	}
 
-	runErr := run.runToolToFiles("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, timeoutSecretHound)
+	runErr := run.runToolToFiles("secrethound", []string{"-i", inputPath, "-o", outputPath, "--silent", "--no-progress"}, toolTimeout(run.config.Tools.SecretHoundTimeoutMinutes))
 	data, readErr := os.ReadFile(outputPath)
 	if readErr != nil {
 		return nil, errors.Join(runErr, fmt.Errorf("reading SecretHound JSON: %w", readErr))

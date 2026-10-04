@@ -41,10 +41,14 @@ func (run *runner) RunNuclei(profile *models.Profile, hosts []models.AliveHost) 
 		urls = append(urls, h.URL)
 	}
 
-	args := []string{"-silent", "-jsonl"}
+	// Stage 04 timed out at its 2h budget largely because hosts behind Azure
+	// Front Door returned 400s on reset connections and were retried rather than
+	// abandoned. -mhe drops a host after this many transport errors, reclaiming
+	// that wasted time without narrowing template coverage or dropping findings.
+	args := []string{"-silent", "-jsonl", "-mhe", "15"}
 	stdin := strings.NewReader(strings.Join(urls, "\n"))
 
-	outb, err := run.runTool("nuclei", args, stdin, timeoutNuclei)
+	outb, err := run.runTool("nuclei", args, stdin, toolTimeout(run.config.Tools.NucleiTimeoutMinutes))
 
 	defer outb.Close()
 	results, parseErr := parseNucleiOutput(outb, profile.ID)

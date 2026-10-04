@@ -38,7 +38,7 @@ func (run *runner) RunHttpx(profile *models.Profile, subdomains []string) ([]mod
 	args := []string{"-silent", "-json", "-title", "-web-server", "-ip", "-status-code"}
 	stdin := strings.NewReader(strings.Join(subdomains, "\n"))
 
-	outb, err := run.runTool("httpx", args, stdin, timeoutHttpx)
+	outb, err := run.runTool("httpx", args, stdin, toolTimeout(run.config.Tools.HTTPXTimeoutMinutes))
 
 	defer outb.Close()
 	results, parseErr := parseHttpxOutput(outb, profile.ID)

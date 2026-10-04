@@ -22,6 +22,22 @@ type ToolSettings struct {
 	WAFTimeoutSeconds    int `json:"waf_timeout_seconds"`
 	WaymoreResponseLimit int `json:"waymore_response_limit"`
 	MaxConcurrentScans   int `json:"max_concurrent_scans"`
+
+	// Per-run wall-clock budgets for each external tool, in minutes. A tool that
+	// exceeds its budget is killed and the stage keeps whatever it emitted. These
+	// map 1:1 to the inputs on the Tool settings page and must all be present on
+	// save (the config API rejects a partial section).
+	SubfinderTimeoutMinutes   int `json:"subfinder_timeout_minutes"`
+	AmassTimeoutMinutes       int `json:"amass_timeout_minutes"`
+	DNSXTimeoutMinutes        int `json:"dnsx_timeout_minutes"`
+	HTTPXTimeoutMinutes       int `json:"httpx_timeout_minutes"`
+	NucleiTimeoutMinutes      int `json:"nuclei_timeout_minutes"`
+	WaymoreTimeoutMinutes     int `json:"waymore_timeout_minutes"`
+	KatanaTimeoutMinutes      int `json:"katana_timeout_minutes"`
+	SubjsTimeoutMinutes       int `json:"subjs_timeout_minutes"`
+	MantraTimeoutMinutes      int `json:"mantra_timeout_minutes"`
+	SecretHoundTimeoutMinutes int `json:"secrethound_timeout_minutes"`
+	FuzzerTimeoutMinutes      int `json:"fuzzer_timeout_minutes"`
 }
 type ApplicationConfiguration struct {
 	ID        uint           `gorm:"primaryKey;check:id = 1" json:"-"`

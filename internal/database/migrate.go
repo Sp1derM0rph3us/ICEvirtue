@@ -1,6 +1,7 @@
 package database
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"time"
@@ -8,6 +9,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
@@ -27,6 +29,12 @@ const subdomainLastChangedV1 = "2026_09_subdomain_last_changed_v1"
 // representation. It leaves the instant unchanged, including for soft-deleted rows.
 const timestampsUTCV1 = "2026_09_timestamps_utc_v1"
 const secretLiveEvidenceV1 = "2026_09_secret_live_evidence_v1"
+
+// toolTimeoutsV1 backfills the per-tool timeout columns that AutoMigrate adds to
+// the single configuration row as zero. A 0-minute budget is an instant kill, so
+// every column still at zero is set to its default. Seed cannot do this: it uses
+// OnConflict DoNothing, so it never touches an existing row.
+const toolTimeoutsV1 = "2026_10_tool_timeouts_v1"
 
 // backfillBatch is how many rows one transaction converts.
 //
@@ -67,7 +75,58 @@ func RunDataMigrations() error {
 	if err := runTimestampsUTCMigration(); err != nil {
 		return err
 	}
-	return runSecretLiveEvidenceMigration()
+	if err := runSecretLiveEvidenceMigration(); err != nil {
+		return err
+	}
+	return runToolTimeoutsMigration()
+}
+
+// runToolTimeoutsMigration sets any tool-timeout column still at its zero value
+// to the default. It backfills through the model with Save rather than raw
+// column names, so GORM owns the field-to-column mapping (the names it derives
+// for DNSX, HTTPX and SecretHound are not obvious). Guarded on zero so it never
+// overwrites a value an admin has set, and idempotent via the migration ledger.
+func runToolTimeoutsMigration() error {
+	applied, err := migrationApplied(toolTimeoutsV1)
+	if err != nil || applied {
+		return err
+	}
+	d := appconfig.Defaults().Tools
+	if err := DB.Transaction(func(tx *gorm.DB) error {
+		var c models.ApplicationConfiguration
+		if e := tx.First(&c, 1).Error; e != nil {
+			if errors.Is(e, gorm.ErrRecordNotFound) {
+				// Seed creates the row from Defaults(); there is nothing to backfill.
+				return nil
+			}
+			return e
+		}
+		t := &c.Tools
+		for _, f := range []struct {
+			cur *int
+			def int
+		}{
+			{&t.SubfinderTimeoutMinutes, d.SubfinderTimeoutMinutes},
+			{&t.AmassTimeoutMinutes, d.AmassTimeoutMinutes},
+			{&t.DNSXTimeoutMinutes, d.DNSXTimeoutMinutes},
+			{&t.HTTPXTimeoutMinutes, d.HTTPXTimeoutMinutes},
+			{&t.NucleiTimeoutMinutes, d.NucleiTimeoutMinutes},
+			{&t.WaymoreTimeoutMinutes, d.WaymoreTimeoutMinutes},
+			{&t.KatanaTimeoutMinutes, d.KatanaTimeoutMinutes},
+			{&t.SubjsTimeoutMinutes, d.SubjsTimeoutMinutes},
+			{&t.MantraTimeoutMinutes, d.MantraTimeoutMinutes},
+			{&t.SecretHoundTimeoutMinutes, d.SecretHoundTimeoutMinutes},
+			{&t.FuzzerTimeoutMinutes, d.FuzzerTimeoutMinutes},
+		} {
+			if *f.cur == 0 {
+				*f.cur = f.def
+			}
+		}
+		return tx.Save(&c).Error
+	}); err != nil {
+		return fmt.Errorf("backfilling tool timeouts: %w", err)
+	}
+	return markMigrationApplied(toolTimeoutsV1)
 }
 
 func runSecretLiveEvidenceMigration() error {

@@ -18,7 +18,7 @@ func (run *runner) RunAmass(profile *models.Profile) ([]string, error) {
 
 	args := []string{"enum", "-d", profile.Domain, "-nocolor"}
 
-	outb, err := run.runTool("amass", args, nil, timeoutAmass)
+	outb, err := run.runTool("amass", args, nil, toolTimeout(run.config.Tools.AmassTimeoutMinutes))
 
 	defer outb.Close()
 	results, parseErr := parseAmassOutput(outb, profile.Domain)

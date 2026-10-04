@@ -3,14 +3,16 @@ package engine
 import (
 	"context"
 	"errors"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"syscall"
 	"time"
 )
 
 var errScratchLimit = errors.New("scan scratch storage limit reached")
+
+// minScratchFreeBytes is the free-space floor on the scratch filesystem below
+// which a scan is halted to protect the host.
+const minScratchFreeBytes = 64 << 20
 
 // External tools write files themselves. Monitor the whole scan directory in
 // addition to enforcing write/page limits on storage owned by Go.
@@ -32,7 +34,7 @@ func (run *runner) prepareScratch() (func(), error) {
 			case <-ctx.Done():
 				return
 			case <-ticker.C:
-				if e := checkScratch(dir, fuzzScratchBytes); e != nil {
+				if e := checkScratch(dir); e != nil {
 					cancel(e)
 					return
 				}
@@ -41,39 +43,17 @@ func (run *runner) prepareScratch() (func(), error) {
 	}()
 	return func() { cancel(nil); <-done; os.RemoveAll(dir) }, nil
 }
-func checkScratch(dir string, limit int64) error {
-	var total int64
-	err := filepath.WalkDir(dir, func(path string, entry fs.DirEntry, err error) error {
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-			return nil
-		}
-		info, err := entry.Info()
-		if errors.Is(err, os.ErrNotExist) {
-			return nil
-		}
-		if err != nil {
-			return err
-		}
-		total += info.Size()
-		if total > limit {
-			return errScratchLimit
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
+
+// checkScratch halts a scan only when the scratch filesystem is genuinely
+// almost full. Per-tool output budgets (see maxToolOutputBytes in exec.go)
+// bound each captured stream, so a single verbose tool no longer needs a
+// scan-wide aggregate byte cap here: this is purely the disk-exhaustion net.
+func checkScratch(dir string) error {
 	var disk syscall.Statfs_t
-	if err = syscall.Statfs(dir, &disk); err != nil {
+	if err := syscall.Statfs(dir, &disk); err != nil {
 		return err
 	}
-	if disk.Bavail*uint64(disk.Bsize) < 64<<20 {
+	if disk.Bavail*uint64(disk.Bsize) < minScratchFreeBytes {
 		return errScratchLimit
 	}
 	return nil

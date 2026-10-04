@@ -67,7 +67,7 @@ func (run *runner) collectWaymore(profile *models.Profile) ([]string, map[string
 		"-oR", responses, "-ow", "-ci", "d", "-l", strconv.Itoa(limit),
 		"-ra", archiveURLPattern, "-f", "-c", config}
 	log.Printf("[*] [Target: %s] Running waymore with a %d response limit...", profile.Domain, limit)
-	runErr := run.runToolToFiles("waymore", args, timeoutWaymore)
+	runErr := run.runToolToFiles("waymore", args, toolTimeout(run.config.Tools.WaymoreTimeoutMinutes))
 	urls, urlErr := readWaymoreURLs(urlFile, profile.Domain)
 	archived, indexErr := readWaymoreIndex(responses, profile.Domain)
 	return urls, archived, cleanup, errors.Join(runErr, urlErr, indexErr)

@@ -28,7 +28,7 @@ func (run *runner) RunSubfinder(profile *models.Profile) ([]string, error) {
 		args = append(args, "-all")
 	}
 
-	outb, err := run.runTool("subfinder", args, nil, timeoutSubfinder)
+	outb, err := run.runTool("subfinder", args, nil, toolTimeout(run.config.Tools.SubfinderTimeoutMinutes))
 
 	defer outb.Close()
 	results, parseErr := parseSubfinderOutput(outb)
