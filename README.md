@@ -2,11 +2,11 @@
 
 ![](https://github.com/Sp1derM0rph3us/ICEvirtue/blob/dev/ICEvirtue_login.png)
 
-ICEvirtue is the netrunner's most essential tool. It executes a standardized reconnaissance and enumeration pipeline and stores the results inside **target profiles**, allowing netrunners to focus on what really matters: cracking those defenses.
+ICEvirtue is the netrunner's most essential tool. It executes a standardized reconnaissance and enumeration workflow and stores the results inside **target profiles**, allowing netrunners to focus on what really matters: actually hacking.
 
-You register a domain once, tell ICEvirtue how often to look at it, and it keeps looking. Every run is diffed against everything it has seen before for that profile, so the dashboard tells you what is *new* rather than dumping the same ten thousand subdomains on you every night. Findings are grouped per profile into subdomains, alive hosts, directories, vulnerabilities and secrets, and the dashboard updates itself live over Server-Sent Events while a scan is running.
+You register a domain once, tell ICEvirtue how often to look at it, and it _keeps_ looking. Every run is diffed against everything it has seen before for that profile, so the dashboard tells you what is _new_ rather than dumping the same ten thousand subdomains on you every night. Findings are grouped per profile into subdomains, alive hosts, directories, vulnerabilities and secrets, and the dashboard updates itself live over Server-Sent Events while a scan is running.
 
-Two binaries make up the project. `ICEvirtue` is the engine and the web dashboard, and `ICEvirtue-admin` is the small companion tool you use to create dashboard users, because there is no default account.
+Two binaries make up the project. `ICEvirtue` is the engine and the web dashboard, and `ICEvirtue-admin` is the small companion tool you use to create the **first login credentials**, because there is no default account. Every other account after the first boot can be created through the web dashboard.
 
 ## How The Pipeline Works
 
@@ -86,7 +86,8 @@ Not every tool is needed in every configuration. Which ones ICEvirtue actually r
 | `nuclei` | 04 | unless disabled in settings |
 | `waymore`, `katana`, `subjs`, `mantra`, `secrethound` | 05 | attempted when inputs permit, failures are non-fatal |
 
-Stage 03 needs no external tool at all, since the fuzzer is built in.
+
+**OBS**: Stage 03 needs no external tool at all, since the fuzzer is built in.
 
 Build SecretHound with `go build -o secrethound ./cmd/secrethound` from its repository and put the binary on `PATH`, or pin it with `--tool-paths secrethound=/absolute/path/to/secrethound`. ICEvirtue supplies a `.urls` list and reads SecretHound's JSON output. SecretHound's default TLS behavior is used.
 
@@ -320,52 +321,21 @@ The **tool config home** is where the spawned recon tools keep their own configu
 
 ## Accounts, settings and roles
 
-The Settings navigation tab opens a server-rendered page at `/settings`. Operators
-and Admins can open User settings at `/settings/user` to change their username or
-password. The current password is required, and a successful change revokes every
-session for that account. Viewers can see their role in Settings but cannot open or
-submit the account editor.
+The Settings navigation tab opens a server-rendered page at `/settings`. Operators and Admins can open "User" settings at `/settings/user` to change their username or password. The current password is required, and a successful change revokes every session for that account. Viewers can see their role in Settings but cannot open or submit the account editor.
 
-Admins can open `/settings/admin`, then Users or Server logs. Users supports account
-creation, role assignment, credential edits and permanent account deletion. Every
-saved edit, including a save without changed values, increments the account version
-and revokes all its sessions. Admins may edit themselves and are then returned to
-login. Deleting or demoting the last Admin is refused. User deletion removes sessions
-and notifications while preserving shared reconnaissance data.
+Admins can open `/settings/admin`, then Users or Server logs. Users supports account creation, role assignment, credential edits and permanent account deletion. Every saved edit, including a save without changed values, increments the account version and revokes all its sessions. Admins may edit themselves and are then returned to login. Deleting or demoting the last Admin is refused. User deletion removes sessions and notifications while preserving shared reconnaissance data.
 
-Viewer permits reads of profiles, schedules, findings, assets and notifications.
-Operator adds profile creation, scheduling, deletion, scan execution, notification
-mutations and self-service account edits. Admin adds user administration and server
-logs. These rules are checked on the server. All authenticated API writes require
-Operator or Admin; login and logout are authentication operations available to every
-role. There is no per-profile ownership restriction in this version.
+Viewer permits reads of profiles, schedules, findings, assets and notifications. Operator adds profile creation, scheduling, deletion, scan execution, notification mutations and self-service account edits. Admin adds user administration and server logs. These rules are checked on the server. All authenticated API writes require Operator or Admin; login and logout are authentication operations available to every role. There is no per-profile ownership restriction in this version.
 
-Existing accounts migrate once to Admin because the former provisioning command
-created administrators. New accounts default to Viewer in the model and admin form;
-the bootstrap CLI creates Admin accounts. The demo fixture is an Admin.
+Existing accounts migrate once to Admin because the former provisioning command created administrators. New accounts default to Viewer in the model and admin form; the bootstrap CLI creates Admin accounts. The demo fixture is an Admin.
 
-JWTs contain only an opaque account UUID, a random session ID, account version,
-issuer, audience and issue/not-before/expiry timestamps. The server pins HS256 and
-the session token type, checks every required claim, then checks the live account,
-version and session record in SQLite. Roles are read from the current account record.
-Legacy tokens are rejected. `--session-ttl` defaults to 24 hours and accepts one
-second through seven days. Logout revokes one session; account edits revoke all.
-SSE streams check revocation before sending data and every two seconds while idle.
+JWTs contain only an opaque account UUID, a random session ID, account version, issuer, audience and issue/not-before/expiry timestamps. The server pins HS256 and the session token type, checks every required claim, then checks the live account, version and session record in SQLite. Roles are read from the current account record. Legacy tokens are rejected. `--session-ttl` defaults to 24 hours and accepts one second through seven days. Logout revokes one session; account edits revoke all. SSE streams check revocation before sending data and every two seconds while idle.
 
-Account pages are separate templates outside the public static tree. Forms use
-ordinary server POSTs with session-bound CSRF tokens, server validation and escaped
-HTML responses. Account management does not depend on client-side JavaScript.
-New passwords must meet the saved application policy: initially 8–26 Unicode characters, with an independent 72-byte UTF-8 cap. Existing passwords remain valid. Usernames must contain 3–64 letters, numbers,
-dots, underscores, @ or hyphens, beginning with a letter or number.
+Account pages are separate templates outside the public static tree. Forms use ordinary server POSTs with session-bound CSRF tokens, server validation and escaped HTML responses. Account management does not depend on client-side JavaScript. New passwords must meet the saved application policy: initially 8–26 Unicode characters, with an independent 72-byte UTF-8 cap. Existing passwords remain valid. Usernames must contain 3–64 letters, numbers, dots, underscores, @ or hyphens, beginning with a letter or number.
 
-Server logs show the latest 2,000 process log entries, newest first, in pages of 100.
-Entries are capped at 16 KiB. The in-memory buffer resets on restart; normal process
-output remains available to the service manager. Logs are Admin-only and rendered
-as escaped text. SQL parameters, HTTP query strings and request bodies are not
-included by the new request/database logging configuration.
+Server logs show the latest 2,000 process log entries, newest first, in pages of 100. Entries are capped at 16 KiB. The in-memory buffer resets on restart; normal process output remains available to the service manager. Logs are Admin-only and rendered as escaped text. SQL parameters, HTTP query strings and request bodies are not included by the new request/database logging configuration.
 
-See [the implementation and verification report](docs/account-access.md) for the
-design rationale and scope of the access-control checks.
+See [the implementation and verification report](docs/account-access.md) for the design rationale and scope of the access-control checks.
 
 ## HTTP API
 
@@ -418,31 +388,16 @@ A subdomain row carries its own finding counts, a representative status code, an
 
 ## Dashboard fixture data
 
-Create a disposable database with two sample targets, changed and unchanged assets,
-Nuclei findings at several severity levels, directories, SecretHound and Mantra
-credential findings, and a demo login:
+Create a disposable database with two sample targets, changed and unchanged assets, Nuclei findings at several severity levels, directories, SecretHound and Mantra credential findings, and a demo login:
 
 ```sh
 go run ./cmd/mockdata
 go run . --db-path mock-dashboard.db
 ```
 
-Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and
-its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it.
-The general Credentials tab shows both engines. Open the `app.acme.example.com` or
-`api.acme.example.com` node to inspect SecretHound risk, occurrences, description,
-and context. Mantra's unique finding is unattributed and appears only in the general
-tab; a duplicate Mantra finding is retained in the database but suppressed there.
-New fixtures use calendar schedules (daily and weekly), which the Profiles table shows
-with their time of day. Existing fixtures retain their stored `@every` interval until
-you recreate or edit them; the UI labels those as intervals without inventing a clock time.
+Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it. The general Credentials tab shows both engines. Open the `app.acme.example.com` or `api.acme.example.com` node to inspect SecretHound risk, occurrences, description, and context. Mantra's unique finding is unattributed and appears only in the general tab; a duplicate Mantra finding is retained in the database but suppressed there. New fixtures use calendar schedules (daily and weekly), which the Profiles table shows with their time of day. Existing fixtures retain their stored `@every` interval until you recreate or edit them; the UI labels those as intervals without inventing a clock time.
 
-To run the dev-only Chroma browser smoke suite against this disposable fixture, run
-`npm install` and `npx playwright install`, leave the dashboard running, then run
-`npm run test:ui`. The suite exercises Chromium, Firefox and WebKit at phone,
-tablet, desktop and short-landscape sizes; use `ICEVIRTUE_SMOKE_URL` if the server is
-not at `http://127.0.0.1:8888`. Do not point the suite at a production database: one
-test creates and removes a temporary profile.
+To run the dev-only Chroma browser smoke suite against this disposable fixture, run `npm install` and `npx playwright install`, leave the dashboard running, then run `npm run test:ui`. The suite exercises Chromium, Firefox and WebKit at phone, tablet, desktop and short-landscape sizes; use `ICEVIRTUE_SMOKE_URL` if the server is not at `http://127.0.0.1:8888`. Do not point the suite at a production database: one test creates and removes a temporary profile.
 
 ## Troubleshooting
 
@@ -458,20 +413,9 @@ If the dashboard shows a `halted:` status, the reason is in the status itself an
 
 ### Tool output storage
 
-ICEvirtue writes captured tool stdout to private temporary files and parses it
-sequentially after each process exits, including usable output from failed or
-timed-out tools. Files are closed and removed after parsing. Stdout and stderr
-diagnostic excerpts remain capped at 64 KiB each. SecretHound and Waymore write
-their findings to explicit files, so their console output is retained only for
-diagnostics.
+ICEvirtue writes captured tool stdout to private temporary files and parses it sequentially after each process exits, including usable output from failed or timed-out tools. Files are closed and removed after parsing. Stdout and stderr diagnostic excerpts remain capped at 64 KiB each. SecretHound and Waymore write their findings to explicit files, so their console output is retained only for diagnostics.
 
-Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR`
-to a writable, disk-backed directory with sufficient free space to move output
-storage away from RAM; a tmpfs-backed `/tmp` still consumes memory. Disk I/O can
-increase scan time, disk exhaustion causes reported tool errors, and abrupt
-application termination can leave temporary files behind. There is no output
-size cutoff: heap use still depends on the largest record, accumulated findings,
-and deduplication state. SecretHound's JSON results are still loaded as an array.
+Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR` to a writable, disk-backed directory with sufficient free space to move output storage away from RAM; a tmpfs-backed `/tmp` still consumes memory. Disk I/O can increase scan time, disk exhaustion causes reported tool errors, and abrupt application termination can leave temporary files behind. There is no output size cutoff: heap use still depends on the largest record, accumulated findings, and deduplication state. SecretHound's JSON results are still loaded as an array.
 
 
 ## Disclaimer
