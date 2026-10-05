@@ -15,8 +15,7 @@ import (
 	"time"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 )
@@ -25,12 +24,12 @@ func configurationServer(t *testing.T) (http.Handler, *wordlists.Store) {
 	t.Helper()
 	newAPIEnv(t)
 	initAuth(t)
-	store, e := wordlists.New(database.DB, filepath.Join(t.TempDir(), "uploads"), "../../web")
+	store, e := wordlists.New(testDB, filepath.Join(t.TempDir(), "uploads"), "../../web")
 	if e != nil {
 		t.Fatal(e)
 	}
 	t.Cleanup(func() { store.Close() })
-	h, e := NewRouter(Config{Templates: os.DirFS("../../web/templates"), Static: os.DirFS("../../web/static"), Wordlists: store, SessionTTL: time.Hour}, nil)
+	h, e := NewRouter(Config{DB: testDB, Signer: testSigner, Templates: os.DirFS("../../web/templates"), Static: os.DirFS("../../web/static"), Wordlists: store, SessionTTL: time.Hour})
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -44,11 +43,11 @@ func configRequest(t *testing.T, h http.Handler, method, path, body string, cook
 	if cookie != nil {
 		r.AddCookie(cookie)
 		if csrf {
-			claims, e := auth.ValidateToken(cookie.Value)
+			claims, e := testSigner.ValidateToken(cookie.Value)
 			if e != nil {
 				t.Fatal(e)
 			}
-			r.Header.Set("X-CSRF-Token", auth.CSRFToken(claims))
+			r.Header.Set("X-CSRF-Token", testSigner.CSRFToken(claims))
 		}
 	}
 	w := httptest.NewRecorder()
@@ -74,18 +73,18 @@ func TestConfigurationAuthorizationAndStrictUpdates(t *testing.T) {
 	}
 	requireStatus(t, configRequest(t, h, "PUT", path, valid, admin, true), 200)
 	requireStatus(t, configRequest(t, h, "PUT", path, valid, admin, true), 409)
-	c, e := appconfig.Load(database.DB)
+	c, e := appconfig.Load(testDB)
 	if e != nil || c.Revision != 2 || c.Password.Minimum != 10 || c.Password.Maximum != 30 {
 		t.Fatalf("settings not persisted: %+v %v", c, e)
 	}
 	// Existing credentials remain valid under the tightened policy.
 	c.Password.Minimum = 25
-	if e = database.DB.Save(&c).Error; e != nil {
+	if e = testDB.Save(&c).Error; e != nil {
 		t.Fatal(e)
 	}
 	requireStatus(t, do(t, h, "GET", "/api/admin/configuration", admin), 200)
-	claims, _ := auth.ValidateToken(admin.Value)
-	database.DB.Delete(&models.Session{}, "id = ?", claims.ID)
+	claims, _ := testSigner.ValidateToken(admin.Value)
+	testDB.Delete(&models.Session{}, "id = ?", claims.ID)
 	requireStatus(t, do(t, h, "GET", "/api/admin/configuration", admin), 401)
 }
 func TestConfigurationConcurrentRevisionAndCrossOrigin(t *testing.T) {
@@ -114,8 +113,8 @@ func TestConfigurationConcurrentRevisionAndCrossOrigin(t *testing.T) {
 	r.AddCookie(cookie)
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("Origin", "https://attacker.invalid")
-	claims, _ := auth.ValidateToken(cookie.Value)
-	r.Header.Set("X-CSRF-Token", auth.CSRFToken(claims))
+	claims, _ := testSigner.ValidateToken(cookie.Value)
+	r.Header.Set("X-CSRF-Token", testSigner.CSRFToken(claims))
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	requireStatus(t, w, 403)
@@ -136,8 +135,8 @@ func TestWordlistAPIUploadSelectionAndDelete(t *testing.T) {
 		r := httptest.NewRequest("POST", "/api/admin/wordlists?kind=directory", &buf)
 		r.Header.Set("Content-Type", writer.FormDataContentType())
 		r.AddCookie(cookie)
-		claims, _ := auth.ValidateToken(cookie.Value)
-		r.Header.Set("X-CSRF-Token", auth.CSRFToken(claims))
+		claims, _ := testSigner.ValidateToken(cookie.Value)
+		r.Header.Set("X-CSRF-Token", testSigner.CSRFToken(claims))
 		w := httptest.NewRecorder()
 		h.ServeHTTP(w, r)
 		return w
@@ -152,13 +151,13 @@ func TestWordlistAPIUploadSelectionAndDelete(t *testing.T) {
 	if strings.Contains(w.Body.String(), store.Path) || strings.Contains(w.Body.String(), "filename") {
 		t.Fatal("filesystem metadata leaked")
 	}
-	c, _ := appconfig.Load(database.DB)
+	c, _ := appconfig.Load(testDB)
 	c.Scan.SkipDirectory = false
 	c.Scan.DirectoryWordlists = []string{item.ID}
 	raw, _ := json.Marshal(map[string]any{"revision": c.Revision, "settings": c.Scan})
 	requireStatus(t, configRequest(t, h, "PUT", "/api/admin/configuration/scan", string(raw), cookie, true), 200)
 	requireStatus(t, configRequest(t, h, "DELETE", "/api/admin/wordlists/"+item.ID, "", cookie, true), 409)
-	c, _ = appconfig.Load(database.DB)
+	c, _ = appconfig.Load(testDB)
 	c.Scan.SkipDirectory = true
 	c.Scan.DirectoryWordlists = []string{}
 	raw, _ = json.Marshal(map[string]any{"revision": c.Revision, "settings": c.Scan})
@@ -173,15 +172,15 @@ func TestConfigCommitRejectsRevokedSession(t *testing.T) {
 	h, _ := configurationServer(t)
 	u, cookie := roleUser(t, "admin")
 	_ = h
-	claims, _ := auth.ValidateToken(cookie.Value)
+	claims, _ := testSigner.ValidateToken(cookie.Value)
 	r := httptest.NewRequest("PUT", "/", nil)
 	r = r.WithContext(authenticatedContext(r, claims, u))
-	authorize := configAuthorize(r)
-	if e := authorize(database.DB); e != nil {
+	authorize := testAPI().configAuthorize(r)
+	if e := authorize(testDB); e != nil {
 		t.Fatal(e)
 	}
-	database.DB.Delete(&models.Session{}, "id = ?", claims.ID)
-	if e := authorize(database.DB); e == nil {
+	testDB.Delete(&models.Session{}, "id = ?", claims.ID)
+	if e := authorize(testDB); e == nil {
 		t.Fatal("revoked session accepted at commit")
 	}
 }
@@ -195,7 +194,7 @@ func TestPasswordFormShowsPolicyWithoutTruncation(t *testing.T) {
 		if !strings.Contains(body, "8–26") || strings.Contains(body, `maxlength="72"`) {
 			t.Fatal(fmt.Sprintf("incorrect password policy markup at %s", path))
 		}
-		if strings.Count(body, "new TextEncoder()") != 1 {
+		if strings.Count(body, `data-minimum="8" data-maximum="26"`) != 1 {
 			t.Fatal("missing or repeated password counter")
 		}
 	}
@@ -205,26 +204,26 @@ func TestDisabledScheduleRemovesOnlyScheduledQueueEntry(t *testing.T) {
 	h, _ := configurationServer(t)
 	_, cookie := roleUser(t, "admin")
 	var profile models.Profile
-	database.DB.First(&profile)
-	database.DB.Model(&profile).Update("is_queued", true)
-	database.DB.Create(&models.ScanJob{ProfileID: profile.ID.String(), Source: "scheduled", State: "queued"})
+	testDB.First(&profile)
+
+	testDB.Create(&models.ScanJob{ProfileID: profile.ID.String(), Source: "scheduled", State: "queued"})
 	body := `{"schedule":"@every 24h","enabled":false}`
 	requireStatus(t, configRequest(t, h, "PUT", "/api/profiles/"+profile.ID.String()+"/schedule", body, cookie, true), 200)
 	var n int64
-	database.DB.Model(&models.ScanJob{}).Count(&n)
-	database.DB.First(&profile, "id = ?", profile.ID)
+	testDB.Model(&models.ScanJob{}).Count(&n)
+	testDB.First(&profile, "id = ?", profile.ID)
 	if n != 0 || profile.Enabled || profile.IsQueued {
 		t.Fatal("scheduled job survived disable")
 	}
-	database.DB.Model(&profile).Update("is_queued", true)
-	database.DB.Create(&models.ScanJob{ProfileID: profile.ID.String(), Source: "manual", State: "queued"})
+
+	testDB.Create(&models.ScanJob{ProfileID: profile.ID.String(), Source: "manual", State: "queued"})
 	requireStatus(t, configRequest(t, h, "PUT", "/api/profiles/"+profile.ID.String()+"/schedule", body, cookie, true), 200)
-	database.DB.Model(&models.ScanJob{}).Count(&n)
+	testDB.Model(&models.ScanJob{}).Count(&n)
 	if n != 1 {
 		t.Fatal("manual request lost when disabling schedule")
 	}
 	requireStatus(t, configRequest(t, h, "DELETE", "/api/profiles/"+profile.ID.String(), "", cookie, true), 204)
-	database.DB.Model(&models.ScanJob{}).Count(&n)
+	testDB.Model(&models.ScanJob{}).Count(&n)
 	if n != 0 {
 		t.Fatal("queued job survived profile deletion")
 	}

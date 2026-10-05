@@ -10,48 +10,47 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 func TestProfileOverviewCountsAndPriority(t *testing.T) {
 	profile := newAPIEnv(t)
 	other := &models.Profile{Domain: "other.example.com"}
-	if err := database.DB.Create(other).Error; err != nil {
+	if err := testDB.Create(other).Error; err != nil {
 		t.Fatal(err)
 	}
 
 	scan := time.Date(2026, 9, 22, 15, 30, 0, 0, time.UTC)
-	if err := database.DB.Model(profile).Updates(map[string]interface{}{
+	if err := testDB.Model(profile).Updates(map[string]interface{}{
 		"last_scan": scan, "last_scan_status": "completed",
 	}).Error; err != nil {
 		t.Fatal(err)
 	}
 	for _, name := range []string{"a.example.com", "b.example.com", "localhost"} {
-		if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: name}).Error; err != nil {
+		if err := testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: name}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	changed := scan.Add(-time.Hour)
-	if err := database.DB.Model(&models.Subdomain{}).Where("profile_id = ?", profile.ID).
+	if err := testDB.Model(&models.Subdomain{}).Where("profile_id = ?", profile.ID).
 		UpdateColumn("last_changed", scan.Add(-2*time.Hour)).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Model(&models.Subdomain{}).
+	if err := testDB.Model(&models.Subdomain{}).
 		Where("profile_id = ? AND domain = ?", profile.ID, "a.example.com").
 		UpdateColumn("last_changed", changed).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "http://a.example.com", StatusCode: 301}).Error; err != nil {
+	if err := testDB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "http://a.example.com", StatusCode: 301}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "https://a.example.com", StatusCode: 200}).Error; err != nil {
+	if err := testDB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "https://a.example.com", StatusCode: 200}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "https://unlisted.example.com", StatusCode: 200}).Error; err != nil {
+	if err := testDB.Create(&models.AliveHost{ProfileID: profile.ID, URL: "https://unlisted.example.com", StatusCode: 200}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Create(&models.AliveHost{ProfileID: other.ID, URL: "https://b.example.com", StatusCode: 200}).Error; err != nil {
+	if err := testDB.Create(&models.AliveHost{ProfileID: other.ID, URL: "https://b.example.com", StatusCode: 200}).Error; err != nil {
 		t.Fatal(err)
 	}
 
@@ -61,7 +60,7 @@ func TestProfileOverviewCountsAndPriority(t *testing.T) {
 			ProfileID: profile.ID, TemplateID: fmt.Sprintf("tpl-%d", n),
 			URL: url, Severity: severity, Name: name,
 		}
-		if err := database.DB.Create(finding).Error; err != nil {
+		if err := testDB.Create(finding).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -77,7 +76,7 @@ func TestProfileOverviewCountsAndPriority(t *testing.T) {
 	}
 	addFinding("info", "Informational", "https://b.example.com/info", 10)
 	addFinding("unscored", "Unknown", "https://b.example.com/unknown", 11)
-	if err := database.DB.Create(&models.Vulnerability{
+	if err := testDB.Create(&models.Vulnerability{
 		ProfileID: other.ID, TemplateID: "other", URL: "https://other.example.com/x",
 		Severity: "critical", Name: "Other profile",
 	}).Error; err != nil {
@@ -85,7 +84,7 @@ func TestProfileOverviewCountsAndPriority(t *testing.T) {
 	}
 
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/overview",
-		"/api/profiles/"+profile.ID.String()+"/overview", getProfileOverview)
+		"/api/profiles/"+profile.ID.String()+"/overview", testAPI().getProfileOverview)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("overview status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -135,7 +134,7 @@ func TestProfileOverviewCountsAndPriority(t *testing.T) {
 func TestProfileOverviewEmptyAndMissing(t *testing.T) {
 	profile := newAPIEnv(t)
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/overview",
-		"/api/profiles/"+profile.ID.String()+"/overview", getProfileOverview)
+		"/api/profiles/"+profile.ID.String()+"/overview", testAPI().getProfileOverview)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("empty overview status %d: %s", rec.Code, rec.Body.String())
 	}
@@ -151,7 +150,7 @@ func TestProfileOverviewEmptyAndMissing(t *testing.T) {
 		t.Errorf("empty severity summary length = %d, want 6", len(body.FindingSeverities))
 	}
 	missing := route(t, http.MethodGet, "/api/profiles/{id}/overview",
-		"/api/profiles/"+uuid.NewString()+"/overview", getProfileOverview)
+		"/api/profiles/"+uuid.NewString()+"/overview", testAPI().getProfileOverview)
 	if missing.Code != http.StatusNotFound {
 		t.Errorf("missing profile status = %d, want 404", missing.Code)
 	}
@@ -160,7 +159,7 @@ func TestProfileOverviewEmptyAndMissing(t *testing.T) {
 func TestProfileOverviewOrdersMixedTimestampPrecision(t *testing.T) {
 	profile := newAPIEnv(t)
 	for _, name := range []string{"a.example.com", "b.example.com"} {
-		if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: name}).Error; err != nil {
+		if err := testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: name}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -172,14 +171,14 @@ func TestProfileOverviewOrdersMixedTimestampPrecision(t *testing.T) {
 		{"a.example.com", second},
 		{"b.example.com", second.Add(500 * time.Millisecond)},
 	} {
-		if err := database.DB.Model(&models.Subdomain{}).
+		if err := testDB.Model(&models.Subdomain{}).
 			Where("profile_id = ? AND domain = ?", profile.ID, item.name).
 			UpdateColumn("last_changed", item.when).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/overview",
-		"/api/profiles/"+profile.ID.String()+"/overview", getProfileOverview)
+		"/api/profiles/"+profile.ID.String()+"/overview", testAPI().getProfileOverview)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("overview status %d: %s", rec.Code, rec.Body.String())
 	}

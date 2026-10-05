@@ -16,11 +16,11 @@ import (
 func resetToolHome(t *testing.T) {
 	t.Helper()
 
-	origDefault := defaultToolHome
-	origToolHome := ToolHome
+	origDefault := testTools.defaultHome
+	origToolHome := testTools.Home
 
-	toolHomeOnce = sync.Once{}
-	resolvedToolHome = ""
+	testTools.homeOnce = sync.Once{}
+	testTools.resolvedHome = ""
 
 	// Clear systemd's directory variables so a test run that is itself under
 	// systemd does not leak them into the candidate chain.
@@ -28,10 +28,10 @@ func resetToolHome(t *testing.T) {
 	t.Setenv("STATE_DIRECTORY", "")
 
 	t.Cleanup(func() {
-		toolHomeOnce = sync.Once{}
-		resolvedToolHome = ""
-		defaultToolHome = origDefault
-		ToolHome = origToolHome
+		testTools.homeOnce = sync.Once{}
+		testTools.resolvedHome = ""
+		testTools.defaultHome = origDefault
+		testTools.Home = origToolHome
 	})
 }
 
@@ -55,8 +55,8 @@ func TestResolveToolHomeUsesExplicitFlag(t *testing.T) {
 	resetToolHome(t)
 
 	want := t.TempDir()
-	ToolHome = want
-	defaultToolHome = filepath.Join(t.TempDir(), "unused")
+	testTools.Home = want
+	testTools.defaultHome = filepath.Join(t.TempDir(), "unused")
 
 	got := resolveToolHome()
 	if got != want {
@@ -69,8 +69,8 @@ func TestResolveToolHomeUsesDefaultWhenNoFlag(t *testing.T) {
 	resetToolHome(t)
 
 	want := filepath.Join(t.TempDir(), "icevirtue")
-	ToolHome = ""
-	defaultToolHome = want
+	testTools.Home = ""
+	testTools.defaultHome = want
 
 	got := resolveToolHome()
 	if got != want {
@@ -91,8 +91,8 @@ func TestResolveToolHomeFallsBackToHomeWhenDefaultUnwritable(t *testing.T) {
 	}
 
 	home := t.TempDir()
-	ToolHome = ""
-	defaultToolHome = filepath.Join(locked, "icevirtue")
+	testTools.Home = ""
+	testTools.defaultHome = filepath.Join(locked, "icevirtue")
 	t.Setenv("HOME", home)
 
 	got := resolveToolHome()
@@ -119,8 +119,8 @@ func TestResolveToolHomeFallsBackToCwdWhenHomeUnset(t *testing.T) {
 	cwd := t.TempDir()
 	t.Chdir(cwd)
 
-	ToolHome = ""
-	defaultToolHome = filepath.Join(locked, "icevirtue")
+	testTools.Home = ""
+	testTools.defaultHome = filepath.Join(locked, "icevirtue")
 	t.Setenv("HOME", "")
 
 	got := resolveToolHome()
@@ -134,7 +134,7 @@ func TestToolEnvForcesHomeAndXdgConfigHome(t *testing.T) {
 	resetToolHome(t)
 
 	home := t.TempDir()
-	ToolHome = home
+	testTools.Home = home
 	t.Setenv("HOME", "/nonexistent-parent-home")
 	t.Setenv("XDG_CONFIG_HOME", "/nonexistent-parent-xdg")
 
@@ -161,7 +161,7 @@ func TestToolEnvForcesHomeAndXdgConfigHome(t *testing.T) {
 
 func TestRunToolMissingBinaryNamesToolAndPath(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	t.Setenv("PATH", "/nonexistent-bin-dir")
 
@@ -182,7 +182,7 @@ func TestRunToolMissingBinaryNamesToolAndPath(t *testing.T) {
 // stderr, so the operator saw "Stderr:" followed by nothing.
 func TestRunToolSurfacesStdoutOnFailure(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	out, err := runTool("sh", []string{"-c", "echo open subfinder/config.yaml: no such file or directory; exit 1"}, nil, time.Minute)
 	defer out.Close()
@@ -204,7 +204,7 @@ func TestRunToolSurfacesStdoutOnFailure(t *testing.T) {
 
 func TestRunToolSurfacesStderrOnFailure(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	out, err := runTool("sh", []string{"-c", "echo boom >&2; exit 2"}, nil, time.Minute)
 	defer out.Close()
@@ -222,7 +222,7 @@ func TestRunToolSurfacesStderrOnFailure(t *testing.T) {
 // silently fails to bound anything.
 func TestRunToolReportsTimeoutRatherThanSignalKilled(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	start := time.Now()
 	out, err := runTool("sh", []string{"-c", "sleep 30"}, nil, 100*time.Millisecond)
@@ -242,7 +242,7 @@ func TestRunToolReportsTimeoutRatherThanSignalKilled(t *testing.T) {
 
 func TestRunToolReturnsStdoutOnSuccess(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	out, err := runTool("sh", []string{"-c", "echo first; echo second"}, nil, time.Minute)
 	defer out.Close()
@@ -256,7 +256,7 @@ func TestRunToolReturnsStdoutOnSuccess(t *testing.T) {
 
 func TestRunToolPassesStdin(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	out, err := runTool("cat", nil, strings.NewReader("piped\n"), time.Minute)
 	defer out.Close()
@@ -274,7 +274,7 @@ func TestRunToolGivesChildAWritableHome(t *testing.T) {
 	resetToolHome(t)
 
 	want := t.TempDir()
-	ToolHome = want
+	testTools.Home = want
 	t.Setenv("HOME", "")
 
 	out, err := runTool("sh", []string{"-c", `printf '%s' "$HOME"`}, nil, time.Minute)
@@ -330,8 +330,8 @@ func TestResolveToolHomePrefersSystemdCacheDirectory(t *testing.T) {
 	resetToolHome(t)
 
 	cache := t.TempDir()
-	ToolHome = ""
-	defaultToolHome = "/proc/definitely-not-writable/icevirtue"
+	testTools.Home = ""
+	testTools.defaultHome = "/proc/definitely-not-writable/icevirtue"
 	t.Setenv("CACHE_DIRECTORY", cache)
 	t.Setenv("STATE_DIRECTORY", t.TempDir())
 
@@ -344,8 +344,8 @@ func TestResolveToolHomeFallsBackToStateDirectory(t *testing.T) {
 	resetToolHome(t)
 
 	state := t.TempDir()
-	ToolHome = ""
-	defaultToolHome = "/proc/definitely-not-writable/icevirtue"
+	testTools.Home = ""
+	testTools.defaultHome = "/proc/definitely-not-writable/icevirtue"
 	t.Setenv("CACHE_DIRECTORY", "")
 	t.Setenv("STATE_DIRECTORY", state)
 
@@ -359,7 +359,7 @@ func TestResolveToolHomeExplicitFlagBeatsSystemdDirs(t *testing.T) {
 	resetToolHome(t)
 
 	explicit := t.TempDir()
-	ToolHome = explicit
+	testTools.Home = explicit
 	t.Setenv("CACHE_DIRECTORY", t.TempDir())
 	t.Setenv("STATE_DIRECTORY", t.TempDir())
 

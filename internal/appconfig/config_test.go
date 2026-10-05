@@ -2,7 +2,7 @@ package appconfig_test
 
 import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"path/filepath"
 	"strings"
@@ -23,10 +23,10 @@ func TestUnicodePasswordPolicy(t *testing.T) {
 }
 func TestSeedDoesNotOverwriteSavedConfiguration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
-	if e := database.InitDatabase(path); e != nil {
+	if e := initTestDatabase(path); e != nil {
 		t.Fatal(e)
 	}
-	db := database.DB
+	db := testDB
 	c, _ := appconfig.Load(db)
 	c.Password.Maximum = 40
 	if e := db.Save(&c).Error; e != nil {
@@ -37,10 +37,10 @@ func TestSeedDoesNotOverwriteSavedConfiguration(t *testing.T) {
 	}
 	sqlDB, _ := db.DB()
 	sqlDB.Close()
-	if e := database.InitDatabase(path); e != nil {
+	if e := initTestDatabase(path); e != nil {
 		t.Fatal(e)
 	}
-	c, e := appconfig.Load(database.DB)
+	c, e := appconfig.Load(testDB)
 	if e != nil || c.Password.Maximum != 40 {
 		t.Fatalf("restart lost settings: %+v %v", c, e)
 	}

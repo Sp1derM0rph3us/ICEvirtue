@@ -8,7 +8,6 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
@@ -51,7 +50,7 @@ func profileID(w http.ResponseWriter, r *http.Request) (uuid.UUID, bool) {
 //
 // scope must apply every WHERE the caller wants counted; order is the full ORDER BY.
 // The generic parameter is the row type, which may be a model or a DTO.
-func listPage[T any](
+func listPage[T any](service *queryService,
 	w http.ResponseWriter,
 	q listQuery,
 	model interface{},
@@ -59,27 +58,7 @@ func listPage[T any](
 	scope func(*gorm.DB) *gorm.DB,
 	order string,
 ) {
-	var rows []T
-	var meta PageMeta
-
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// Only tx inside here. Reaching for database.DB would wait for a connection
-		// from a pool of exactly one that this transaction already holds, and
-		// database/sql waits with no timeout: a permanent hang, not a slow query.
-		var total int64
-		if err := scope(tx.Model(model)).Count(&total).Error; err != nil {
-			return err
-		}
-
-		offset, m := q.resolve(total)
-		meta = m
-
-		query := scope(tx.Model(model))
-		if selectClause != "" {
-			query = query.Select(selectClause)
-		}
-		return query.Order(order).Limit(q.Size).Offset(offset).Scan(&rows).Error
-	})
+	rows, meta, err := fetchPage[T](service, q, model, selectClause, scope, order)
 	if err != nil {
 		log.Printf("[-] Listing findings: %v", err)
 		http.Error(w, "failed to list findings", http.StatusInternalServerError)
@@ -170,7 +149,7 @@ var (
 // the timestamp: it is stored as TEXT carrying a local UTC offset, so ordering by it
 // inverts across a daylight-saving fall-back, and it would need an index of its own.
 
-func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -182,7 +161,7 @@ func getProfileVulnerabilities(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listPage[models.Vulnerability](w, q, &models.Vulnerability{}, "",
+	listPage[models.Vulnerability](a.queries, w, q, &models.Vulnerability{}, "",
 		profileScope(id, "vulnerabilities", hostScope(q, "vulnerabilities")), vulnSorts[q.Sort])
 }
 
@@ -194,7 +173,7 @@ type severitySummary struct {
 	Count    int64  `json:"count"`
 }
 
-func getVulnerabilitySeveritySummary(w http.ResponseWriter, r *http.Request) {
+func (a *API) getVulnerabilitySeveritySummary(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -208,25 +187,15 @@ func getVulnerabilitySeveritySummary(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var rows []severitySummary
-	if err := database.DB.Model(&models.Vulnerability{}).
-		Select(severityBucket+" AS severity, COUNT(*) AS count").
-		Where("vulnerabilities.profile_id = ? AND vulnerabilities.host = ?", id, host).
-		Group(severityBucket).
-		Order(severitySummaryRank + " ASC, severity ASC").
-		Scan(&rows).Error; err != nil {
-		log.Printf("[-] Summarizing vulnerabilities for %s/%s: %v", id, host, err)
-		http.Error(w, "failed to summarize vulnerabilities", http.StatusInternalServerError)
+	rows, err := a.queries.severities(id, host)
+	if err != nil {
+		http.Error(w, "failed to summarize vulnerabilities", 500)
 		return
-	}
-
-	if rows == nil {
-		rows = []severitySummary{}
 	}
 	respondJSON(w, http.StatusOK, rows)
 }
 
-func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileDirectories(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -238,11 +207,11 @@ func getProfileDirectories(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listPage[models.DirectoryFinding](w, q, &models.DirectoryFinding{}, "",
+	listPage[models.DirectoryFinding](a.queries, w, q, &models.DirectoryFinding{}, "",
 		profileScope(id, "directory_findings", hostScope(q, "directory_findings")), dirSorts[q.Sort])
 }
 
-func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -254,7 +223,7 @@ func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listPage[models.SecretFinding](w, q, &models.SecretFinding{}, "",
+	listPage[models.SecretFinding](a.queries, w, q, &models.SecretFinding{}, "",
 		profileScope(id, "secret_findings", hostScope(q, "secret_findings"), func(db *gorm.DB) *gorm.DB {
 			// Keep historical unattributed rows, but hide one when the same
 			// value has since gained a source. At a shared source, prefer
@@ -275,7 +244,7 @@ func getProfileSecrets(w http.ResponseWriter, r *http.Request) {
 		}), secretSorts[q.Sort])
 }
 
-func getProfileHosts(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileHosts(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -287,6 +256,6 @@ func getProfileHosts(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	listPage[models.AliveHost](w, q, &models.AliveHost{}, "",
+	listPage[models.AliveHost](a.queries, w, q, &models.AliveHost{}, "",
 		profileScope(id, "alive_hosts", hostScope(q, "alive_hosts")), hostSorts[q.Sort])
 }

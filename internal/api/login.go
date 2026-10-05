@@ -9,8 +9,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 func withClaims(ctx context.Context, claims *auth.Claims) context.Context {
@@ -39,16 +37,15 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	key := clientKey(r)
 
-	var user models.User
-	result := database.DB.Where("username = ?", req.Username).First(&user)
+	user, loadErr := a.sessions.ByName(req.Username)
 
 	hashToCompare := dummyHash
-	if result.Error == nil {
+	if loadErr == nil {
 		hashToCompare = user.PasswordHash
 	}
 	err := bcrypt.CompareHashAndPassword([]byte(hashToCompare), []byte(req.Password))
 
-	if result.Error != nil || err != nil {
+	if loadErr != nil || err != nil {
 		a.logins.recordFailure(key)
 		// Logged for A09. Never log the password; middleware.Logger does not log bodies.
 		log.Printf("[-] Failed login for %q from %s", req.Username, key)
@@ -56,7 +53,7 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tokenString, err := issueSession(&user, a.cfg.SessionTTL)
+	tokenString, err := a.issueSession(&user, a.cfg.SessionTTL)
 	if err != nil {
 		log.Printf("[-] Issuing a session for %q: %v", user.Username, err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -71,8 +68,8 @@ func (a *API) handleLogin(w http.ResponseWriter, r *http.Request) {
 // Logout revokes this session on the server, including copied bearer cookies.
 func (a *API) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if cookie, err := r.Cookie(cookieName); err == nil {
-		if c, err := auth.ValidateToken(cookie.Value); err == nil {
-			if err := database.DB.Where("id = ?", c.ID).Delete(&models.Session{}).Error; err != nil {
+		if c, err := a.signer.ValidateToken(cookie.Value); err == nil {
+			if err := a.sessions.Revoke(c.ID); err != nil {
 				http.Error(w, "could not revoke session", http.StatusInternalServerError)
 				return
 			}

@@ -8,7 +8,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -170,7 +169,7 @@ func sortsByVolume(sort string) bool {
 	return sort == "findings-desc" || sort == "findings-asc"
 }
 
-func getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -186,36 +185,7 @@ func getProfileSubdomains(w http.ResponseWriter, r *http.Request) {
 		filter, predicate = "", ""
 	}
 
-	scope := func(db *gorm.DB) *gorm.DB {
-		db = db.Where("subdomains.profile_id = ?", id)
-		if predicate != "" {
-			db = db.Where(predicate)
-		}
-		return db
-	}
-
-	var rows []subdomainRow
-	var meta PageMeta
-
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// One snapshot for the count and the page, so the total and the rows agree.
-		var total int64
-		if err := scope(tx.Model(&models.Subdomain{})).Count(&total).Error; err != nil {
-			return err
-		}
-
-		offset, m := q.resolve(total)
-		meta = m
-
-		if sortsByVolume(q.Sort) {
-			return listSubdomainsByVolume(tx, scope, q, offset, &rows)
-		}
-		return scope(tx.Model(&models.Subdomain{})).
-			Select(subdomainSelect).
-			Order(subdomainSorts[q.Sort]).
-			Limit(q.Size).Offset(offset).
-			Scan(&rows).Error
-	})
+	rows, meta, err := a.queries.subdomains(id, q, predicate)
 	if err != nil {
 		log.Printf("[-] Listing subdomains for %s: %v", id, err)
 		http.Error(w, "failed to list subdomains", http.StatusInternalServerError)

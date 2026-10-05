@@ -6,14 +6,13 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 func TestWAFSummariesAreProfileAndHostScoped(t *testing.T) {
 	profile := newAPIEnv(t)
 	other := &models.Profile{Domain: "other.example.com"}
-	if err := database.DB.Create(other).Error; err != nil {
+	if err := testDB.Create(other).Error; err != nil {
 		t.Fatal(err)
 	}
 	value := func(s string) *string { return &s }
@@ -25,14 +24,14 @@ func TestWAFSummariesAreProfileAndHostScoped(t *testing.T) {
 		{ProfileID: profile.ID, URL: "https://c.example.com"},
 		{ProfileID: other.ID, URL: "https://a.example.com", WAFName: value("Akamai")},
 	} {
-		if err := database.DB.Create(&row).Error; err != nil {
+		if err := testDB.Create(&row).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
 	check := func(host string, names []string, scanned bool) {
 		t.Helper()
 		rec := route(t, http.MethodGet, "/api/profiles/{id}/wafs",
-			"/api/profiles/"+profile.ID.String()+"/wafs?host="+host, getProfileWAFs)
+			"/api/profiles/"+profile.ID.String()+"/wafs?host="+host, testAPI().getProfileWAFs)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("node WAF status = %d: %s", rec.Code, rec.Body.String())
 		}
@@ -51,7 +50,7 @@ func TestWAFSummariesAreProfileAndHostScoped(t *testing.T) {
 	check("missing.example.com", []string{}, false)
 
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/overview",
-		"/api/profiles/"+profile.ID.String()+"/overview", getProfileOverview)
+		"/api/profiles/"+profile.ID.String()+"/overview", testAPI().getProfileOverview)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("overview status = %d: %s", rec.Code, rec.Body.String())
 	}

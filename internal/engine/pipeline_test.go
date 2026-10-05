@@ -8,7 +8,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -71,7 +70,7 @@ func newPipelineEnv(t *testing.T, mode string) (*models.Profile, string) {
 	// The resolution cache is process-global on purpose, so each test has to
 	// clear it or it would reuse a binary path from a previous test's temp dir.
 	resetToolPaths(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	// Restore every pipeline flag the tests move around.
 	prevFlags := []struct {
@@ -91,14 +90,14 @@ func newPipelineEnv(t *testing.T, mode string) (*models.Profile, string) {
 	SkipAmass, SkipNuclei, WideTargets, Verbose = false, true, false, false
 	DnsxList, DirectoryList = "", ""
 
-	prevDB := database.DB
-	t.Cleanup(func() { database.DB = prevDB })
-	if err := database.InitDatabase(filepath.Join(t.TempDir(), "test.db")); err != nil {
+	prevDB := testDB
+	t.Cleanup(func() { testDB = prevDB })
+	if err := initTestDatabase(filepath.Join(t.TempDir(), "test.db")); err != nil {
 		t.Fatalf("InitDatabase: %v", err)
 	}
 
 	profile := &models.Profile{Domain: "example.com", Mode: mode, Schedule: "@every 24h", Enabled: true}
-	if err := database.DB.Create(profile).Error; err != nil {
+	if err := testDB.Create(profile).Error; err != nil {
 		t.Fatalf("creating profile: %v", err)
 	}
 
@@ -109,7 +108,7 @@ func countRows(t *testing.T, model interface{}, profileID interface{}) int64 {
 	t.Helper()
 
 	var n int64
-	if err := database.DB.Model(model).Where("profile_id = ?", profileID).Count(&n).Error; err != nil {
+	if err := testDB.Model(model).Where("profile_id = ?", profileID).Count(&n).Error; err != nil {
 		t.Fatalf("counting rows: %v", err)
 	}
 	return n
@@ -119,7 +118,7 @@ func reloadProfile(t *testing.T, id interface{}) models.Profile {
 	t.Helper()
 
 	var p models.Profile
-	if err := database.DB.First(&p, id).Error; err != nil {
+	if err := testDB.First(&p, id).Error; err != nil {
 		t.Fatalf("reloading profile: %v", err)
 	}
 	return p
@@ -222,6 +221,8 @@ func TestValidationPartialOutputKeepsRunAlive(t *testing.T) {
 	fakeTool(t, binDir, "subfinder", jsonlEmitter(0, subfinderHosts("a.example.com", "b.example.com")...))
 	fakeTool(t, binDir, "httpx", jsonlEmitter(1, httpxHost("https://a.example.com", 200)))
 	fakeTool(t, binDir, "waymore", "exit 0")
+	fakeTool(t, binDir, "katana", "exit 0")
+	fakeTool(t, binDir, "subjs", "exit 0")
 
 	OrchestrateScan(profile)
 
@@ -427,7 +428,7 @@ esac`)
 		{"https://b.example.com", "none"},
 	} {
 		var host models.AliveHost
-		if err := database.DB.Where("profile_id = ? AND url = ?", profile.ID, expected.url).First(&host).Error; err != nil {
+		if err := testDB.Where("profile_id = ? AND url = ?", profile.ID, expected.url).First(&host).Error; err != nil {
 			t.Fatal(err)
 		}
 		if host.WAFName == nil || *host.WAFName != expected.waf {

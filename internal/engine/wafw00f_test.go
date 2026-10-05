@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -68,7 +67,7 @@ func TestDiffWAFsPreservesLastSuccessAndTouchesOnlyRealChanges(t *testing.T) {
 	diffHosts(&id, []models.AliveHost{{ProfileID: id, URL: "https://a.example.com", StatusCode: 200}})
 	diffWAFs(&id, nil)
 	var retained models.AliveHost
-	if err := database.DB.Where("profile_id = ? AND url = ?", id, "https://a.example.com").First(&retained).Error; err != nil {
+	if err := testDB.Where("profile_id = ? AND url = ?", id, "https://a.example.com").First(&retained).Error; err != nil {
 		t.Fatal(err)
 	}
 	if retained.WAFName == nil || *retained.WAFName != "Cloudflare" {
@@ -83,7 +82,7 @@ func TestDiffWAFsPreservesLastSuccessAndTouchesOnlyRealChanges(t *testing.T) {
 		}
 	}
 	var host models.AliveHost
-	if err := database.DB.Where("profile_id = ? AND url = ?", id, "https://a.example.com").First(&host).Error; err != nil {
+	if err := testDB.Where("profile_id = ? AND url = ?", id, "https://a.example.com").First(&host).Error; err != nil {
 		t.Fatal(err)
 	}
 	if host.WAFName == nil || *host.WAFName != "none" {

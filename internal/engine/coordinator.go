@@ -4,212 +4,156 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/jobs"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 	"path/filepath"
 	"sync"
 	"time"
-
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
-	"gorm.io/gorm"
 )
 
-var ErrScanDuplicate = errors.New("profile already has a queued or running scan")
-var ErrQueueFull = errors.New("scan queue is full")
+var ErrScanDuplicate = jobs.ErrDuplicate
+var ErrQueueFull = jobs.ErrFull
 
-const MaxQueuedScans = 100
+const MaxQueuedScans = jobs.Capacity
 
 type Coordinator struct {
 	execute func(*runner, *models.Profile)
 	db      *gorm.DB
 	store   *wordlists.Store
+	tools   *Toolchain
+	Queue   *jobs.Queue
+	Owner   string
 	ctx     context.Context
 	cancel  context.CancelFunc
 	wg      sync.WaitGroup
 	done    chan struct{}
+	start   sync.Once
 }
 
 func NewCoordinator(db *gorm.DB, store *wordlists.Store) *Coordinator {
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Coordinator{db: db, store: store, ctx: ctx, cancel: cancel, done: make(chan struct{}), execute: func(run *runner, p *models.Profile) { run.OrchestrateScan(p) }}
+	return &Coordinator{db: db, store: store, tools: NewToolchain("", "", ""), Queue: &jobs.Queue{DB: db}, Owner: uuid.NewString(), ctx: ctx, cancel: cancel, done: make(chan struct{}), execute: func(r *runner, p *models.Profile) { r.result = r.OrchestrateScan(p) }}
 }
-func (c *Coordinator) Recover() error {
-	return c.db.Transaction(func(tx *gorm.DB) error {
-		if e := tx.Model(&models.Profile{}).Where("is_scanning = ?", true).Updates(map[string]any{"is_scanning": false, "last_scan_status": "halted: interrupted by restart"}).Error; e != nil {
-			return e
-		}
-		if e := tx.Where("state = ?", "running").Delete(&models.ScanJob{}).Error; e != nil {
-			return e
-		}
-		if e := tx.Where("1 = 1").Delete(&models.WordlistPin{}).Error; e != nil {
-			return e
-		}
-		if e := tx.Model(&models.Profile{}).Where("1 = 1").Update("is_queued", false).Error; e != nil {
-			return e
-		}
-		return tx.Model(&models.Profile{}).Where("id IN (SELECT profile_id FROM scan_jobs WHERE state = ?)", "queued").Update("is_queued", true).Error
-	})
-}
+func (c *Coordinator) SetTools(tools *Toolchain) { c.tools = tools }
+func (c *Coordinator) Recover() error            { return c.Queue.Reap() }
 func (c *Coordinator) Enqueue(id, source string) error {
 	if c.ctx.Err() != nil {
-		return errors.New("scan coordinator is shutting down")
+		return c.ctx.Err()
 	}
-	err := c.db.Transaction(func(tx *gorm.DB) error {
-		var p models.Profile
-		if e := tx.First(&p, "id = ?", id).Error; e != nil {
-			return e
-		}
-		if p.IsScanning || p.IsQueued {
-			return ErrScanDuplicate
-		}
-		if source == "scheduled" && !p.Enabled {
-			return errors.New("schedule disabled")
-		}
-		var n int64
-		if e := tx.Model(&models.ScanJob{}).Where("state = ?", "queued").Count(&n).Error; e != nil {
-			return e
-		}
-		if n >= MaxQueuedScans {
-			return ErrQueueFull
-		}
-		if e := tx.Create(&models.ScanJob{ProfileID: id, Source: source, State: "queued"}).Error; e != nil {
-			if errors.Is(e, gorm.ErrDuplicatedKey) {
-				return ErrScanDuplicate
-			}
-			return e
-		}
-		return tx.Model(&p).Update("is_queued", true).Error
-	})
-	if err == nil {
-		events.Broadcast("profile_update", id, nil)
-	}
-	return err
+	return c.Queue.Enqueue(id, source)
 }
-func (c *Coordinator) Start() {
-	go func() {
-		defer close(c.done)
-		ticker := time.NewTicker(250 * time.Millisecond)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-c.ctx.Done():
-				return
-			case <-ticker.C:
-				if err := c.dispatch(); err != nil {
-					logf("[-] Scan queue: %v", err)
-				}
+func (c *Coordinator) Start() { c.start.Do(func() { go c.loop() }) }
+func (c *Coordinator) loop() {
+	defer close(c.done)
+	poll := time.NewTicker(time.Second)
+	defer poll.Stop()
+	maintenance := time.NewTicker(15 * time.Second)
+	defer maintenance.Stop()
+	beat := time.NewTicker(10 * time.Second)
+	defer beat.Stop()
+	prune := time.NewTicker(time.Hour)
+	defer prune.Stop()
+	c.Queue.Heartbeat(c.Owner)
+	for {
+		select {
+		case <-c.ctx.Done():
+			return
+		case <-poll.C:
+			if e := c.dispatch(); e != nil {
+				logf("worker=%s dispatch: %v", c.Owner, e)
+			}
+		case <-maintenance.C:
+			if e := c.Queue.Reap(); e != nil {
+				logf("worker=%s recovery: %v", c.Owner, e)
+			}
+		case <-beat.C:
+			if e := c.Queue.Heartbeat(c.Owner); e != nil {
+				logf("worker=%s heartbeat: %v", c.Owner, e)
+			}
+		case <-prune.C:
+			if e := c.Queue.Prune(); e != nil {
+				logf("retention: %v", e)
 			}
 		}
-	}()
+	}
 }
-func (c *Coordinator) Stop() { c.cancel(); <-c.done; c.wg.Wait() }
+func (c *Coordinator) Stop() {
+	c.cancel()
+	c.Start()
+	<-c.done
+	c.wg.Wait()
+	c.db.Where("id=?", c.Owner).Delete(&models.WorkerHeartbeat{})
+}
 func (c *Coordinator) dispatch() error {
-	var job models.ScanJob
-	var p models.Profile
-	var run *runner
-	err := c.db.Transaction(func(tx *gorm.DB) error {
-		settings, e := appconfig.Load(tx)
-		if e != nil {
-			return e
-		}
-		var active int64
-		if e = tx.Model(&models.ScanJob{}).Where("state = ?", "running").Count(&active).Error; e != nil {
-			return e
-		}
-		if active >= int64(settings.Tools.MaxConcurrentScans) {
-			return nil
-		}
-		e = tx.Where("state = ?", "queued").Order("id ASC").First(&job).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			return nil
-		}
-		if e != nil {
-			return e
-		}
-		e = tx.First(&p, "id = ?", job.ProfileID).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) || (e == nil && job.Source == "scheduled" && !p.Enabled) {
-			if e == nil {
-				if e = tx.Model(&p).Update("is_queued", false).Error; e != nil {
-					return e
-				}
+	if c.ctx.Err() != nil {
+		return c.ctx.Err()
+	}
+	claim, e := c.Queue.Claim(c.Owner)
+	if e != nil || claim == nil {
+		return e
+	}
+	ctx, cancel := context.WithCancel(c.ctx)
+	r := &runner{ctx: ctx, FindingStore: NewFindingStore(c.db, claim.Job), executor: c.tools, tools: c.tools, config: claim.Config, wafTimeout: time.Duration(claim.Config.Tools.WAFTimeoutSeconds) * time.Second, result: Outcome{"completed", "completed"}}
+	for _, selection := range []struct {
+		rows []models.Wordlist
+		out  *[]string
+	}{{claim.DNSX, &r.dnsxPaths}, {claim.Directories, &r.directoryPaths}} {
+		for _, w := range selection.rows {
+			if c.store == nil || len(w.SHA256) != 64 || w.Filename != wordlists.Filename(w.SHA256, w.Kind) {
+				cancel()
+				return errors.Join(errors.New("invalid pinned wordlist"), c.Queue.Finish(claim.Job, "failed", "failed: pinned wordlist unavailable"))
 			}
-			return tx.Delete(&job).Error
+			*selection.out = append(*selection.out, filepath.Join(c.store.Path, w.Filename))
 		}
-		if e != nil {
-			return e
-		}
-		if p.IsScanning {
-			return nil
-		}
-		run = &runner{ctx: c.ctx, config: settings, wafTimeout: time.Duration(settings.Tools.WAFTimeoutSeconds) * time.Second, claimed: true}
-		for _, selection := range []struct {
-			ids   []string
-			kind  string
-			skip  bool
-			paths *[]string
-		}{{settings.Scan.DNSXWordlists, "subdomain", settings.Scan.SkipDNSX, &run.dnsxPaths}, {settings.Scan.DirectoryWordlists, "directory", settings.Scan.SkipDirectory, &run.directoryPaths}} {
-			if selection.skip {
-				continue
-			}
-			for _, id := range selection.ids {
-				var w models.Wordlist
-				if e = tx.First(&w, "id = ? AND state = ? AND kind = ?", id, "ready", selection.kind).Error; e != nil {
-					return e
-				}
-				if w.Filename != wordlists.Filename(w.SHA256, w.Kind) || len(w.SHA256) != 64 {
-					return errors.New("invalid stored wordlist name")
-				}
-				if c.store == nil {
-					return errors.New("wordlist storage unavailable")
-				}
-				*selection.paths = append(*selection.paths, filepath.Join(c.store.Path, w.Filename))
-				if e = tx.Create(&models.WordlistPin{JobID: job.ID, WordlistID: id}).Error; e != nil {
-					return e
-				}
-			}
-		}
-		if e = tx.Model(&p).Updates(map[string]any{"is_scanning": true, "is_queued": false}).Error; e != nil {
-			return e
-		}
-		return tx.Model(&job).Updates(map[string]any{"state": "running", "revision": settings.Revision}).Error
-	})
-	if err != nil || run == nil {
-		return err
 	}
 	c.wg.Add(1)
 	go func() {
 		defer c.wg.Done()
+		defer cancel()
+		renewalDone := make(chan struct{})
+		go func() {
+			defer close(renewalDone)
+			tick := time.NewTicker(10 * time.Second)
+			defer tick.Stop()
+			for {
+				select {
+				case <-ctx.Done():
+					return
+				case <-tick.C:
+					if e := c.Queue.Renew(claim.Job); e != nil {
+						cancel()
+						return
+					}
+				}
+			}
+		}()
 		defer func() {
 			if v := recover(); v != nil {
-				logf("[-] Scan %s panicked: %v", job.ProfileID, v)
-				c.db.Model(&p).Updates(map[string]any{"is_scanning": false, "last_scan_status": "halted: internal error"})
+				logf("run=%s panic: %v", claim.Job.RunID, v)
+				r.result = Outcome{"failed", "failed: internal error"}
 			}
-			if e := c.db.Transaction(func(tx *gorm.DB) error {
-				if e := tx.Model(&p).Update("is_scanning", false).Error; e != nil {
-					return e
-				}
-				if e := tx.Where("job_id = ?", job.ID).Delete(&models.WordlistPin{}).Error; e != nil {
-					return e
-				}
-				return tx.Delete(&job).Error
-			}); e != nil {
-				logf("[-] Releasing scan resources: %v", e)
+			if ctx.Err() != nil {
+				r.result = Outcome{"interrupted", "interrupted: worker stopped or lease lost"}
 			}
-			events.Broadcast("profile_update", job.ProfileID, nil)
+			if e := c.Queue.Finish(claim.Job, r.result.Status, r.result.Summary); e != nil {
+				logf("run=%s finalize: %v", claim.Job.RunID, e)
+			}
+			cancel()
+			<-renewalDone
 		}()
-		logf("[*] Scan %s uses configuration revision %d", job.ProfileID, run.config.Revision)
-		cleanup, err := run.prepareScratch()
-		if err != nil {
-			logf("[-] Preparing scan storage: %v", err)
-			c.db.Model(&p).Update("last_scan_status", "halted: scratch storage unavailable")
+		cleanup, e := r.prepareScratch()
+		if e != nil {
+			r.result = Outcome{"failed", "failed: scratch storage unavailable"}
 			return
 		}
 		defer cleanup()
-		c.execute(run, &p)
+		logf("worker=%s run=%s profile=%s revision=%d", c.Owner, claim.Job.RunID, claim.Job.ProfileID, claim.Config.Revision)
+		c.execute(r, &claim.Profile)
+		r.result = r.outcome(r.result)
 	}()
 	return nil
 }
-func (c *Coordinator) String() string {
-	return fmt.Sprintf("scan coordinator (queue capacity %d)", MaxQueuedScans)
-}
+func (c *Coordinator) String() string { return fmt.Sprintf("scan worker %s", c.Owner) }

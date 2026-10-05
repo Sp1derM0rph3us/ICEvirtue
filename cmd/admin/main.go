@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path/filepath"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
@@ -15,50 +14,35 @@ import (
 )
 
 func main() {
-	if len(os.Args) < 2 {
-		fmt.Println("Expected 'create' subcommand")
+	if err := run(os.Args[1:]); err != nil {
+		log.Print(err)
 		os.Exit(1)
 	}
-
-	userCmd := flag.NewFlagSet("create", flag.ExitOnError)
-	username := userCmd.String("username", "", "Username for the admin")
-	password := userCmd.String("password", "", "Password for the admin")
-	dbPathFlag := userCmd.String("db-path", "", "Path to the database file")
-
-	switch os.Args[1] {
-	case "create":
-		userCmd.Parse(os.Args[2:])
-		if *username == "" || *password == "" {
-			fmt.Println("Both --username and --password are required.")
-			os.Exit(1)
-		}
-
-		var dbPath string
-		if *dbPathFlag != "" {
-			dbPath = *dbPathFlag
-		} else {
-			cwd, err := os.Getwd()
-			if err != nil {
-				log.Fatalf("[-] Failed to get current working directory: %v", err)
-			}
-			dbPath = filepath.Join(cwd, "icevirtue.db")
-		}
-
-		err := database.InitDatabase(dbPath)
-		if err != nil {
-			log.Fatalf("[-] Failed to initialize database: %v", err)
-		}
-
-		if err := createAdmin(database.DB, *username, *password); err != nil {
-			log.Fatalf("[-] Failed to create admin user: %v", err)
-		}
-
-		fmt.Printf("[+] Successfully created admin account: %s\n", *username)
-
-	default:
-		fmt.Println("Expected 'create' subcommand")
-		os.Exit(1)
+}
+func run(args []string) error {
+	if len(args) == 0 || args[0] != "create" {
+		return fmt.Errorf("expected 'create' subcommand")
 	}
+	flags := flag.NewFlagSet("create", flag.ContinueOnError)
+	username := flags.String("username", "", "Username for the admin")
+	password := flags.String("password", "", "Password for the admin")
+	path := flags.String("db-path", "icevirtue.db", "Server-initialized SQLite database")
+	if err := flags.Parse(args[1:]); err != nil {
+		return err
+	}
+	if *username == "" || *password == "" {
+		return fmt.Errorf("both --username and --password are required")
+	}
+	store, err := database.Open(*path, false)
+	if err != nil {
+		return err
+	}
+	defer store.Close()
+	if err = createAdmin(store.DB, *username, *password); err != nil {
+		return err
+	}
+	fmt.Printf("[+] Successfully created admin account: %s\n", *username)
+	return nil
 }
 
 // createAdmin uses the same input rules as the web dashboard. The User model's

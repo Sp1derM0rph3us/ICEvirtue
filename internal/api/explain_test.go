@@ -7,7 +7,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -23,13 +22,13 @@ import (
 func explain(t *testing.T, build func(*gorm.DB) *gorm.DB) []string {
 	t.Helper()
 
-	stmt := build(database.DB.Session(&gorm.Session{DryRun: true})).Statement
-	sql := database.DB.Dialector.Explain(stmt.SQL.String(), stmt.Vars...)
+	stmt := build(testDB.Session(&gorm.Session{DryRun: true})).Statement
+	sql := testDB.Dialector.Explain(stmt.SQL.String(), stmt.Vars...)
 
 	var plan []struct {
 		Detail string
 	}
-	if err := database.DB.Raw("EXPLAIN QUERY PLAN " + sql).Scan(&plan).Error; err != nil {
+	if err := testDB.Raw("EXPLAIN QUERY PLAN " + sql).Scan(&plan).Error; err != nil {
 		t.Fatalf("EXPLAIN QUERY PLAN failed for:\n  %s\n  %v", sql, err)
 	}
 
@@ -62,18 +61,18 @@ func TestCorrelationQueriesUseTheirPartialIndexes(t *testing.T) {
 
 	// A few rows so the planner has statistics to work with rather than an empty table.
 	for i := range 50 {
-		database.DB.Create(&models.Subdomain{ProfileID: id, Domain: fmt.Sprintf("h%02d.example.com", i)})
-		database.DB.Create(&models.AliveHost{ProfileID: id, URL: fmt.Sprintf("https://h%02d.example.com", i), StatusCode: 200})
-		database.DB.Create(&models.Vulnerability{ProfileID: id, TemplateID: fmt.Sprintf("t%d", i),
+		testDB.Create(&models.Subdomain{ProfileID: id, Domain: fmt.Sprintf("h%02d.example.com", i)})
+		testDB.Create(&models.AliveHost{ProfileID: id, URL: fmt.Sprintf("https://h%02d.example.com", i), StatusCode: 200})
+		testDB.Create(&models.Vulnerability{ProfileID: id, TemplateID: fmt.Sprintf("t%d", i),
 			URL: fmt.Sprintf("https://h%02d.example.com/x", i), Severity: "info"})
-		database.DB.Create(&models.DirectoryFinding{ProfileID: id,
+		testDB.Create(&models.DirectoryFinding{ProfileID: id,
 			SubdomainURL: fmt.Sprintf("https://h%02d.example.com", i),
 			DirURL:       fmt.Sprintf("https://h%02d.example.com/d", i), StatusCode: 200})
-		database.DB.Create(&models.SecretFinding{ProfileID: id,
+		testDB.Create(&models.SecretFinding{ProfileID: id,
 			SourceURL: fmt.Sprintf("https://h%02d.example.com/a.js", i), SecretType: "aws",
 			SecretValue: fmt.Sprintf("AKIA%d", i)})
 	}
-	database.DB.Exec("ANALYZE")
+	testDB.Exec("ANALYZE")
 
 	cases := []struct {
 		what, index string
@@ -102,9 +101,9 @@ func TestCorrelationQueriesUseTheirPartialIndexes(t *testing.T) {
 func TestSubdomainPageIsIndexOrdered(t *testing.T) {
 	profile := newAPIEnv(t)
 	for i := range 200 {
-		database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: fmt.Sprintf("h%03d.example.com", i)})
+		testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: fmt.Sprintf("h%03d.example.com", i)})
 	}
-	database.DB.Exec("ANALYZE")
+	testDB.Exec("ANALYZE")
 
 	// Select and Scan, exactly as the handler does. Find would make GORM infer the
 	// column list from the DTO's fields, which asks for columns that do not exist —
@@ -141,12 +140,12 @@ func TestNodeDirectoryListingIsIndexOrdered(t *testing.T) {
 	profile := newAPIEnv(t)
 	host := "hot.example.com"
 	for i := range 300 {
-		database.DB.Create(&models.DirectoryFinding{
+		testDB.Create(&models.DirectoryFinding{
 			ProfileID: profile.ID, SubdomainURL: "https://" + host,
 			DirURL: fmt.Sprintf("https://%s/d%04d", host, i), StatusCode: 200,
 		})
 	}
-	database.DB.Exec("ANALYZE")
+	testDB.Exec("ANALYZE")
 
 	plan := explain(t, func(db *gorm.DB) *gorm.DB {
 		var rows []models.DirectoryFinding
@@ -172,25 +171,25 @@ func TestNodeDirectoryListingIsIndexOrdered(t *testing.T) {
 func TestPartialIndexSurvivesGormsQualifiedSoftDeleteClause(t *testing.T) {
 	profile := newAPIEnv(t)
 	for i := range 50 {
-		database.DB.Create(&models.Vulnerability{
+		testDB.Create(&models.Vulnerability{
 			ProfileID: profile.ID, TemplateID: fmt.Sprintf("t%d", i),
 			URL: fmt.Sprintf("https://h%02d.example.com/x", i), Severity: "info",
 		})
 	}
-	database.DB.Exec("ANALYZE")
+	testDB.Exec("ANALYZE")
 
-	stmt := database.DB.Session(&gorm.Session{DryRun: true}).
+	stmt := testDB.Session(&gorm.Session{DryRun: true}).
 		Model(&models.Vulnerability{}).
 		Where("vulnerabilities.profile_id = ? AND vulnerabilities.host = ?", profile.ID, "h01.example.com").
 		Find(&[]models.Vulnerability{}).Statement
-	sql := database.DB.Dialector.Explain(stmt.SQL.String(), stmt.Vars...)
+	sql := testDB.Dialector.Explain(stmt.SQL.String(), stmt.Vars...)
 
 	if !strings.Contains(sql, "`vulnerabilities`.`deleted_at` IS NULL") {
 		t.Fatalf("GORM no longer emits a qualified soft-delete clause; this test is checking the wrong thing:\n  %s", sql)
 	}
 
 	var plan []struct{ Detail string }
-	database.DB.Raw("EXPLAIN QUERY PLAN " + sql).Scan(&plan)
+	testDB.Raw("EXPLAIN QUERY PLAN " + sql).Scan(&plan)
 	joined := ""
 	for _, p := range plan {
 		joined += p.Detail + " | "

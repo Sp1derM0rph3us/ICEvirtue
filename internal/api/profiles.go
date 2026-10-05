@@ -10,11 +10,10 @@ import (
 	"github.com/google/uuid"
 	"gorm.io/gorm"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/engine"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/jobs"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/notifications"
+
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/profiles"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
 )
 
@@ -22,7 +21,7 @@ import (
 //
 //	Inside Transaction(func(tx *gorm.DB)), use only tx.
 //
-// database.go sets SetMaxOpenConns(1), so a call through the package-level database.DB
+// database.go sets SetMaxOpenConns(1), so a call through the package-level a.db
 // inside a transaction callback waits for a connection from a pool of exactly one that
 // the transaction itself is holding — and database/sql waits with no timeout. That is a
 // permanent hang, not a slow query, and busy_timeout does not help because the block is
@@ -38,10 +37,10 @@ var profileSorts = map[string]string{
 	"scan-asc":    "julianday(profiles.last_scan) ASC, profiles.domain ASC",
 }
 
-// getProfiles serves the targets table, paginated.
-func getProfiles(w http.ResponseWriter, r *http.Request) {
+// a.getProfiles serves the targets table, paginated.
+func (a *API) getProfiles(w http.ResponseWriter, r *http.Request) {
 	q := parseListQuery(r, defaultPageProfiles, profileSorts, "domain-asc")
-	listPage[models.Profile](w, q, &models.Profile{}, "",
+	listPage[models.Profile](a.queries, w, q, &models.Profile{}, "",
 		func(db *gorm.DB) *gorm.DB { return db }, profileSorts[q.Sort])
 }
 
@@ -51,7 +50,7 @@ type profileOption struct {
 	Domain string    `json:"domain"`
 }
 
-// getProfileIndex lists every profile as an id and a name, unpaginated.
+// a.getProfileIndex lists every profile as an id and a name, unpaginated.
 //
 // This exists because the dashboard fills both the targets table and the profile picker.
 // Paginating the one endpoint that served both at 25 rows would silently truncate the
@@ -61,19 +60,11 @@ type profileOption struct {
 // even a few thousand profiles is an index-only scan and a response measured in tens of
 // kilobytes, while the finding tables beside it are the ones that reach tens of thousands
 // of rows.
-func getProfileIndex(w http.ResponseWriter, r *http.Request) {
-	var options []profileOption
-	if err := database.DB.Model(&models.Profile{}).
-		Select("profiles.id, profiles.domain").
-		Order("profiles.domain ASC").
-		Scan(&options).Error; err != nil {
-		log.Printf("[-] Listing the profile index: %v", err)
-		http.Error(w, "failed to list profiles", http.StatusInternalServerError)
+func (a *API) getProfileIndex(w http.ResponseWriter, r *http.Request) {
+	options, err := a.queries.profileIndex()
+	if err != nil {
+		http.Error(w, "failed to list profiles", 500)
 		return
-	}
-
-	if options == nil {
-		options = []profileOption{}
 	}
 	respondJSON(w, http.StatusOK, options)
 }
@@ -129,7 +120,7 @@ func (a *API) createProfile(w http.ResponseWriter, r *http.Request) {
 	// requests both found nothing and both inserted, and the loser surfaced the raw driver
 	// error as a 500 — so the client was told the server had broken when in fact its
 	// request had simply lost a race it should have been told about with a 409.
-	if err := database.DB.Create(&profile).Error; err != nil {
+	if err := (profiles.Service{DB: a.db}).Create(&profile); err != nil {
 		if errors.Is(err, gorm.ErrDuplicatedKey) {
 			http.Error(w, "profile already exists", http.StatusConflict)
 			return
@@ -139,7 +130,6 @@ func (a *API) createProfile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	a.syncScheduler("after creating " + profile.Domain)
 	respondJSON(w, http.StatusCreated, profile)
 }
 
@@ -148,212 +138,61 @@ func (a *API) deleteProfile(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-
-	// Take the same lock a scan takes, rather than reading is_scanning and trusting it.
-	//
-	// A plain read leaves the window in which a scheduled run claims the lock between the
-	// check and the first DELETE, and then writes findings for a profile that no longer
-	// exists — recreating exactly the orphaned rows this handler exists to prevent.
-	claim := database.DB.Model(&models.Profile{}).
-		Where("id = ? AND is_scanning = ?", id, false).
-		Update("is_scanning", true)
-	if claim.Error != nil {
-		log.Printf("[-] Claiming profile %s for deletion: %v", id, claim.Error)
-		http.Error(w, "failed to delete profile", http.StatusInternalServerError)
+	if e := (profiles.Service{DB: a.db}).Delete(id); e != nil {
+		profileError(w, e)
 		return
 	}
-	if claim.RowsAffected == 0 {
-		var exists int64
-		database.DB.Model(&models.Profile{}).Where("id = ?", id).Count(&exists)
-		if exists == 0 {
-			http.Error(w, "profile not found", http.StatusNotFound)
-			return
-		}
-		// A scan cannot be cancelled: OrchestrateScan has no cancellation path, so
-		// refusing is the honest answer, exactly as forceScanProfile refuses a second
-		// concurrent run. Giving delete the ability to cancel a run is a separate change.
-		http.Error(w, "profile is scanning; try again when the run finishes", http.StatusConflict)
-		return
-	}
-
-	// The profile exists and we hold its lock; capture its domain now, while the
-	// row is still there, so the deletion notification can name it.
-	var domain string
-	database.DB.Model(&models.Profile{}).Where("id = ?", id).Select("domain").Scan(&domain)
-
-	// From here the lock is held. Anything that goes wrong below has to give it back, or
-	// the profile is stuck refusing both scans and deletes forever. This runs outside the
-	// transaction on purpose: inside, a rollback would undo the release too.
-	deleted := false
-	defer func() {
-		if !deleted {
-			database.DB.Model(&models.Profile{}).Where("id = ?", id).Update("is_scanning", false)
-		}
-	}()
-
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// Unscoped, because every child model carries gorm.DeletedAt and a plain Delete
-		// only sets deleted_at. Those rows were surviving every delete — invisible to the
-		// scoped queries the dashboard uses, but still in the file, owned by a profile
-		// that no longer existed. That is precisely the orphaned data this handler claims
-		// to prevent, and the previous test counted without Unscoped() so it passed over
-		// the bug.
-		if err := tx.Where("profile_id = ? AND state = ?", id, "queued").Delete(&models.ScanJob{}).Error; err != nil {
-			return err
-		}
-		children := []interface{}{
-			&models.Subdomain{}, &models.AliveHost{}, &models.Vulnerability{},
-			&models.SecretFinding{}, &models.DirectoryFinding{},
-		}
-		for _, child := range children {
-			// Errors are checked now. Before, all five statements discarded their result,
-			// so a failed delete was indistinguishable from a successful one and the
-			// handler still answered 204.
-			if err := tx.Unscoped().Where("profile_id = ?", id).Delete(child).Error; err != nil {
-				return err
-			}
-		}
-		return tx.Unscoped().Where("id = ?", id).Delete(&models.Profile{}).Error
-	})
-	if err != nil {
-		log.Printf("[-] Deleting profile %s: %v", id, err)
-		http.Error(w, "failed to delete profile", http.StatusInternalServerError)
-		return
-	}
-	deleted = true
-
-	// After the commit, never inside it: Sync reads the database.
-	a.syncScheduler("after deleting " + id.String())
-
-	// Record the deletion through the notification system: one persistent per-user
-	// row for the bell, plus a live "notification" event that raises a toast on
-	// every connected operator. This is the in-app replacement for the dashboard's
-	// old browser confirm()/alert() dialogs. profileID is nil because the profile no
-	// longer exists to click through to.
-	deletedLabel := domain
-	if deletedLabel == "" {
-		deletedLabel = "The profile"
-	}
-	notifications.Create(notifications.ProfileDeleted, "Profile deleted",
-		deletedLabel+" and its findings were removed", domain, nil)
-
-	events.Broadcast("profile_update", id.String(), nil)
 	w.WriteHeader(http.StatusNoContent)
 }
-
 func (a *API) editProfileSchedule(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
 	}
-
 	var req struct {
 		Schedule string `json:"schedule"`
 		Enabled  *bool  `json:"enabled"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "invalid request body", http.StatusBadRequest)
+	if e := json.NewDecoder(r.Body).Decode(&req); e != nil {
+		http.Error(w, "invalid request body", 400)
 		return
 	}
-	if req.Schedule == "" {
-		http.Error(w, "schedule is required", http.StatusBadRequest)
+	if _, e := scheduler.ParseSchedule(req.Schedule); e != nil {
+		http.Error(w, "invalid schedule format", 400)
 		return
 	}
-	if _, err := scheduler.ParseSchedule(req.Schedule); err != nil {
-		http.Error(w, "invalid schedule format", http.StatusBadRequest)
+	if e := (profiles.Service{DB: a.db}).Schedule(id, req.Schedule, req.Enabled); e != nil {
+		profileError(w, e)
 		return
 	}
-
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		var p models.Profile
-		if err := tx.First(&p, "id = ?", id).Error; err != nil {
-			return err
-		}
-		updates := map[string]any{"schedule": req.Schedule}
-		if req.Enabled != nil {
-			updates["enabled"] = *req.Enabled
-			if !*req.Enabled {
-				result := tx.Where("profile_id = ? AND state = ? AND source = ?", id, "queued", "scheduled").Delete(&models.ScanJob{})
-				if result.Error != nil {
-					return result.Error
-				}
-				if result.RowsAffected > 0 {
-					updates["is_queued"] = false
-				}
-			}
-		}
-		return tx.Model(&p).Updates(updates).Error
-	})
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			http.Error(w, "profile not found", 404)
-		} else {
-			http.Error(w, "failed to update schedule", 500)
-		}
-		return
-	}
-
-	a.syncScheduler("after rescheduling " + id.String())
-	events.Broadcast("profile_update", id.String(), nil)
-
-	// Return the value that was written. Re-reading would be no more truthful under a
-	// concurrent writer, and this is what the caller's request achieved.
-	respondJSON(w, http.StatusOK, map[string]string{"schedule": req.Schedule})
+	respondJSON(w, 200, map[string]string{"schedule": req.Schedule})
 }
-
 func (a *API) forceScanProfile(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
 	}
-
-	var profile models.Profile
-	if err := database.DB.First(&profile, id).Error; err != nil {
-		http.Error(w, "profile not found", http.StatusNotFound)
+	if a.queue == nil {
+		http.Error(w, "scan queue unavailable", 503)
 		return
 	}
-
-	// Optimistic pre-check so the obvious case (double-clicking Initiate) gets a 409
-	// instead of a 202 that quietly does nothing. It is NOT the guard against concurrent
-	// runs: OrchestrateScan claims the lock atomically and is the only authority on
-	// whether a run actually starts.
-	if profile.IsScanning {
-		http.Error(w, "profile is already scanning", http.StatusConflict)
+	if e := a.queue.Enqueue(id.String(), "manual"); e != nil {
+		profileError(w, e)
 		return
 	}
-
-	if a.sched == nil || a.sched.Coordinator == nil {
-		http.Error(w, "scan coordinator unavailable", 503)
-		return
-	}
-	if err := a.sched.Coordinator.Enqueue(id.String(), "manual"); err != nil {
-		status := 500
-		if errors.Is(err, engine.ErrScanDuplicate) {
-			status = 409
-		}
-		if errors.Is(err, engine.ErrQueueFull) {
-			status = 429
-			w.Header().Set("Retry-After", "30")
-		}
-		http.Error(w, err.Error(), status)
-		return
-	}
-
-	respondJSON(w, http.StatusAccepted, map[string]string{"message": "scan queued"})
+	respondJSON(w, 202, map[string]string{"message": "scan queued"})
 }
-
-// syncScheduler resynchronises and logs a failure without failing the request.
-//
-// The write has already committed. Returning an error now would tell the client its
-// create or delete had not happened when it had; the real consequence of a failed sync is
-// a stale schedule, which belongs in the log. The three call sites used to discard this
-// error entirely.
-func (a *API) syncScheduler(context string) {
-	if a.sched == nil {
-		return
-	}
-	if err := a.sched.Sync(); err != nil {
-		log.Printf("[-] Scheduler sync %s failed; the schedule may be stale until the next restart: %v",
-			context, err)
+func profileError(w http.ResponseWriter, e error) {
+	switch {
+	case errors.Is(e, gorm.ErrRecordNotFound):
+		http.Error(w, "profile not found", 404)
+	case errors.Is(e, jobs.ErrDuplicate), errors.Is(e, profiles.ErrScanning):
+		http.Error(w, e.Error(), 409)
+	case errors.Is(e, jobs.ErrFull):
+		w.Header().Set("Retry-After", "30")
+		http.Error(w, e.Error(), 429)
+	default:
+		log.Printf("profile operation: %v", e)
+		http.Error(w, "profile operation failed", 500)
 	}
 }

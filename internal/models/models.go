@@ -67,8 +67,8 @@ type Profile struct {
 	Schedule   string
 	Mode       string
 	Enabled    bool
-	IsScanning bool
-	IsQueued   bool
+	IsScanning bool `gorm:"-"`
+	IsQueued   bool `gorm:"-"`
 	LastScan   time.Time
 	// LastScanStatus is a short controlled summary of the last run, such as
 	// "completed" or "halted: no host answered HTTP". It is rendered in the
@@ -255,4 +255,19 @@ type DirectoryFinding struct {
 type SchemaMigration struct {
 	Version   string    `gorm:"primaryKey"`
 	AppliedAt time.Time `gorm:"autoCreateTime"`
+}
+
+// Queue state has one authority: the active job row, never cached profile flags.
+func (p *Profile) AfterFind(tx *gorm.DB) error {
+	p.IsQueued, p.IsScanning = false, false
+	var j ScanJob
+	err := tx.Session(&gorm.Session{NewDB: true}).Where("profile_id = ?", p.ID.String()).Take(&j).Error
+	if err == gorm.ErrRecordNotFound {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	p.IsQueued, p.IsScanning = j.State == "queued", j.State == "running"
+	return nil
 }

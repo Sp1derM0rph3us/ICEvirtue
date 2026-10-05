@@ -2,7 +2,7 @@ package accounts
 
 import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"golang.org/x/crypto/bcrypt"
 	"path/filepath"
@@ -11,10 +11,10 @@ import (
 )
 
 func TestWebAccountMutationsUseStoredPolicy(t *testing.T) {
-	if e := database.InitDatabase(filepath.Join(t.TempDir(), "test.db")); e != nil {
+	if e := initTestDatabase(filepath.Join(t.TempDir(), "test.db")); e != nil {
 		t.Fatal(e)
 	}
-	db := database.DB
+	db := testDB
 	admin := models.User{Username: "administrator", Role: "admin"}
 	db.Create(&admin)
 	c, _ := appconfig.Load(db)

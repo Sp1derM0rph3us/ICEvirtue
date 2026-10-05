@@ -18,8 +18,6 @@ import (
 
 // WaymoreResponseLimit is a count, matching waymore's -l flag, not a byte size.
 
-var WaymoreConfig string
-
 const archiveURLPattern = `(?i)\.(?:js|json|ts|tsx)(?:[?#]|$)`
 
 var archiveHashPattern = regexp.MustCompile(`^[0-9]+$`)
@@ -32,6 +30,7 @@ type archiveEvidence struct {
 type jsSources struct {
 	live     []string
 	archived map[string][]archiveEvidence // downloaded file -> original URLs/captures
+	report   *stageReport
 	cleanup  func()
 }
 
@@ -46,7 +45,7 @@ func (run *runner) collectWaymore(profile *models.Profile) ([]string, map[string
 	if err := os.Mkdir(responses, 0700); err != nil {
 		return nil, nil, cleanup, err
 	}
-	config := WaymoreConfig
+	config := run.tools.WaymoreConfig
 	if config == "" {
 		config = filepath.Join(dir, "config.yml")
 		// Waymore's stock FILTER_URL excludes paths such as /jquery and /bootstrap.

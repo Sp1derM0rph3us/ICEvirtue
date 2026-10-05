@@ -8,7 +8,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -100,9 +99,7 @@ func TestScanIsRefusedWhileAnotherIsRunning(t *testing.T) {
 	marker := filepath.Join(t.TempDir(), "invocations")
 	recordingTool(t, binDir, marker, 0)
 
-	if err := database.DB.Model(&models.Profile{}).
-		Where("id = ?", profile.ID).
-		Update("is_scanning", true).Error; err != nil {
+	if err := testDB.Create(&models.ScanJob{ProfileID: profile.ID.String(), State: "running"}).Error; err != nil {
 		t.Fatalf("seeding the scan lock: %v", err)
 	}
 

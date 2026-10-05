@@ -63,12 +63,16 @@ type Wordlist struct {
 
 // Only active jobs are retained; the unique profile key arbitrates admission.
 type ScanJob struct {
-	ID        uint   `gorm:"primaryKey"`
-	ProfileID string `gorm:"uniqueIndex;not null"`
-	Source    string
-	State     string `gorm:"index"`
-	Revision  uint64
-	CreatedAt time.Time
+	ID         uint   `gorm:"primaryKey"`
+	ProfileID  string `gorm:"uniqueIndex;not null"`
+	Source     string
+	State      string `gorm:"index"`
+	Revision   uint64
+	Owner      string
+	Token      string
+	LeaseUntil int64 `gorm:"index"`
+	RunID      string
+	CreatedAt  time.Time
 }
 type WordlistPin struct {
 	JobID      uint   `gorm:"primaryKey"`

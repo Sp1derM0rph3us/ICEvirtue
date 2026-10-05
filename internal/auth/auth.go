@@ -38,7 +38,7 @@ const legacySecretPath = "jwt.secret"
 
 const secretFileName = "jwt.secret"
 
-var jwtSecret []byte
+type Signer struct{ secret []byte }
 
 var errNoSecret = errors.New("JWT secret is not initialised; auth.Init must run before the server starts")
 
@@ -49,7 +49,7 @@ var errNoSecret = errors.New("JWT secret is not initialised; auth.Init must run 
 // to the process working directory. As a systemd service with an unwritable
 // WorkingDirectory that killed the application during package initialisation,
 // before main() ever ran and before any flag could redirect it.
-func Init(explicitPath string) error {
+func (s *Signer) Init(explicitPath string) error {
 	path, err := resolveSecretPath(explicitPath)
 	if err != nil {
 		return err
@@ -60,7 +60,7 @@ func Init(explicitPath string) error {
 		if len(data) < minSecretLen {
 			return fmt.Errorf("JWT secret %s is only %d bytes; delete it so a new one can be generated", path, len(data))
 		}
-		jwtSecret = data
+		s.secret = data
 		log.Printf("[+] Loaded JWT secret from %s", path)
 		return nil
 	}
@@ -107,13 +107,13 @@ func Init(explicitPath string) error {
 			if len(existing) < minSecretLen {
 				return fmt.Errorf("JWT secret %s is only %d bytes", path, len(existing))
 			}
-			jwtSecret = existing
+			s.secret = existing
 			return nil
 		}
 		return fmt.Errorf("failed to publish JWT secret %s: %w", path, err)
 	}
 
-	jwtSecret = secret
+	s.secret = secret
 	log.Printf("[+] Generated new JWT secret at %s", path)
 	return nil
 }
@@ -196,8 +196,8 @@ const Issuer = "icevirtue"
 const Audience = "icevirtue-dashboard"
 const TokenType = "icevirtue-session+jwt"
 
-func GenerateTokenWithTTL(subject string, version uint64, ttl time.Duration) (string, error) {
-	if len(jwtSecret) < minSecretLen {
+func (s *Signer) GenerateTokenWithTTL(subject string, version uint64, ttl time.Duration) (string, error) {
+	if len(s.secret) < minSecretLen {
 		return "", errNoSecret
 	}
 	if _, err := uuid.Parse(subject); err != nil || subject == uuid.Nil.String() || version == 0 {
@@ -213,11 +213,11 @@ func GenerateTokenWithTTL(subject string, version uint64, ttl time.Duration) (st
 	}}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	token.Header["typ"] = TokenType
-	return token.SignedString(jwtSecret)
+	return token.SignedString(s.secret)
 }
 
-func ValidateToken(raw string) (*Claims, error) {
-	if len(jwtSecret) < minSecretLen {
+func (s *Signer) ValidateToken(raw string) (*Claims, error) {
+	if len(s.secret) < minSecretLen {
 		return nil, errNoSecret
 	}
 	if len(raw) > 4096 {
@@ -234,7 +234,7 @@ func ValidateToken(raw string) (*Claims, error) {
 				return nil, errors.New("unsupported token header")
 			}
 		}
-		return jwtSecret, nil
+		return s.secret, nil
 	}, jwt.WithValidMethods([]string{"HS256"}), jwt.WithExpirationRequired(),
 		jwt.WithIssuer(Issuer), jwt.WithAudience(Audience), jwt.WithIssuedAt(), jwt.WithStrictDecoding())
 	if err != nil {
@@ -259,8 +259,16 @@ func ValidateToken(raw string) (*Claims, error) {
 
 // CSRFToken is purpose-separated and tied to one authenticated session. It is
 // rendered into server-side forms and compared in constant time on submission.
-func CSRFToken(c *Claims) string {
-	mac := hmac.New(sha256.New, jwtSecret)
+func (s *Signer) CSRFToken(c *Claims) string {
+	mac := hmac.New(sha256.New, s.secret)
 	mac.Write([]byte("icevirtue-form-csrf:" + c.ID))
 	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func New(path string) (*Signer, error) {
+	s := &Signer{}
+	if e := s.Init(path); e != nil {
+		return nil, e
+	}
+	return s, nil
 }

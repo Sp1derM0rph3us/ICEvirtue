@@ -17,7 +17,7 @@ import (
 
 func TestToolOutputLifecycle(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 	dir := t.TempDir()
 	t.Setenv("TMPDIR", dir)
 	for _, tc := range []struct {
@@ -61,7 +61,7 @@ func TestToolOutputLifecycle(t *testing.T) {
 
 func TestOutputCreationAndWriteFailures(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 	t.Setenv("TMPDIR", filepath.Join(t.TempDir(), "missing"))
 	out, err := runTool("sh", []string{"-c", "echo ignored"}, nil, time.Second)
 	defer out.Close()

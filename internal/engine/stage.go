@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 )
 
 // A stage is a group of tools that all contribute to one kind of finding. No
@@ -21,10 +22,11 @@ import (
 // results and then died, or that was killed by its timeout partway through, has
 // still contributed everything it managed to emit, and that output is kept.
 type toolRun struct {
-	Tool       string
-	Count      int
-	Err        error
-	SkipReason string // non-empty when the tool was deliberately not attempted
+	StartedAt, FinishedAt time.Time
+	Tool                  string
+	Count                 int
+	Err                   error
+	SkipReason            string // non-empty when the tool was deliberately not attempted
 }
 
 func (r toolRun) skipped() bool { return r.SkipReason != "" }
@@ -32,6 +34,7 @@ func (r toolRun) skipped() bool { return r.SkipReason != "" }
 // stageReport accumulates the outcome of every tool in one stage, plus the
 // aggregate count after cross-tool de-duplication.
 type stageReport struct {
+	last   time.Time
 	Stage  string
 	Target string
 	Unique int
@@ -39,23 +42,26 @@ type stageReport struct {
 }
 
 func newStageReport(stage, target string) *stageReport {
-	return &stageReport{Stage: stage, Target: target}
+	return &stageReport{Stage: stage, Target: target, last: time.Now().UTC()}
 }
 
 // ok records a tool that ran to completion.
 func (s *stageReport) ok(tool string, count int) {
-	s.runs = append(s.runs, toolRun{Tool: tool, Count: count})
+	s.runs = append(s.runs, toolRun{StartedAt: s.last, FinishedAt: time.Now().UTC(), Tool: tool, Count: count})
+	s.last = time.Now().UTC()
 }
 
 // fail records a tool that errored. Pass whatever it produced before failing;
 // those results are still merged into the stage output.
 func (s *stageReport) fail(tool string, count int, err error) {
-	s.runs = append(s.runs, toolRun{Tool: tool, Count: count, Err: err})
+	s.runs = append(s.runs, toolRun{StartedAt: s.last, FinishedAt: time.Now().UTC(), Tool: tool, Count: count, Err: err})
+	s.last = time.Now().UTC()
 }
 
 // skip records a tool that was not attempted, and why.
 func (s *stageReport) skip(tool, reason string) {
-	s.runs = append(s.runs, toolRun{Tool: tool, SkipReason: reason})
+	s.runs = append(s.runs, toolRun{StartedAt: s.last, FinishedAt: time.Now().UTC(), Tool: tool, SkipReason: reason})
+	s.last = time.Now().UTC()
 }
 
 // record is the common shape at a call site: hand it the error from a Run*
@@ -143,6 +149,7 @@ func (s *stageReport) Log() {
 			logf("      %-*s  ok        %5d", width, r.Tool, r.Count)
 		}
 	}
+	s.last = time.Now().UTC()
 }
 
 // failureNote summarises tool failures for the profile's run status, naming the

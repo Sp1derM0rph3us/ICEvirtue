@@ -6,7 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"gorm.io/gorm"
 	"io"
@@ -19,10 +19,10 @@ import (
 func testStore(t *testing.T) *Store {
 	t.Helper()
 	dir := t.TempDir()
-	if e := database.InitDatabase(filepath.Join(dir, "test.db")); e != nil {
+	if e := initTestDatabase(filepath.Join(dir, "test.db")); e != nil {
 		t.Fatal(e)
 	}
-	s, e := New(database.DB, filepath.Join(dir, "uploads"), filepath.Join(dir, "web"))
+	s, e := New(testDB, filepath.Join(dir, "uploads"), filepath.Join(dir, "web"))
 	if e != nil {
 		t.Fatal(e)
 	}

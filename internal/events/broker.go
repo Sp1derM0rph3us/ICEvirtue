@@ -1,76 +1,47 @@
+// Package events is the durable cross-process dashboard event stream.
 package events
 
 import (
-	"log"
-	"sync"
+	"encoding/json"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"gorm.io/gorm"
+	"time"
 )
 
-// Event represents a basic SSE message sent to the frontend
+const MaxRows = 100000
+
 type Event struct {
-	Type      string      `json:"type"`       // e.g., "profile_update", "discovery_update"
-	ProfileID string      `json:"profile_id"` // stringified UUID
-	Data      interface{} `json:"data,omitempty"`
+	ID        uint64          `json:"id"`
+	Type      string          `json:"type"`
+	ProfileID string          `json:"profile_id"`
+	Data      json.RawMessage `json:"data,omitempty"`
 }
 
-type Broker struct {
-	clients map[chan Event]bool
-	mu      sync.RWMutex
-}
-
-var (
-	instance *Broker
-	once     sync.Once
-)
-
-// GetBroker returns the singleton event broker
-func GetBroker() *Broker {
-	once.Do(func() {
-		instance = &Broker{
-			clients: make(map[chan Event]bool),
-		}
-	})
-	return instance
-}
-
-// Subscribe adds a new client channel to the broker
-func (b *Broker) Subscribe() chan Event {
-	ch := make(chan Event, 100)
-	b.mu.Lock()
-	b.clients[ch] = true
-	b.mu.Unlock()
-	return ch
-}
-
-// Unsubscribe removes a client channel from the broker
-func (b *Broker) Unsubscribe(ch chan Event) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if _, ok := b.clients[ch]; ok {
-		delete(b.clients, ch)
-		close(ch)
+// Append must receive the transaction which committed the corresponding change.
+func Append(tx *gorm.DB, kind, profile string, data any) error {
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
 	}
-}
-
-// Broadcast sends an event to all connected clients
-func (b *Broker) Broadcast(e Event) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	
-	for ch := range b.clients {
-		select {
-		case ch <- e: // Send the event
-		default:
-			// If the client's channel is full, they are too slow.
-			log.Printf("[-] Dropping SSE event for a slow client to prevent blocking")
-		}
+	if e := tx.Create(&models.OutboxEvent{Type: kind, ProfileID: profile, Data: string(b)}).Error; e != nil {
+		return e
 	}
+	return tx.Where("id <= (SELECT MAX(id) - ? FROM outbox_events)", MaxRows).Delete(&models.OutboxEvent{}).Error
 }
 
-// Broadcast is a global helper to quickly dispatch events
-func Broadcast(eventType, profileID string, data interface{}) {
-	GetBroker().Broadcast(Event{
-		Type:      eventType,
-		ProfileID: profileID,
-		Data:      data,
-	})
+type Stream struct{ DB *gorm.DB }
+
+func (s *Stream) Bounds() (first, last uint64, err error) {
+	var row struct{ First, Last uint64 }
+	err = s.DB.Model(&models.OutboxEvent{}).Select("COALESCE(MIN(id),0) AS first, COALESCE(MAX(id),0) AS last").Where("created_at >= ?", time.Now().UTC().Add(-24*time.Hour)).Scan(&row).Error
+	return row.First, row.Last, err
+}
+func (s *Stream) Read(after uint64) ([]Event, error) {
+	var rows []models.OutboxEvent
+	err := s.DB.Where("id > ? AND created_at >= ?", after, time.Now().UTC().Add(-24*time.Hour)).Order("id").Limit(100).Find(&rows).Error
+	out := make([]Event, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, Event{r.ID, r.Type, r.ProfileID, json.RawMessage(r.Data)})
+	}
+	return out, err
 }

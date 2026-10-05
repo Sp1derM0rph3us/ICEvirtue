@@ -15,8 +15,7 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/serverlogs"
 	"github.com/go-chi/chi/v5"
@@ -97,7 +96,7 @@ func (a *API) requireForm(next http.Handler) http.Handler {
 			return
 		}
 		c, ok := UserFromContext(r.Context())
-		if !ok || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("csrf")), []byte(auth.CSRFToken(c))) != 1 {
+		if !ok || subtle.ConstantTimeCompare([]byte(r.PostForm.Get("csrf")), []byte(a.signer.CSRFToken(c))) != 1 {
 			http.Error(w, "invalid form token; reload the page", http.StatusForbidden)
 			return
 		}
@@ -114,7 +113,7 @@ func (a *API) requireForm(next http.Handler) http.Handler {
 
 func (a *API) settingsRender(w http.ResponseWriter, r *http.Request, name, title string, d pageData) {
 	if name == "admin_user" || name == "user_settings" {
-		c, err := appconfig.Load(database.DB)
+		c, err := appconfig.Load(a.db)
 		if err != nil {
 			http.Error(w, "could not load password policy", 500)
 			return
@@ -137,7 +136,7 @@ func (a *API) settingsRender(w http.ResponseWriter, r *http.Request, name, title
 	d.CanWrite = access.Allows(d.User.Role, access.Write)
 	d.IsAdmin = access.Allows(d.User.Role, access.ManageUsers)
 	c, _ := UserFromContext(r.Context())
-	d.CSRF = auth.CSRFToken(c)
+	d.CSRF = a.signer.CSRFToken(c)
 	pages, err := a.pages.get()
 	if err != nil {
 		log.Printf("[-] Settings template: %v", err)
@@ -231,7 +230,7 @@ func (a *API) saveUserSettings(w http.ResponseWriter, r *http.Request) {
 	u := currentUser(r)
 	edit, err := editFromForm(r)
 	if err == nil {
-		err = accounts.Update(database.DB, u, u.ID, edit, false)
+		err = accounts.Update(a.db, u, u.ID, edit, false)
 	}
 	if err != nil {
 		a.settingsRender(w, r, "user_settings", "User settings", pageData{Target: *u, Error: accountError(err)})
@@ -254,15 +253,14 @@ func pageNumber(r *http.Request, total int64, size int) (int, int) {
 
 func (a *API) usersPage(w http.ResponseWriter, r *http.Request) {
 	d := pageData{}
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if err := tx.Model(&models.User{}).Count(&d.Total).Error; err != nil {
-			return err
-		}
-		d.Page, d.Pages = pageNumber(r, d.Total, 50)
-		d.Previous = d.Page - 1
-		d.Next = d.Page + 1
-		return tx.Select("id, username, role, created_at").Order("username ASC, id ASC").Limit(50).Offset((d.Page - 1) * 50).Find(&d.Users).Error
-	})
+	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+	users, total, page, pages, err := a.sessions.List(page)
+	d.Users = users
+	d.Total = total
+	d.Page = page
+	d.Pages = pages
+	d.Previous = page - 1
+	d.Next = page + 1
 	if err != nil {
 		http.Error(w, "could not list users", 500)
 		return
@@ -280,14 +278,14 @@ func (a *API) newUserPage(w http.ResponseWriter, r *http.Request) {
 	a.settingsRender(w, r, "admin_user", "Create user", pageData{Creating: true, Target: models.User{Role: access.Viewer}})
 }
 
-func loadTarget(w http.ResponseWriter, r *http.Request) (*models.User, bool) {
+func (a *API) loadTarget(w http.ResponseWriter, r *http.Request) (*models.User, bool) {
 	id, err := strconv.ParseUint(chi.URLParam(r, "userID"), 10, 64)
 	if err != nil || id == 0 {
 		http.Error(w, "invalid user id", 400)
 		return nil, false
 	}
-	var u models.User
-	if err := database.DB.First(&u, id).Error; err != nil {
+	u, err := a.sessions.ByID(id)
+	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			http.Error(w, "user not found", 404)
 		} else {
@@ -299,7 +297,7 @@ func loadTarget(w http.ResponseWriter, r *http.Request) (*models.User, bool) {
 }
 
 func (a *API) editUserPage(w http.ResponseWriter, r *http.Request) {
-	u, ok := loadTarget(w, r)
+	u, ok := a.loadTarget(w, r)
 	if !ok {
 		return
 	}
@@ -313,7 +311,7 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
 	if password != r.PostForm.Get("confirm_password") {
 		err = accounts.ValidationError("password confirmation does not match")
 	} else {
-		err = accounts.Create(database.DB, u, name, password, role)
+		err = accounts.Create(a.db, u, name, password, role)
 	}
 	if err != nil {
 		a.settingsRender(w, r, "admin_user", "Create user", pageData{Creating: true, Target: models.User{Username: name, Role: role}, Error: accountError(err)})
@@ -324,14 +322,14 @@ func (a *API) createUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) saveAdminUser(w http.ResponseWriter, r *http.Request) {
-	target, ok := loadTarget(w, r)
+	target, ok := a.loadTarget(w, r)
 	if !ok {
 		return
 	}
 	actor := currentUser(r)
 	edit, err := editFromForm(r)
 	if err == nil {
-		err = accounts.Update(database.DB, actor, target.ID, edit, true)
+		err = accounts.Update(a.db, actor, target.ID, edit, true)
 	}
 	if err != nil {
 		a.settingsRender(w, r, "admin_user", "Edit user", pageData{Target: *target, Error: accountError(err)})
@@ -346,7 +344,7 @@ func (a *API) saveAdminUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) {
-	target, ok := loadTarget(w, r)
+	target, ok := a.loadTarget(w, r)
 	if !ok {
 		return
 	}
@@ -356,7 +354,7 @@ func (a *API) deleteUser(w http.ResponseWriter, r *http.Request) {
 		a.settingsRender(w, r, "admin_user", "Edit user", pageData{Target: *target, Error: "Confirm deletion before continuing."})
 		return
 	}
-	if err := accounts.Delete(database.DB, actor, target.ID, version); err != nil {
+	if err := accounts.Delete(a.db, actor, target.ID, version); err != nil {
 		a.settingsRender(w, r, "admin_user", "Edit user", pageData{Target: *target, Error: accountError(err)})
 		return
 	}

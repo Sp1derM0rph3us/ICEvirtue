@@ -54,6 +54,9 @@ func (run *runner) stageSecrets(profile *models.Profile, targets []models.AliveH
 	sources := run.collectJSSources(profile, targets)
 	defer sources.cleanup()
 	report := newStageReport("Stage 05 Secret Hunting", profile.Domain)
+	if sources.report != nil {
+		report.runs = append(report.runs, sources.report.runs...)
+	}
 
 	if len(sources.live) == 0 && len(sources.archived) == 0 {
 		report.skip("mantra", "no live JS URLs were discovered")
@@ -133,6 +136,7 @@ func (run *runner) collectJSSources(profile *models.Profile, targets []models.Al
 	report.Unique = len(jsURLs) + len(archived)
 	report.Log()
 
+	sources.report = report
 	sources.live = jsURLs
 	return sources
 }

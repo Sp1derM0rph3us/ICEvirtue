@@ -58,15 +58,9 @@ func noStore(next http.Handler) http.Handler {
 	})
 }
 
-// pageCSP cannot use a nonce: both pages carry large inline script blocks, and the theme
-// resolver in particular has to stay inline and first to avoid a flash of the wrong
-// theme. 'unsafe-inline' therefore stays, which costs most of the XSS value — but
-// frame-ancestors, base-uri, form-action and connect-src are still worth having and none
-// of them requires touching the HTML.
-//
-// Self-hosting the fonts would let default-src stand alone. That is a follow-up.
+// Scripts and handlers are external; styles include application-generated inline properties.
 const pageCSP = "default-src 'self'; " +
-	"script-src 'self' 'unsafe-inline'; " +
+	"script-src 'self'; " +
 	"style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
 	"font-src https://fonts.gstatic.com; " +
 	"img-src 'self' data:; connect-src 'self'; " +

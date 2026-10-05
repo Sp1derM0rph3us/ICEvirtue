@@ -1,0 +1,1 @@
+(function(){try{var t=localStorage.getItem('icevirtue-theme');document.documentElement.dataset.theme=t==='light'||t==='dark'?t:(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark')}catch(e){document.documentElement.dataset.theme='dark'}})();

@@ -2,7 +2,7 @@ package engine
 
 import (
 	"context"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"net/http"
 	"net/http/httptest"
@@ -38,7 +38,7 @@ func TestStreamingFuzzerDeduplicatesAndPersists(t *testing.T) {
 		t.Fatalf("not deduplicated: %v", requests)
 	}
 	var count int64
-	database.DB.Model(&models.DirectoryFinding{}).Where("profile_id = ?", p.ID).Count(&count)
+	testDB.Model(&models.DirectoryFinding{}).Where("profile_id = ?", p.ID).Count(&count)
 	if count != 2 {
 		t.Fatal("findings not persisted")
 	}
@@ -54,13 +54,12 @@ func TestFuzzerCancellationStopsPreparation(t *testing.T) {
 	}
 }
 
-func TestScratchBudgetIncludesEveryToolDirectory(t *testing.T) {
-	dir := t.TempDir()
-	os.Mkdir(filepath.Join(dir, "tool"), 0700)
-	os.WriteFile(filepath.Join(dir, "a"), make([]byte, 64), 0600)
-	os.WriteFile(filepath.Join(dir, "tool", "b"), make([]byte, 64), 0600)
-	if err := checkScratch(dir, 100); err != errScratchLimit {
-		t.Fatalf("aggregate budget not enforced: %v", err)
+func TestScratchChecksFilesystemAvailability(t *testing.T) {
+	if err := checkScratch(t.TempDir()); err != nil {
+		t.Fatal(err)
+	}
+	if err := checkScratch(filepath.Join(t.TempDir(), "missing")); err == nil {
+		t.Fatal("missing scratch filesystem accepted")
 	}
 }
 

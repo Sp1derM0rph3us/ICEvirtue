@@ -8,7 +8,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -16,7 +15,7 @@ var oldChangeTime = time.Date(2001, time.February, 3, 4, 5, 6, 0, time.UTC)
 
 func setAssetChangeTime(t *testing.T, id uuid.UUID, domain string) {
 	t.Helper()
-	if err := database.DB.Model(&models.Subdomain{}).
+	if err := testDB.Model(&models.Subdomain{}).
 		Where("profile_id = ? AND domain = ?", id, domain).
 		Update("last_changed", oldChangeTime).Error; err != nil {
 		t.Fatalf("setting %s last_changed: %v", domain, err)
@@ -26,7 +25,7 @@ func setAssetChangeTime(t *testing.T, id uuid.UUID, domain string) {
 func assetChangeTime(t *testing.T, id uuid.UUID, domain string) time.Time {
 	t.Helper()
 	var row models.Subdomain
-	if err := database.DB.Where("profile_id = ? AND domain = ?", id, domain).First(&row).Error; err != nil {
+	if err := testDB.Where("profile_id = ? AND domain = ?", id, domain).First(&row).Error; err != nil {
 		t.Fatalf("loading %s: %v", domain, err)
 	}
 	return row.LastChanged.UTC()
@@ -43,15 +42,15 @@ func assetChangeTime(t *testing.T, id uuid.UUID, domain string) time.Time {
 func newDiffEnv(t *testing.T) uuid.UUID {
 	t.Helper()
 
-	prevDB := database.DB
-	t.Cleanup(func() { database.DB = prevDB })
+	prevDB := testDB
+	t.Cleanup(func() { testDB = prevDB })
 
-	if err := database.InitDatabase(filepath.Join(t.TempDir(), "diff.db")); err != nil {
+	if err := initTestDatabase(filepath.Join(t.TempDir(), "diff.db")); err != nil {
 		t.Fatalf("InitDatabase: %v", err)
 	}
 
 	profile := &models.Profile{Domain: "example.com", Mode: "full", Schedule: "@every 24h", Enabled: true}
-	if err := database.DB.Create(profile).Error; err != nil {
+	if err := testDB.Create(profile).Error; err != nil {
 		t.Fatalf("creating profile: %v", err)
 	}
 	return profile.ID
@@ -66,7 +65,7 @@ func hostOf(t *testing.T, table string, where string, args ...interface{}) (valu
 	t.Helper()
 
 	var host sql.NullString
-	row := database.DB.Raw("SELECT host FROM "+table+" WHERE "+where, args...).Row()
+	row := testDB.Raw("SELECT host FROM "+table+" WHERE "+where, args...).Row()
 	if err := row.Scan(&host); err != nil {
 		t.Fatalf("reading %s.host where %s: %v", table, where, err)
 	}
@@ -116,13 +115,13 @@ func TestInsertPopulatesTheCorrelationKey(t *testing.T) {
 	// host as the subdomain row, so the correlation is an equality join rather than a
 	// substring scan — and the parent does not absorb the child.
 	var n int64
-	database.DB.Raw(`SELECT COUNT(*) FROM vulnerabilities v
+	testDB.Raw(`SELECT COUNT(*) FROM vulnerabilities v
 	                 JOIN subdomains s ON s.profile_id = v.profile_id AND s.host = v.host
 	                 WHERE s.domain = ?`, "A.Example.COM.").Scan(&n)
 	if n != 1 {
 		t.Errorf("the vulnerability joined to a.example.com %d time(s), want 1", n)
 	}
-	database.DB.Raw(`SELECT COUNT(*) FROM vulnerabilities v
+	testDB.Raw(`SELECT COUNT(*) FROM vulnerabilities v
 	                 JOIN subdomains s ON s.profile_id = v.profile_id AND s.host = v.host
 	                 WHERE s.domain = ?`, "sub.a.example.com").Scan(&n)
 	if n != 0 {
@@ -140,7 +139,7 @@ func TestReSightingRepairsTheCorrelationKey(t *testing.T) {
 	// Seed a row the way a pre-migration database holds it: correct domain, no key.
 	// Raw SQL on purpose — going through GORM would fire the hook and populate it,
 	// which is the state this test needs to NOT start from.
-	if err := database.DB.Exec(
+	if err := testDB.Exec(
 		`INSERT INTO subdomains (profile_id, domain, host, first_seen, last_seen)
 		 VALUES (?, ?, NULL, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)`, id, "a.example.com").Error; err != nil {
 		t.Fatalf("seeding a pre-migration row: %v", err)
@@ -186,14 +185,14 @@ func TestUncorrelatableFindingIsStoredAsNull(t *testing.T) {
 	}
 
 	var n int64
-	database.DB.Raw(`SELECT COUNT(*) FROM secret_findings c
+	testDB.Raw(`SELECT COUNT(*) FROM secret_findings c
 	                 JOIN subdomains s ON s.profile_id = c.profile_id AND s.host = c.host`).Scan(&n)
 	if n != 0 {
 		t.Errorf("%d uncorrelatable secret(s) joined to a subdomain; NULL must never match", n)
 	}
 
 	// And they are still stored and still visible profile-wide — never dropped.
-	database.DB.Raw("SELECT COUNT(*) FROM secret_findings WHERE profile_id = ?", id).Scan(&n)
+	testDB.Raw("SELECT COUNT(*) FROM secret_findings WHERE profile_id = ?", id).Scan(&n)
 	if n != 2 {
 		t.Errorf("secret_findings holds %d row(s), want 2: a finding must be kept even when it cannot be attributed", n)
 	}

@@ -4,8 +4,8 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -13,20 +13,22 @@ import (
 func newSchedulerEnv(t *testing.T, domains ...string) *Scheduler {
 	t.Helper()
 
-	prevDB := database.DB
-	t.Cleanup(func() { database.DB = prevDB })
+	prevDB := testDB
+	t.Cleanup(func() { testDB = prevDB })
 
-	if err := database.InitDatabase(filepath.Join(t.TempDir(), "sched.db")); err != nil {
+	if err := initTestDatabase(filepath.Join(t.TempDir(), "sched.db")); err != nil {
 		t.Fatalf("InitDatabase: %v", err)
 	}
 	for _, d := range domains {
-		if err := database.DB.Create(&models.Profile{
+		if err := testDB.Create(&models.Profile{
 			Domain: d, Schedule: "every day at 03:00", Mode: "full", Enabled: true,
 		}).Error; err != nil {
 			t.Fatalf("seeding %s: %v", d, err)
 		}
 	}
-	return NewScheduler()
+	s := New(testDB, "test-worker")
+	t.Cleanup(s.Stop)
+	return s
 }
 
 // TestConcurrentSyncSchedulesEachProfileOnce asserts that concurrent syncs converge on
@@ -82,7 +84,7 @@ func TestSyncLeavesTheScheduleIntactWhenTheReadFails(t *testing.T) {
 	}
 
 	// Close the pool so the next read cannot succeed.
-	sqlDB, err := database.DB.DB()
+	sqlDB, err := testDB.DB()
 	if err != nil {
 		t.Fatalf("getting the sql handle: %v", err)
 	}
@@ -101,16 +103,19 @@ func TestSyncLeavesTheScheduleIntactWhenTheReadFails(t *testing.T) {
 func TestSyncSkipsAnUnparseableSchedule(t *testing.T) {
 	s := newSchedulerEnv(t, "good.example.com")
 
-	if err := database.DB.Create(&models.Profile{
+	if err := testDB.Create(&models.Profile{
 		Domain: "bad.example.com", Schedule: "whenever I feel like it", Mode: "full", Enabled: true,
 	}).Error; err != nil {
 		t.Fatalf("seeding the bad profile: %v", err)
 	}
 
 	if err := s.Sync(); err != nil {
-		t.Fatalf("Sync: %v", err)
+		t.Logf("invalid schedule rejected: %v", err)
+	} else {
+		t.Fatal("invalid schedule accepted")
 	}
-	if got := len(s.Cron.Entries()); got != 1 {
+	if s.Cron != nil {
+		got := len(s.Cron.Entries())
 		t.Errorf("got %d entries, want 1: the good profile must still be scheduled", got)
 	}
 }
@@ -131,5 +136,65 @@ func TestStartAndSyncProduceTheSameSchedule(t *testing.T) {
 	}
 	if afterSync := len(s.Cron.Entries()); afterSync != afterStart {
 		t.Errorf("Start scheduled %d entries but Sync scheduled %d", afterStart, afterSync)
+	}
+}
+
+func TestLeaderLossRebuildSkipsMissedTimesAndFencesOldCallbacks(t *testing.T) {
+	s := newSchedulerEnv(t, "one.test")
+	if e := s.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	previous := s.Cron.Entries()[0]
+	token := s.token
+	testDB.Model(&models.SchedulerLease{}).Where("id=1").Update("lease_until", 0)
+	other := New(testDB, "other")
+	defer other.Stop()
+	if e := other.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	previous.Job.Run() // A callback already dispatched by the former leader.
+	var jobs int64
+	testDB.Model(&models.ScanJob{}).Count(&jobs)
+	if jobs != 0 {
+		t.Fatal("old leader enqueued work")
+	}
+	if e := s.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	if s.Cron != nil {
+		t.Fatal("former leader kept scheduling")
+	}
+	other.Stop()
+	if e := s.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	if s.token == token {
+		t.Fatal("leadership epoch reused a token")
+	}
+	for _, entry := range s.Cron.Entries() {
+		if !entry.Next.After(time.Now()) {
+			t.Fatal("missed occurrence replayed")
+		}
+	}
+}
+func TestInvalidReloadKeepsWorkingScheduleAndRetries(t *testing.T) {
+	s := newSchedulerEnv(t, "one.test")
+	if e := s.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	old := s.Cron
+	testDB.Model(&models.Profile{}).Where("domain=?", "one.test").Update("schedule", "invalid")
+	if e := s.Sync(); e == nil {
+		t.Fatal("bad schedule accepted")
+	}
+	if s.Cron != old {
+		t.Fatal("working schedule discarded")
+	}
+	testDB.Model(&models.Profile{}).Where("domain=?", "one.test").Update("schedule", "every day at 04:00")
+	if e := s.Sync(); e != nil {
+		t.Fatal(e)
+	}
+	if s.Cron == old {
+		t.Fatal("reload never retried")
 	}
 }

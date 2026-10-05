@@ -2,18 +2,7 @@
 <html lang="en">
 <head>
     <!-- Same no-flash resolution as the dashboard. Keep inline and keep first. -->
-    <script>
-        (function () {
-            try {
-                var saved = localStorage.getItem('icevirtue-theme');
-                var prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
-                document.documentElement.dataset.theme =
-                    saved === 'light' || saved === 'dark' ? saved : (prefersLight ? 'light' : 'dark');
-            } catch (e) {
-                document.documentElement.dataset.theme = 'dark';
-            }
-        })();
-    </script>
+    <script src="/static/js/login-theme.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Sign in · ICEvirtue</title>
@@ -28,7 +17,7 @@
 <!-- animate-fade-in removed: it was never defined in this page and there are no
      fadeIn keyframes in output.css either, so it has always been a no-op here. -->
 <div class="glass-box chroma-login-card relative">
-    <button type="button" id="login-theme-toggle" class="chroma-login-theme chroma-theme-button flex items-center" onclick="toggleTheme()" aria-label="Toggle light and dark theme" title="Toggle light / dark">
+    <button type="button" id="login-theme-toggle" class="chroma-login-theme chroma-theme-button flex items-center"  data-click="login-0" aria-label="Toggle light and dark theme" title="Toggle light / dark">
         <svg class="theme-icon-moon w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z"></path></svg>
         <svg class="theme-icon-sun w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"></path></svg>
     </button>
@@ -70,64 +59,7 @@
     </form>
 </div>
 
-<script>
-    // The return position is read from sessionStorage, which is per-tab and same-origin, so
-    // a link from an attacker's page cannot seed it. The server never sees or reflects it,
-    // which is what keeps this from being an open redirect: the only thing appended to "/"
-    // is a value proved to be a query string.
-    const RETURN_KEY = 'icevirtue-return';
-    const SAFE_QUERY = /^\?[^/\\:#]*$/;
+<script src="/static/js/login.js"></script>
 
-    function toggleTheme() {
-        const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
-        document.documentElement.dataset.theme = next;
-        try { localStorage.setItem('icevirtue-theme', next); } catch (e) {}
-    }
-
-    function returnTarget() {
-        let q = '';
-        try {
-            q = sessionStorage.getItem(RETURN_KEY) || '';
-            sessionStorage.removeItem(RETURN_KEY);
-        } catch (e) {}
-        return SAFE_QUERY.test(q) ? '/' + q : '/';
-    }
-
-    document.getElementById('login-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const username = document.getElementById('username').value;
-        const password = document.getElementById('password').value;
-        const submitBtn = document.getElementById('submit-btn');
-        const spinner = document.getElementById('spinner');
-        const errorMsg = document.getElementById('error-msg');
-
-        submitBtn.classList.add('hidden');
-        spinner.classList.remove('hidden');
-        errorMsg.classList.add('hidden');
-
-        try {
-            const res = await fetch('/api/login', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username, password })
-            });
-
-            if (res.ok) {
-                window.location.replace(returnTarget()); 
-            } else {
-                errorMsg.textContent = 'Sign in failed. Check your credentials.';
-                errorMsg.classList.remove('hidden');
-                submitBtn.classList.remove('hidden');
-                spinner.classList.add('hidden');
-            }
-        } catch (err) {
-            errorMsg.textContent = 'Connection unavailable. Please try again.';
-            errorMsg.classList.remove('hidden');
-            submitBtn.classList.remove('hidden');
-            spinner.classList.add('hidden');
-        }
-    });
-</script>
-
-</body>
+<script src="/static/js/login-controls.js"></script></body>
 </html>
