@@ -1,0 +1,24 @@
+[Unit]
+Description=ICEvirtue web server
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=icevirtue
+Group=icevirtue
+UMask=0077
+StateDirectory=icevirtue
+WorkingDirectory=/opt/icevirtue
+ExecStart=/usr/local/bin/ICEvirtue --db-path /var/lib/icevirtue/icevirtue.db --upload-dir /var/lib/icevirtue/uploads --web-dir /opt/icevirtue/web --jwt-secret /var/lib/icevirtue/jwt.secret
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=40
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

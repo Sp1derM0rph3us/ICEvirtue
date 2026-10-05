@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -53,7 +53,7 @@ func testAssets() (templates, static fstest.MapFS) {
 
 // authOnce loads a signing key once for the whole test binary.
 //
-// auth.Init is called exactly once on purpose: it is the only way to set the package's
+// testSigner.Init is called exactly once on purpose: it is the only way to set the package's
 // key, and calling it again with a different path rotates the key, which would silently
 // invalidate every token an earlier test in this binary had minted. It cannot use
 // t.TempDir either — that is removed when the first test finishes, while the key has to
@@ -71,8 +71,8 @@ func initAuth(t *testing.T) {
 		if err := os.WriteFile(filepath.Join(dir, "jwt.secret"), testSigningKey, 0600); err != nil {
 			t.Fatal(err)
 		}
-		if err := auth.Init(filepath.Join(dir, "jwt.secret")); err != nil {
-			t.Fatalf("auth.Init: %v", err)
+		if err := testSigner.Init(filepath.Join(dir, "jwt.secret")); err != nil {
+			t.Fatalf("testSigner.Init: %v", err)
 		}
 	})
 }
@@ -82,9 +82,9 @@ func sessionCookie(t *testing.T, ttl time.Duration) *http.Cookie {
 	initAuth(t)
 
 	var u models.User
-	if err := database.DB.Where("username = ?", "session-fixture").First(&u).Error; err != nil {
+	if err := testDB.Where("username = ?", "session-fixture").First(&u).Error; err != nil {
 		u = models.User{Username: "session-fixture", PasswordHash: "unused", Role: "operator"}
-		if err := database.DB.Create(&u).Error; err != nil {
+		if err := testDB.Create(&u).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -92,12 +92,12 @@ func sessionCookie(t *testing.T, ttl time.Duration) *http.Cookie {
 	if duration <= 0 {
 		duration = time.Hour
 	}
-	token, err := issueSession(&u, duration)
+	token, err := testAPI().issueSession(&u, duration)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if ttl <= 0 {
-		c, err := auth.ValidateToken(token)
+		c, err := testSigner.ValidateToken(token)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -120,7 +120,7 @@ func newServer(t *testing.T) http.Handler {
 	initAuth(t)
 
 	templates, static := testAssets()
-	handler, err := NewRouter(Config{Templates: templates, Static: static, SessionTTL: time.Hour}, nil)
+	handler, err := NewRouter(Config{DB: testDB, Signer: testSigner, Templates: templates, Static: static, SessionTTL: time.Hour})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -388,6 +388,8 @@ func TestEveryRouteIsEitherPublicOrGuarded(t *testing.T) {
 		"POST /api/logout":   true,
 		"GET /static/css/*":  true,
 		"HEAD /static/css/*": true,
+		"GET /static/js/*":   true,
+		"HEAD /static/js/*":  true,
 	}
 
 	h := newServer(t)
@@ -509,10 +511,10 @@ func TestTrustedOriginIsAccepted(t *testing.T) {
 	initAuth(t)
 
 	templates, static := testAssets()
-	h, err := NewRouter(Config{
+	h, err := NewRouter(Config{DB: testDB, Signer: testSigner,
 		Templates: templates, Static: static, SessionTTL: time.Hour,
 		TrustedOrigins: []string{"https://recon.example.com"},
-	}, nil)
+	})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}
@@ -574,9 +576,9 @@ func TestSessionCookieIsHardened(t *testing.T) {
 
 	for _, secure := range []bool{false, true} {
 		templates, static := testAssets()
-		h, err := NewRouter(Config{
+		h, err := NewRouter(Config{DB: testDB, Signer: testSigner,
 			Templates: templates, Static: static, SessionTTL: time.Hour, SecureCookies: secure,
-		}, nil)
+		})
 		if err != nil {
 			t.Fatalf("NewRouter: %v", err)
 		}
@@ -707,7 +709,7 @@ func seedUser(t *testing.T, username, password string) {
 	if err != nil {
 		t.Fatalf("hashing: %v", err)
 	}
-	if err := database.DB.Create(&models.User{Username: username, PasswordHash: string(hash)}).Error; err != nil {
+	if err := testDB.Create(&models.User{Username: username, PasswordHash: string(hash)}).Error; err != nil {
 		t.Fatalf("seeding user %s: %v", username, err)
 	}
 }
@@ -718,7 +720,7 @@ func newServerWithUsers(t *testing.T) http.Handler {
 	t.Helper()
 
 	templates, static := testAssets()
-	h, err := NewRouter(Config{Templates: templates, Static: static, SessionTTL: time.Hour}, nil)
+	h, err := NewRouter(Config{DB: testDB, Signer: testSigner, Templates: templates, Static: static, SessionTTL: time.Hour})
 	if err != nil {
 		t.Fatalf("NewRouter: %v", err)
 	}

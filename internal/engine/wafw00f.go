@@ -87,7 +87,7 @@ func (run *runner) RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, 
 	if len(hosts) == 0 {
 		return nil, nil
 	}
-	if _, err := resolveTool("wafw00f"); err != nil {
+	if _, err := run.tools.resolveTool("wafw00f"); err != nil {
 		return nil, err
 	}
 	processTimeout := run.wafTimeout

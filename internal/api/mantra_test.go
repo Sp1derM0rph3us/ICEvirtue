@@ -4,14 +4,13 @@ import (
 	"net/http"
 	"testing"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 func TestMantraSourcesAreNodeScopedAndLegacyRowsStayReadable(t *testing.T) {
 	profile := newAPIEnv(t)
 	for _, domain := range []string{"a.example.com", "b.example.com"} {
-		if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: domain}).Error; err != nil {
+		if err := testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: domain}).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -23,7 +22,7 @@ func TestMantraSourcesAreNodeScopedAndLegacyRowsStayReadable(t *testing.T) {
 		{ProfileID: profile.ID, SourceURL: "mantra-discovery", SecretType: "generic", SecretValue: "old-only", Engine: "Mantra"},
 	}
 	for i := range rows {
-		if err := database.DB.Create(&rows[i]).Error; err != nil {
+		if err := testDB.Create(&rows[i]).Error; err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -31,7 +30,7 @@ func TestMantraSourcesAreNodeScopedAndLegacyRowsStayReadable(t *testing.T) {
 	check := func(query string, wantRows int, wantValue, wantSource string) {
 		t.Helper()
 		page := decodePage[models.SecretFinding](t, route(t, http.MethodGet,
-			"/api/profiles/{id}/secrets", path+query, getProfileSecrets), "secrets"+query)
+			"/api/profiles/{id}/secrets", path+query, testAPI().getProfileSecrets), "secrets"+query)
 		if page.Page.TotalRows != int64(wantRows) || len(page.Data) != wantRows {
 			t.Fatalf("%s: got %d rows, want %d: %+v", query, len(page.Data), wantRows, page.Data)
 		}
@@ -45,7 +44,7 @@ func TestMantraSourcesAreNodeScopedAndLegacyRowsStayReadable(t *testing.T) {
 	check("", 3, "", "")
 
 	all := decodePage[models.SecretFinding](t, route(t, http.MethodGet,
-		"/api/profiles/{id}/secrets", path, getProfileSecrets), "secrets")
+		"/api/profiles/{id}/secrets", path, testAPI().getProfileSecrets), "secrets")
 	var legacyFound bool
 	for _, row := range all.Data {
 		if row.SourceURL == "mantra-discovery" {
@@ -57,7 +56,7 @@ func TestMantraSourcesAreNodeScopedAndLegacyRowsStayReadable(t *testing.T) {
 	}
 
 	nodes := decodePage[subdomainRow](t, route(t, http.MethodGet,
-		"/api/profiles/{id}/subdomains", "/api/profiles/"+profile.ID.String()+"/subdomains", getProfileSubdomains), "subdomains")
+		"/api/profiles/{id}/subdomains", "/api/profiles/"+profile.ID.String()+"/subdomains", testAPI().getProfileSubdomains), "subdomains")
 	if len(nodes.Data) != 2 {
 		t.Fatalf("got %d nodes, want two: %+v", len(nodes.Data), nodes.Data)
 	}
@@ -72,10 +71,10 @@ func TestArchivedSecretIsAttributedToOriginalHostWithEvidence(t *testing.T) {
 	profile := newAPIEnv(t)
 	source := "https://a.example.com/old.js"
 	archive := "https://web.archive.org/web/20200101000000/" + source
-	if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: "a.example.com"}).Error; err != nil {
+	if err := testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: "a.example.com"}).Error; err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Create(&models.SecretFinding{
+	if err := testDB.Create(&models.SecretFinding{
 		ProfileID: profile.ID, SourceURL: source, ArchiveURL: archive,
 		SecretType: "aws", SecretValue: "archived-value", Engine: "SecretHound",
 	}).Error; err != nil {
@@ -83,7 +82,7 @@ func TestArchivedSecretIsAttributedToOriginalHostWithEvidence(t *testing.T) {
 	}
 	path := "/api/profiles/" + profile.ID.String() + "/secrets?host=a.example.com"
 	page := decodePage[models.SecretFinding](t, route(t, http.MethodGet,
-		"/api/profiles/{id}/secrets", path, getProfileSecrets), "archived secret")
+		"/api/profiles/{id}/secrets", path, testAPI().getProfileSecrets), "archived secret")
 	if len(page.Data) != 1 || page.Data[0].SourceURL != source || page.Data[0].ArchiveURL != archive || page.Data[0].SeenLive {
 		t.Fatalf("archived evidence not attributed to original node: %+v", page.Data)
 	}

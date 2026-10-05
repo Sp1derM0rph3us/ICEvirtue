@@ -16,12 +16,12 @@ func isolate(t *testing.T) {
 	t.Helper()
 
 	origSystemDir := systemSecretDir
-	origSecret := jwtSecret
+	origSecret := testSigner.secret
 
 	// Point the FHS location at a path no test can create, so each test opts in
 	// to the branch it means to exercise.
 	systemSecretDir = filepath.Join(t.TempDir(), "locked", "icevirtue")
-	jwtSecret = nil
+	testSigner.secret = nil
 
 	t.Setenv("STATE_DIRECTORY", "")
 	t.Setenv("XDG_STATE_HOME", "")
@@ -31,7 +31,7 @@ func isolate(t *testing.T) {
 
 	t.Cleanup(func() {
 		systemSecretDir = origSystemDir
-		jwtSecret = origSecret
+		testSigner.secret = origSecret
 	})
 }
 
@@ -203,13 +203,13 @@ func TestInitReusesAnExistingKey(t *testing.T) {
 	if err := Init(""); err != nil {
 		t.Fatalf("first Init: %v", err)
 	}
-	first := string(jwtSecret)
+	first := string(testSigner.secret)
 
-	jwtSecret = nil
+	testSigner.secret = nil
 	if err := Init(""); err != nil {
 		t.Fatalf("second Init: %v", err)
 	}
-	if string(jwtSecret) != first {
+	if string(testSigner.secret) != first {
 		t.Error("Init generated a new key instead of reusing the persisted one, which would invalidate every session on restart")
 	}
 }
@@ -319,7 +319,7 @@ func TestJWTRejectsInvalidClaimsAndHeaders(t *testing.T) {
 			token := jwt.NewWithClaims(jwt.SigningMethodHS256, &c)
 			token.Header["typ"] = TokenType
 			mutate(&c, token)
-			raw, err := token.SignedString(jwtSecret)
+			raw, err := token.SignedString(testSigner.secret)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -332,7 +332,7 @@ func TestJWTRejectsInvalidClaimsAndHeaders(t *testing.T) {
 
 func TestValidateRejectsTokenFromADifferentKey(t *testing.T) {
 	raw, _ := tokenFixture(t)
-	jwtSecret = []byte(strings.Repeat("different", 8))
+	testSigner.secret = []byte(strings.Repeat("different", 8))
 	if _, err := ValidateToken(raw); err == nil {
 		t.Fatal("wrong key accepted")
 	}

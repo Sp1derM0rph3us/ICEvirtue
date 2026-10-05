@@ -9,7 +9,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -23,7 +22,7 @@ func seedCorrelated(t *testing.T) uuid.UUID {
 
 	create := func(what string, row interface{}) {
 		t.Helper()
-		if err := database.DB.Create(row).Error; err != nil {
+		if err := testDB.Create(row).Error; err != nil {
 			t.Fatalf("seeding %s: %v", what, err)
 		}
 	}
@@ -123,12 +122,12 @@ func TestSecretsPreferSourcedSecretHoundRowsAndExposeMetadata(t *testing.T) {
 		{ProfileID: id, SourceURL: "https://old.example.com/app.js", SecretType: "old", SecretValue: "legacy"},
 	}
 	for i := range rows {
-		if err := database.DB.Create(&rows[i]).Error; err != nil {
+		if err := testDB.Create(&rows[i]).Error; err != nil {
 			t.Fatalf("seeding secret: %v", err)
 		}
 	}
 	path := "/api/profiles/" + id.String() + "/secrets"
-	all := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path, getProfileSecrets), "secrets")
+	all := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path, testAPI().getProfileSecrets), "secrets")
 	if all.Page.TotalRows != 4 || len(all.Data) != 4 {
 		t.Fatalf("got %d visible rows, want 4 with duplicate Mantra row suppressed: %+v", all.Page.TotalRows, all.Data)
 	}
@@ -149,10 +148,10 @@ func TestSecretsPreferSourcedSecretHoundRowsAndExposeMetadata(t *testing.T) {
 		t.Errorf("metadata or legacy engine lost: %+v", all.Data)
 	}
 	var stored int64
-	if err := database.DB.Model(&models.SecretFinding{}).Where("profile_id = ?", id).Count(&stored).Error; err != nil || stored != 5 {
+	if err := testDB.Model(&models.SecretFinding{}).Where("profile_id = ?", id).Count(&stored).Error; err != nil || stored != 5 {
 		t.Errorf("historical rows not retained: count=%d err=%v", stored, err)
 	}
-	node := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path+"?host=a.example.com", getProfileSecrets), "secrets")
+	node := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets", path+"?host=a.example.com", testAPI().getProfileSecrets), "secrets")
 	if node.Page.TotalRows != 1 || node.Data[0].SourceURL != "https://a.example.com/app.js" {
 		t.Errorf("node scope = %+v, want only a.example.com finding", node)
 	}
@@ -166,10 +165,10 @@ func TestStatusPrefersTheMostAliveHost(t *testing.T) {
 	profile := newAPIEnv(t)
 	id := profile.ID
 
-	database.DB.Create(&models.Subdomain{ProfileID: id, Domain: "a.example.com"})
+	testDB.Create(&models.Subdomain{ProfileID: id, Domain: "a.example.com"})
 	// Inserted worst-first, so a rule that took the first row would answer 500.
-	database.DB.Create(&models.AliveHost{ProfileID: id, URL: "http://a.example.com", StatusCode: 500})
-	database.DB.Create(&models.AliveHost{ProfileID: id, URL: "https://a.example.com", StatusCode: 200})
+	testDB.Create(&models.AliveHost{ProfileID: id, URL: "http://a.example.com", StatusCode: 500})
+	testDB.Create(&models.AliveHost{ProfileID: id, URL: "https://a.example.com", StatusCode: 200})
 
 	rows := rowsByDomain(getSubdomainPage(t, id, ""))
 	row := rows["a.example.com"]
@@ -260,7 +259,7 @@ func TestFindingEndpointsScopeToOneHost(t *testing.T) {
 	id := seedCorrelated(t)
 
 	vulns := decodePage[models.Vulnerability](t, route(t, "GET", "/api/profiles/{id}/vulnerabilities",
-		"/api/profiles/"+id.String()+"/vulnerabilities?host=a.example.com", getProfileVulnerabilities), "vulns")
+		"/api/profiles/"+id.String()+"/vulnerabilities?host=a.example.com", testAPI().getProfileVulnerabilities), "vulns")
 	if vulns.Page.TotalRows != 2 {
 		t.Errorf("a.example.com has %d vuln(s), want 2", vulns.Page.TotalRows)
 	}
@@ -276,7 +275,7 @@ func TestFindingEndpointsScopeToOneHost(t *testing.T) {
 	}
 
 	dirs := decodePage[models.DirectoryFinding](t, route(t, "GET", "/api/profiles/{id}/directories",
-		"/api/profiles/"+id.String()+"/directories?host=a.example.com", getProfileDirectories), "dirs")
+		"/api/profiles/"+id.String()+"/directories?host=a.example.com", testAPI().getProfileDirectories), "dirs")
 	if dirs.Page.TotalRows != 3 {
 		t.Errorf("a.example.com has %d dir(s), want 3", dirs.Page.TotalRows)
 	}
@@ -284,7 +283,7 @@ func TestFindingEndpointsScopeToOneHost(t *testing.T) {
 	// A host scope that normalizes to nothing must return an empty page, never the
 	// rows whose host is NULL.
 	orphan := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets",
-		"/api/profiles/"+id.String()+"/secrets?host=mantra-discovery", getProfileSecrets), "secrets")
+		"/api/profiles/"+id.String()+"/secrets?host=mantra-discovery", testAPI().getProfileSecrets), "secrets")
 	if orphan.Page.TotalRows != 0 || len(orphan.Data) != 0 {
 		t.Errorf("an unresolvable host scope returned %d row(s); it must never match the NULL-host rows", orphan.Page.TotalRows)
 	}
@@ -292,7 +291,7 @@ func TestFindingEndpointsScopeToOneHost(t *testing.T) {
 	// Unscoped, that secret is still there. A finding that cannot be attributed is
 	// still a finding.
 	all := decodePage[models.SecretFinding](t, route(t, "GET", "/api/profiles/{id}/secrets",
-		"/api/profiles/"+id.String()+"/secrets", getProfileSecrets), "secrets")
+		"/api/profiles/"+id.String()+"/secrets", testAPI().getProfileSecrets), "secrets")
 	if all.Page.TotalRows != 2 {
 		t.Errorf("the profile has %d secret(s), want 2 including the unattributable one", all.Page.TotalRows)
 	}
@@ -305,14 +304,14 @@ func TestVulnerabilitiesSortBySeverityRank(t *testing.T) {
 	id := profile.ID
 
 	for i, sev := range []string{"info", "low", "critical", "medium", "high"} {
-		database.DB.Create(&models.Vulnerability{
+		testDB.Create(&models.Vulnerability{
 			ProfileID: id, TemplateID: fmt.Sprintf("t%d", i),
 			URL: fmt.Sprintf("https://a.example.com/%d", i), Severity: sev,
 		})
 	}
 
 	page := decodePage[models.Vulnerability](t, route(t, "GET", "/api/profiles/{id}/vulnerabilities",
-		"/api/profiles/"+id.String()+"/vulnerabilities", getProfileVulnerabilities), "vulns")
+		"/api/profiles/"+id.String()+"/vulnerabilities", testAPI().getProfileVulnerabilities), "vulns")
 
 	var got []string
 	for _, v := range page.Data {
@@ -336,7 +335,7 @@ func TestPerRowCountsAreCapped(t *testing.T) {
 	id := profile.ID
 	host := "hot.example.com"
 
-	database.DB.Create(&models.Subdomain{ProfileID: id, Domain: host})
+	testDB.Create(&models.Subdomain{ProfileID: id, Domain: host})
 
 	// Just over the cap, so the cap is what stops the count rather than the data.
 	rows := make([]models.DirectoryFinding, 0, countCap+20)
@@ -346,7 +345,7 @@ func TestPerRowCountsAreCapped(t *testing.T) {
 			DirURL: fmt.Sprintf("https://%s/d%05d", host, i), StatusCode: 200,
 		})
 	}
-	if err := database.DB.CreateInBatches(rows, 500).Error; err != nil {
+	if err := testDB.CreateInBatches(rows, 500).Error; err != nil {
 		t.Fatalf("seeding directories: %v", err)
 	}
 
@@ -358,7 +357,7 @@ func TestPerRowCountsAreCapped(t *testing.T) {
 
 	// The exact total is still exact where it matters: the node's own tab.
 	dirs := decodePage[models.DirectoryFinding](t, route(t, "GET", "/api/profiles/{id}/directories",
-		"/api/profiles/"+id.String()+"/directories?host="+host+"&size=1", getProfileDirectories), "dirs")
+		"/api/profiles/"+id.String()+"/directories?host="+host+"&size=1", testAPI().getProfileDirectories), "dirs")
 	if dirs.Page.TotalRows != int64(countCap+20) {
 		t.Errorf("the node's own tab reported %d rows, want the exact %d", dirs.Page.TotalRows, countCap+20)
 	}
@@ -378,15 +377,15 @@ func TestLastChangedDrivesNodeSyncSortAndFilter(t *testing.T) {
 	profile := newAPIEnv(t)
 	first := time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 	for _, domain := range []string{"unchanged.example.com", "changed.example.com"} {
-		if err := database.DB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: domain}).Error; err != nil {
+		if err := testDB.Create(&models.Subdomain{ProfileID: profile.ID, Domain: domain}).Error; err != nil {
 			t.Fatalf("creating %s: %v", domain, err)
 		}
 	}
-	if err := database.DB.Model(&models.Subdomain{}).Where("profile_id = ?", profile.ID).
+	if err := testDB.Model(&models.Subdomain{}).Where("profile_id = ?", profile.ID).
 		Updates(map[string]interface{}{"first_seen": first, "last_changed": first, "last_seen": first.Add(48 * time.Hour)}).Error; err != nil {
 		t.Fatalf("setting baseline timestamps: %v", err)
 	}
-	if err := database.DB.Model(&models.Subdomain{}).
+	if err := testDB.Model(&models.Subdomain{}).
 		Where("profile_id = ? AND domain = ?", profile.ID, "changed.example.com").
 		Update("last_changed", first.Add(2*time.Second)).Error; err != nil {
 		t.Fatalf("setting changed timestamp: %v", err)
@@ -411,7 +410,7 @@ func TestVulnerabilitySeveritySummaryIsScopedAndOrdered(t *testing.T) {
 	// a.example.com already has critical and info; add a padded high value to cover
 	// normalization and an unknown value to ensure it appears after standard levels.
 	for i, severity := range []string{" high ", "custom"} {
-		if err := database.DB.Create(&models.Vulnerability{
+		if err := testDB.Create(&models.Vulnerability{
 			ProfileID: id, TemplateID: fmt.Sprintf("summary-%d", i),
 			URL: fmt.Sprintf("https://a.example.com/summary/%d", i), Severity: severity,
 		}).Error; err != nil {
@@ -421,7 +420,7 @@ func TestVulnerabilitySeveritySummaryIsScopedAndOrdered(t *testing.T) {
 
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/vulnerabilities/severity-summary",
 		"/api/profiles/"+id.String()+"/vulnerabilities/severity-summary?host=a.example.com",
-		getVulnerabilitySeveritySummary)
+		testAPI().getVulnerabilitySeveritySummary)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("summary = %d: %s", rec.Code, rec.Body.String())
 	}
@@ -448,7 +447,7 @@ func TestVulnerabilitySeveritySummaryIsScopedAndOrdered(t *testing.T) {
 
 	empty := route(t, http.MethodGet, "/api/profiles/{id}/vulnerabilities/severity-summary",
 		"/api/profiles/"+id.String()+"/vulnerabilities/severity-summary?host=mantra-discovery",
-		getVulnerabilitySeveritySummary)
+		testAPI().getVulnerabilitySeveritySummary)
 	var none []severitySummary
 	if err := json.Unmarshal(empty.Body.Bytes(), &none); err != nil {
 		t.Fatalf("decoding empty summary: %v", err)

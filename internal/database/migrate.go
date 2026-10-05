@@ -54,31 +54,22 @@ var hostSources = []struct{ table, source string }{
 	{"directory_findings", "subdomain_url"},
 }
 
-// RunDataMigrations applies the one-time data migrations an existing database needs.
-//
-// It is separate from InitDatabase on purpose: cmd/admin also opens the database,
-// and creating a user has no business running a data migration. Call it from main
-// after InitDatabase and before the scheduler and the HTTP server start — at that
-// point nothing else can hold the single connection the pool is limited to, so the
-// only cost is startup latency rather than contention with live requests.
-//
-// It is synchronous for a reason. Backfilling in the background would leave a window
-// in which every per-node finding count reads zero, which is a wrong answer served
-// confidently — the exact failure this whole change exists to remove.
-func RunDataMigrations() error {
-	if err := runHostCorrelationMigration(); err != nil {
+// RunDataMigrations applies one-time data changes before the server serves requests.
+// Workers and the administration CLI open only an already migrated schema.
+func (s *Store) RunDataMigrations() error {
+	if err := s.runHostCorrelationMigration(); err != nil {
 		return err
 	}
-	if err := runSubdomainLastChangedMigration(); err != nil {
+	if err := s.runSubdomainLastChangedMigration(); err != nil {
 		return err
 	}
-	if err := runTimestampsUTCMigration(); err != nil {
+	if err := s.runTimestampsUTCMigration(); err != nil {
 		return err
 	}
-	if err := runSecretLiveEvidenceMigration(); err != nil {
+	if err := s.runSecretLiveEvidenceMigration(); err != nil {
 		return err
 	}
-	return runToolTimeoutsMigration()
+	return s.runToolTimeoutsMigration()
 }
 
 // runToolTimeoutsMigration sets any tool-timeout column still at its zero value
@@ -86,13 +77,13 @@ func RunDataMigrations() error {
 // column names, so GORM owns the field-to-column mapping (the names it derives
 // for DNSX, HTTPX and SecretHound are not obvious). Guarded on zero so it never
 // overwrites a value an admin has set, and idempotent via the migration ledger.
-func runToolTimeoutsMigration() error {
-	applied, err := migrationApplied(toolTimeoutsV1)
+func (s *Store) runToolTimeoutsMigration() error {
+	applied, err := s.migrationApplied(toolTimeoutsV1)
 	if err != nil || applied {
 		return err
 	}
 	d := appconfig.Defaults().Tools
-	if err := DB.Transaction(func(tx *gorm.DB) error {
+	if err := s.DB.Transaction(func(tx *gorm.DB) error {
 		var c models.ApplicationConfiguration
 		if e := tx.First(&c, 1).Error; e != nil {
 			if errors.Is(e, gorm.ErrRecordNotFound) {
@@ -126,48 +117,48 @@ func runToolTimeoutsMigration() error {
 	}); err != nil {
 		return fmt.Errorf("backfilling tool timeouts: %w", err)
 	}
-	return markMigrationApplied(toolTimeoutsV1)
+	return s.markMigrationApplied(toolTimeoutsV1)
 }
 
-func runSecretLiveEvidenceMigration() error {
-	applied, err := migrationApplied(secretLiveEvidenceV1)
+func (s *Store) runSecretLiveEvidenceMigration() error {
+	applied, err := s.migrationApplied(secretLiveEvidenceV1)
 	if err != nil || applied {
 		return err
 	}
-	if err := DB.Model(&models.SecretFinding{}).
+	if err := s.DB.Model(&models.SecretFinding{}).
 		Where("source_url <> ?", "mantra-discovery").
 		Update("seen_live", true).Error; err != nil {
 		return fmt.Errorf("backfilling live secret evidence: %w", err)
 	}
-	return markMigrationApplied(secretLiveEvidenceV1)
+	return s.markMigrationApplied(secretLiveEvidenceV1)
 }
 
-func runTimestampsUTCMigration() error {
-	applied, err := migrationApplied(timestampsUTCV1)
+func (s *Store) runTimestampsUTCMigration() error {
+	applied, err := s.migrationApplied(timestampsUTCV1)
 	if err != nil || applied {
 		return err
 	}
-	if err := normalizeProfileLastScanUTC(); err != nil {
+	if err := s.normalizeProfileLastScanUTC(); err != nil {
 		return err
 	}
-	if err := normalizeSubdomainLastChangedUTC(); err != nil {
+	if err := s.normalizeSubdomainLastChangedUTC(); err != nil {
 		return err
 	}
 	// RFC3339Nano omits trailing fractional zeros. Plain TEXT ordering can put
 	// 12:00:00Z after 12:00:00.500Z, so order these fields by parsed instant.
 	// Expression indexes keep the overview and existing recent-sort queries fast.
-	if err := DB.Exec(`CREATE INDEX IF NOT EXISTS idx_sub_changed_instant
+	if err := s.DB.Exec(`CREATE INDEX IF NOT EXISTS idx_sub_changed_instant
 		ON subdomains(profile_id, julianday(last_changed)) WHERE deleted_at IS NULL`).Error; err != nil {
 		return fmt.Errorf("indexing asset change instants: %w", err)
 	}
-	if err := DB.Exec(`CREATE INDEX IF NOT EXISTS idx_profile_scan_instant
+	if err := s.DB.Exec(`CREATE INDEX IF NOT EXISTS idx_profile_scan_instant
 		ON profiles(julianday(last_scan)) WHERE deleted_at IS NULL`).Error; err != nil {
 		return fmt.Errorf("indexing profile scan instants: %w", err)
 	}
-	return markMigrationApplied(timestampsUTCV1)
+	return s.markMigrationApplied(timestampsUTCV1)
 }
 
-func normalizeProfileLastScanUTC() error {
+func (s *Store) normalizeProfileLastScanUTC() error {
 	type row struct {
 		ID       string
 		LastScan time.Time
@@ -175,14 +166,14 @@ func normalizeProfileLastScanUTC() error {
 	var cursor string
 	for {
 		var rows []row
-		if err := DB.Table("profiles").Select("id, last_scan").
+		if err := s.DB.Table("profiles").Select("id, last_scan").
 			Where("id > ?", cursor).Order("id").Limit(backfillBatch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("reading profile scan timestamps: %w", err)
 		}
 		if len(rows) == 0 {
 			return nil
 		}
-		if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB.Transaction(func(tx *gorm.DB) error {
 			for _, r := range rows {
 				if r.LastScan.IsZero() {
 					continue
@@ -199,7 +190,7 @@ func normalizeProfileLastScanUTC() error {
 	}
 }
 
-func normalizeSubdomainLastChangedUTC() error {
+func (s *Store) normalizeSubdomainLastChangedUTC() error {
 	type row struct {
 		ID          uint
 		LastChanged time.Time
@@ -207,14 +198,14 @@ func normalizeSubdomainLastChangedUTC() error {
 	var cursor uint
 	for {
 		var rows []row
-		if err := DB.Table("subdomains").Select("id, last_changed").
+		if err := s.DB.Table("subdomains").Select("id, last_changed").
 			Where("id > ?", cursor).Order("id").Limit(backfillBatch).Scan(&rows).Error; err != nil {
 			return fmt.Errorf("reading asset change timestamps: %w", err)
 		}
 		if len(rows) == 0 {
 			return nil
 		}
-		if err := DB.Transaction(func(tx *gorm.DB) error {
+		if err := s.DB.Transaction(func(tx *gorm.DB) error {
 			for _, r := range rows {
 				if r.LastChanged.IsZero() {
 					continue
@@ -231,8 +222,8 @@ func normalizeSubdomainLastChangedUTC() error {
 	}
 }
 
-func runHostCorrelationMigration() error {
-	applied, err := migrationApplied(hostCorrelationV1)
+func (s *Store) runHostCorrelationMigration() error {
+	applied, err := s.migrationApplied(hostCorrelationV1)
 	if err != nil {
 		return err
 	}
@@ -244,7 +235,7 @@ func runHostCorrelationMigration() error {
 	var converted, unresolved int
 
 	for _, src := range hostSources {
-		n, bad, err := backfillHost(src.table, src.source)
+		n, bad, err := s.backfillHost(src.table, src.source)
 		if err != nil {
 			// Deliberately fatal to the caller. A half-backfilled database would
 			// under-report every finding count, and the marker row is not written, so
@@ -266,11 +257,11 @@ func runHostCorrelationMigration() error {
 		}
 	}
 
-	return markMigrationApplied(hostCorrelationV1)
+	return s.markMigrationApplied(hostCorrelationV1)
 }
 
-func runSubdomainLastChangedMigration() error {
-	applied, err := migrationApplied(subdomainLastChangedV1)
+func (s *Store) runSubdomainLastChangedMigration() error {
+	applied, err := s.migrationApplied(subdomainLastChangedV1)
 	if err != nil {
 		return err
 	}
@@ -282,29 +273,29 @@ func runSubdomainLastChangedMigration() error {
 	// created row already has autoCreateTime populated, while legacy rows are NULL.
 	// Updating only NULL values makes a restart safe even if it stops before the
 	// migration ledger marker is recorded.
-	if err := DB.Model(&models.Subdomain{}).
+	if err := s.DB.Model(&models.Subdomain{}).
 		Where("last_changed IS NULL").
 		Update("last_changed", gorm.Expr("last_seen")).Error; err != nil {
 		return fmt.Errorf("backfilling subdomains.last_changed: %w", err)
 	}
 
-	return markMigrationApplied(subdomainLastChangedV1)
+	return s.markMigrationApplied(subdomainLastChangedV1)
 }
 
-func migrationApplied(version string) (bool, error) {
+func (s *Store) migrationApplied(version string) (bool, error) {
 	var n int64
-	if err := DB.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&n).Error; err != nil {
+	if err := s.DB.Model(&models.SchemaMigration{}).Where("version = ?", version).Count(&n).Error; err != nil {
 		return false, fmt.Errorf("reading the migration ledger: %w", err)
 	}
 	return n > 0, nil
 }
 
-func markMigrationApplied(version string) error {
+func (s *Store) markMigrationApplied(version string) error {
 	// DoNothing on conflict because an operator can legitimately start the service
 	// and ICEvirtue-admin against the same not-yet-migrated database at once. The
 	// updates themselves are idempotent, so the worst case is duplicated work; only
 	// the marker insert would otherwise fail on its primary key.
-	err := DB.Clauses(clause.OnConflict{DoNothing: true}).
+	err := s.DB.Clauses(clause.OnConflict{DoNothing: true}).
 		Create(&models.SchemaMigration{Version: version}).Error
 	if err != nil {
 		return fmt.Errorf("recording migration %s: %w", version, err)
@@ -319,7 +310,7 @@ func markMigrationApplied(version string) error {
 // out of instr/substr — and on the day the two drift, findings silently detach from
 // the nodes they belong to. One implementation, used by the write hooks, the read
 // side and this backfill.
-func backfillHost(table, source string) (converted, unresolved int, err error) {
+func (s *Store) backfillHost(table, source string) (converted, unresolved int, err error) {
 	type row struct {
 		ID     uint64
 		Source string
@@ -336,7 +327,7 @@ func backfillHost(table, source string) (converted, unresolved int, err error) {
 		// The keyset walk on id is what makes this resumable after a crash and what
 		// guarantees termination: rows that legitimately end up NULL are behind the
 		// cursor, so the "host IS NULL" predicate cannot make the loop revisit them.
-		err = DB.Table(table).
+		err = s.DB.Table(table).
 			Select("id, "+source+" AS source").
 			Where("id > ? AND host IS NULL", cursor).
 			Order("id").
@@ -360,7 +351,7 @@ func backfillHost(table, source string) (converted, unresolved int, err error) {
 			}
 		}
 
-		err = DB.Transaction(func(tx *gorm.DB) error {
+		err = s.DB.Transaction(func(tx *gorm.DB) error {
 			// Only tx in here. Reaching for the package-level DB inside a transaction
 			// would wait for a connection from a pool of exactly one that this
 			// transaction is already holding, and database/sql waits without a

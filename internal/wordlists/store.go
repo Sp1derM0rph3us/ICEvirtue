@@ -305,3 +305,22 @@ func (s *Store) Reconcile() error {
 	}
 	return nil
 }
+
+// OpenWorker opens existing immutable uploads without migration or reconciliation.
+func OpenWorker(db *gorm.DB, dir string) (*Store, error) {
+	path, e := filepath.Abs(dir)
+	if e != nil {
+		return nil, e
+	}
+	root, e := os.OpenRoot(path)
+	if e != nil {
+		return nil, e
+	}
+	return &Store{DB: db, Root: root, Path: path}, nil
+}
+
+func ListReady(db *gorm.DB) ([]models.Wordlist, error) {
+	items := []models.Wordlist{}
+	e := db.Where("state=?", "ready").Order("created_at DESC").Limit(MaxFiles).Find(&items).Error
+	return items, e
+}

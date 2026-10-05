@@ -7,7 +7,7 @@ import (
 	"html/template"
 	"io/fs"
 	"log"
-	"net"
+
 	"net/http"
 	"os"
 	"strconv"
@@ -18,17 +18,24 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/accounts"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/events"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/jobs"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/scheduler"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/notifications"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
+	"gorm.io/gorm"
 )
 
 // Config is everything the server needs from main, so this package reads no flags and
 // touches no filesystem at import time — which is what lets a test build a real router
 // with fabricated assets.
 type Config struct {
+	DB        *gorm.DB
+	Signer    *auth.Signer
+	Shutdown  <-chan struct{}
 	Wordlists *wordlists.Store
 	// Templates holds login.html and home.html. It is deliberately NOT the tree served
 	// under /static: the previous layout served the whole web directory, so
@@ -48,11 +55,17 @@ type Config struct {
 // This replaces a package-level globalScheduler, which could not be set per test and
 // would race under any parallel one.
 type API struct {
-	uploads chan struct{}
-	cfg     Config
-	sched   *scheduler.Scheduler
-	pages   *pageStore
-	logins  *loginLimiter
+	inbox    *notifications.Service
+	queries  *queryService
+	sessions *accounts.Sessions
+	uploads  chan struct{}
+	cfg      Config
+	db       *gorm.DB
+	signer   *auth.Signer
+	queue    *jobs.Queue
+	stream   *events.Stream
+	pages    *pageStore
+	logins   *loginLimiter
 }
 
 // NewRouter builds the complete handler, including every middleware.
@@ -61,7 +74,7 @@ type API struct {
 // the redirect, the cache headers, the auth boundary — rather than calling handlers
 // directly with nothing around them. StartServer used to construct the router and call
 // ListenAndServe in one function, so there was no way to get at the handler.
-func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
+func NewRouter(cfg Config) (http.Handler, error) {
 	if cfg.SessionTTL == 0 {
 		cfg.SessionTTL = auth.DefaultSessionTTL
 	}
@@ -82,7 +95,11 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		return nil, fmt.Errorf("static assets have no css directory: %w", err)
 	}
 
-	a := &API{cfg: cfg, sched: sched, pages: pages, logins: newLoginLimiter(), uploads: make(chan struct{}, 1)}
+	jsFS, err := fs.Sub(cfg.Static, "js")
+	if err != nil {
+		return nil, fmt.Errorf("static assets have no js directory: %w", err)
+	}
+	a := &API{inbox: &notifications.Service{DB: cfg.DB}, queries: &queryService{db: cfg.DB}, sessions: &accounts.Sessions{DB: cfg.DB, Signer: cfg.Signer}, db: cfg.DB, signer: cfg.Signer, queue: &jobs.Queue{DB: cfg.DB}, stream: &events.Stream{DB: cfg.DB}, cfg: cfg, pages: pages, logins: newLoginLimiter(), uploads: make(chan struct{}, 1)}
 
 	r := chi.NewRouter()
 
@@ -115,15 +132,10 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		r.Post("/api/logout", a.handleLogout)
 	})
 
-	// Public: stylesheets only, because /login needs them before anyone is authenticated.
-	// The prefix is /static/css rather than /static, so nothing outside the css directory
-	// is reachable, and noListFS refuses directories so there is no index either.
-	//
-	// Get, not Handle: Handle registers every method, so a POST or a DELETE to a
-	// stylesheet path would reach the file server instead of being refused as a method
-	// that makes no sense there. GetHead supplies HEAD.
+	// Public asset directories are explicitly limited to css and js; directory listings are denied.
 	r.Get("/static/css/*", http.StripPrefix("/static/css/",
 		http.FileServer(noListFS{http.FS(cssFS)})).ServeHTTP)
+	r.Get("/static/js/*", http.StripPrefix("/static/js/", http.FileServer(noListFS{http.FS(jsFS)})).ServeHTTP)
 
 	// Authenticated HTML. Redirects rather than 401s.
 	r.Group(func(r chi.Router) {
@@ -144,36 +156,39 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 		r.Use(middleware.RequestSize(1 << 20))
 
 		r.Route("/api/profiles", func(r chi.Router) {
-			r.Get("/", getProfiles)
+			r.Get("/", a.getProfiles)
 			// Before the /{id} subrouter, so "index" is not read as a profile id.
-			r.Get("/index", getProfileIndex)
+			r.Get("/index", a.getProfileIndex)
 			r.Post("/", a.createProfile)
 			r.Route("/{id}", func(r chi.Router) {
 				r.Delete("/", a.deleteProfile)
 				r.Put("/schedule", a.editProfileSchedule)
 				r.Post("/scan", a.forceScanProfile)
-				r.Get("/overview", getProfileOverview)
-				r.Get("/subdomains", getProfileSubdomains)
-				r.Get("/secrets", getProfileSecrets)
-				r.Get("/hosts", getProfileHosts)
-				r.Get("/wafs", getProfileWAFs)
-				r.Get("/vulnerabilities/severity-summary", getVulnerabilitySeveritySummary)
-				r.Get("/vulnerabilities", getProfileVulnerabilities)
-				r.Get("/directories", getProfileDirectories)
+				r.Get("/overview", a.getProfileOverview)
+				r.Get("/subdomains", a.getProfileSubdomains)
+				r.Get("/secrets", a.getProfileSecrets)
+				r.Get("/hosts", a.getProfileHosts)
+				r.Get("/wafs", a.getProfileWAFs)
+				r.Get("/vulnerabilities/severity-summary", a.getVulnerabilitySeveritySummary)
+				r.Get("/vulnerabilities", a.getProfileVulnerabilities)
+				r.Get("/directories", a.getProfileDirectories)
 			})
 		})
 
 		r.Route("/api/notifications", func(r chi.Router) {
-			r.Get("/", getNotifications)
-			r.Delete("/", deleteAllNotifications)
-			r.Post("/read", markAllNotificationsRead)
+			r.Get("/", a.getNotifications)
+			r.Delete("/", a.deleteAllNotifications)
+			r.Post("/read", a.markAllNotificationsRead)
 			r.Route("/{id}", func(r chi.Router) {
-				r.Post("/read", markNotificationRead)
-				r.Delete("/", deleteNotification)
+				r.Post("/read", a.markNotificationRead)
+				r.Delete("/", a.deleteNotification)
 			})
 		})
 
 		r.Get("/api/events", a.handleEvents)
+		r.Get("/api/profiles/{id}/runs", a.listRuns)
+		r.Get("/api/runs/{runID}", a.getRun)
+		r.With(requirePermission(access.ReadLogs)).Get("/api/admin/workers", a.workerStatus)
 	})
 
 	a.configurationRoutes(r)
@@ -181,60 +196,6 @@ func NewRouter(cfg Config, sched *scheduler.Scheduler) (http.Handler, error) {
 	r.MethodNotAllowed(methodNotAllowed)
 
 	return r, nil
-}
-
-// StartServer serves the dashboard on the given IPv4 and IPv6 addresses — one
-// listener each, same port and handler.
-//
-// Both default to loopback in main, so out of the box the dashboard answers only
-// on the host. An operator widens that per family with --ipv4/--ipv6 (for
-// example 0.0.0.0 or ::). A family whose listener cannot be bound is logged and
-// skipped; startup fails only when neither could be bound.
-func StartServer(ipv4, ipv6 string, port int, sched *scheduler.Scheduler, cfg Config) error {
-	handler, err := NewRouter(cfg, sched)
-	if err != nil {
-		return err
-	}
-
-	srv := &http.Server{
-		Handler: handler,
-		// The Slowloris guard. Every timeout used to be zero, i.e. infinite.
-		ReadHeaderTimeout: 10 * time.Second,
-		IdleTimeout:       120 * time.Second,
-		// Deliberately no WriteTimeout: /api/events is a long-lived stream and a write
-		// deadline would cut every client off at the timeout. Do not add one "for
-		// completeness".
-	}
-
-	// tcp4 and tcp6 explicitly, never "tcp": that keeps the IPv6 socket v6-only, so
-	// a wildcard pair (0.0.0.0 and ::) does not fight over the same port.
-	wanted := []struct{ network, addr string }{
-		{"tcp4", net.JoinHostPort(ipv4, strconv.Itoa(port))},
-		{"tcp6", net.JoinHostPort(ipv6, strconv.Itoa(port))},
-	}
-
-	var listeners []net.Listener
-	for _, b := range wanted {
-		ln, err := net.Listen(b.network, b.addr)
-		if err != nil {
-			log.Printf("[-] Could not listen on %s: %v", b.addr, err)
-			continue
-		}
-		log.Printf("[+] Web dashboard listening on %s", b.addr)
-		listeners = append(listeners, ln)
-	}
-	if len(listeners) == 0 {
-		return fmt.Errorf("no listen address could be bound (ipv4 %q, ipv6 %q, port %d)", ipv4, ipv6, port)
-	}
-
-	// One handler served on every bound listener. The first listener to error
-	// returns and brings the process down, matching the previous single-socket
-	// behaviour.
-	errCh := make(chan error, len(listeners))
-	for _, ln := range listeners {
-		go func(l net.Listener) { errCh <- srv.Serve(l) }(ln)
-	}
-	return <-errCh
 }
 
 // ---------------------------------------------------------------------- authentication
@@ -261,11 +222,11 @@ func (a *API) authenticate(r *http.Request) (*auth.Claims, *models.User, error) 
 	if err != nil {
 		return nil, nil, err
 	}
-	c, err := auth.ValidateToken(cookie.Value)
+	c, err := a.signer.ValidateToken(cookie.Value)
 	if err != nil {
 		return nil, nil, err
 	}
-	u, err := sessionUser(c)
+	u, err := a.sessionUser(c)
 	return c, u, err
 }
 
@@ -467,79 +428,6 @@ func allowedMethods(r *http.Request) []string {
 }
 
 // ------------------------------------------------------------------------------- events
-
-func (a *API) handleEvents(w http.ResponseWriter, r *http.Request) {
-	claims, ok := UserFromContext(r.Context())
-	if !ok {
-		http.Error(w, "Unauthorized", http.StatusUnauthorized)
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/event-stream")
-	w.Header().Set("Cache-Control", "no-cache")
-	w.Header().Set("Connection", "keep-alive")
-
-	flusher, ok := w.(http.Flusher)
-	if !ok {
-		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
-		return
-	}
-
-	broker := events.GetBroker()
-	clientChan := broker.Subscribe()
-	defer broker.Unsubscribe(clientChan)
-
-	fmt.Fprintf(w, ": keep-alive\n\n")
-	flusher.Flush()
-
-	// Enforce expiry and revalidate account/session state while the stream is idle
-	// and before each data event. A revoked session must stop receiving findings.
-	expiry := time.NewTimer(time.Until(claims.ExpiresAt.Time))
-	defer expiry.Stop()
-
-	// An idle stream sent nothing after the initial comment, so an intermediary was free
-	// to reap it.
-	heartbeat := time.NewTicker(30 * time.Second)
-	defer heartbeat.Stop()
-
-	recheck := time.NewTicker(2 * time.Second)
-	defer recheck.Stop()
-	revoked := func() bool {
-		if _, err := sessionUser(claims); err != nil {
-			fmt.Fprint(w, "data: {\"type\":\"session_revoked\"}\n\n")
-			flusher.Flush()
-			return true
-		}
-		return false
-	}
-	ctx := r.Context()
-	for {
-		select {
-		case <-ctx.Done():
-			return
-		case <-expiry.C:
-			// Ending the response is the only signal available: SSE has no way to send a
-			// status once the stream has started.
-			return
-		case <-recheck.C:
-			if revoked() {
-				return
-			}
-		case <-heartbeat.C:
-			fmt.Fprintf(w, ": keep-alive\n\n")
-			flusher.Flush()
-		case e := <-clientChan:
-			if revoked() {
-				return
-			}
-			msg, err := json.Marshal(e)
-			if err == nil {
-				fmt.Fprintf(w, "data: %s\n\n", msg)
-				flusher.Flush()
-			}
-		}
-	}
-}
 
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
 	w.Header().Set("Content-Type", "application/json")

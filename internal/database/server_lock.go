@@ -7,8 +7,8 @@ import (
 	"syscall"
 )
 
-// LockServer prevents two server processes from reconciling the same live queue
-// or staged uploads. Administrative CLI access remains available.
+// LockServer serializes server migrations and upload reconciliation.
+// Scan workers and administrative CLI access remain available.
 func LockServer(dbPath string) (func(), error) {
 	path, err := filepath.Abs(dbPath)
 	if err != nil {

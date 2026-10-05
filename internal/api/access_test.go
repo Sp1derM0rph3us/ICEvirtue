@@ -13,8 +13,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/serverlogs"
 	"github.com/go-chi/chi/v5"
@@ -28,7 +26,7 @@ func realServer(t *testing.T) http.Handler {
 	t.Helper()
 	newAPIEnv(t)
 	initAuth(t)
-	h, err := NewRouter(Config{Templates: os.DirFS("../../web/templates"), Static: os.DirFS("../../web/static"), SessionTTL: time.Hour}, nil)
+	h, err := NewRouter(Config{DB: testDB, Signer: testSigner, Templates: os.DirFS("../../web/templates"), Static: os.DirFS("../../web/static"), SessionTTL: time.Hour})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,28 +39,28 @@ func roleUser(t *testing.T, role string) (*models.User, *http.Cookie) {
 		t.Fatal(err)
 	}
 	u := &models.User{Username: role + "-" + uuid.NewString()[:8], PasswordHash: string(hash), Role: role}
-	if err := database.DB.Create(u).Error; err != nil {
+	if err := testDB.Create(u).Error; err != nil {
 		t.Fatal(err)
 	}
-	raw, err := issueSession(u, time.Hour)
+	raw, err := testAPI().issueSession(u, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
-	claims, _ := auth.ValidateToken(raw)
-	if _, err := sessionUser(claims); err != nil {
+	claims, _ := testSigner.ValidateToken(raw)
+	if _, err := testAPI().sessionUser(claims); err != nil {
 		var sessions []models.Session
-		database.DB.Find(&sessions)
+		testDB.Find(&sessions)
 		t.Fatalf("new session invalid: %v user=%d subject=%s version=%d sessions=%+v", err, u.ID, u.PublicID, u.AuthVersion, sessions)
 	}
 	return u, &http.Cookie{Name: cookieName, Value: raw}
 }
 func formValues(t *testing.T, cookie *http.Cookie, values url.Values) url.Values {
 	t.Helper()
-	c, err := auth.ValidateToken(cookie.Value)
+	c, err := testSigner.ValidateToken(cookie.Value)
 	if err != nil {
 		t.Fatal(err)
 	}
-	values.Set("csrf", auth.CSRFToken(c))
+	values.Set("csrf", testSigner.CSRFToken(c))
 	return values
 }
 func formRequest(t *testing.T, h http.Handler, path string, cookie *http.Cookie, values url.Values) *httptest.ResponseRecorder {
@@ -178,9 +176,9 @@ func TestOperatorReconWritesAndViewerReads(t *testing.T) {
 	w = httptest.NewRecorder()
 	h.ServeHTTP(w, r)
 	requireStatus(t, w, 200)
-	database.DB.Model(&p).Update("is_scanning", true)
+	testDB.Create(&models.ScanJob{ProfileID: p.ID.String(), State: "running"})
 	requireStatus(t, do(t, h, "POST", "/api/profiles/"+p.ID.String()+"/scan", op), 409) // reaches scan handler, without executing an external scanner
-	database.DB.Model(&p).Update("is_scanning", false)
+	testDB.Where("profile_id=?", p.ID).Delete(&models.ScanJob{})
 	requireStatus(t, do(t, h, "DELETE", "/api/profiles/"+p.ID.String(), op), 204)
 }
 
@@ -191,7 +189,7 @@ func TestAdminCreatesEditsRevokesAndDeletes(t *testing.T) {
 	values := formValues(t, ac, url.Values{"username": {"created-viewer"}, "password": {accountPassword}, "confirm_password": {accountPassword}, "role": {"viewer"}})
 	requireStatus(t, formRequest(t, h, "/settings/admin/users", ac, values), 303)
 	var created models.User
-	if err := database.DB.Where("username = ?", "created-viewer").First(&created).Error; err != nil {
+	if err := testDB.Where("username = ?", "created-viewer").First(&created).Error; err != nil {
 		t.Fatal(err)
 	}
 	if created.Role != "viewer" || bcrypt.CompareHashAndPassword([]byte(created.PasswordHash), []byte(accountPassword)) != nil {
@@ -212,29 +210,29 @@ func TestAdminCreatesEditsRevokesAndDeletes(t *testing.T) {
 		requireStatus(t, formRequest(t, h, fmt.Sprintf("/settings/admin/users/%d", target.ID), ac, values), 303)
 		requireStatus(t, do(t, h, "GET", "/api/profiles", old), 401)
 		requireStatus(t, do(t, h, "GET", "/", old), 302)
-		if err := database.DB.First(target, target.ID).Error; err != nil {
+		if err := testDB.First(target, target.ID).Error; err != nil {
 			t.Fatal(err)
 		}
-		raw, err := issueSession(target, time.Hour)
+		raw, err := testAPI().issueSession(target, time.Hour)
 		if err != nil {
 			t.Fatal(err)
 		}
 		old = &http.Cookie{Name: cookieName, Value: raw}
 	}
-	database.DB.Create(&models.Notification{UserID: target.ID, Kind: "test", Title: "test"})
+	testDB.Create(&models.Notification{UserID: target.ID, Kind: "test", Title: "test"})
 	values = editValues(t, ac, target)
 	values.Set("confirm_delete", "yes")
 	requireStatus(t, formRequest(t, h, fmt.Sprintf("/settings/admin/users/%d/delete", target.ID), ac, values), 303)
 	requireStatus(t, do(t, h, "GET", "/api/profiles", old), 401)
 	for _, model := range []interface{}{&models.Session{}, &models.Notification{}} {
 		var n int64
-		database.DB.Model(model).Where("user_id = ?", target.ID).Count(&n)
+		testDB.Model(model).Where("user_id = ?", target.ID).Count(&n)
 		if n != 0 {
 			t.Fatal("orphaned user data")
 		}
 	}
 	var n int64
-	database.DB.Unscoped().Model(&models.User{}).Where("id = ?", target.ID).Count(&n)
+	testDB.Unscoped().Model(&models.User{}).Where("id = ?", target.ID).Count(&n)
 	if n != 0 {
 		t.Fatal("user was only soft deleted")
 	}
@@ -259,7 +257,7 @@ func TestSelfServiceRequiresPasswordAndRevokesSessions(t *testing.T) {
 		t.Fatal("not sent to login")
 	}
 	requireStatus(t, do(t, h, "GET", "/api/profiles", c), 401)
-	database.DB.First(u, u.ID)
+	testDB.First(u, u.ID)
 	if u.Role != "operator" || u.Username != "own-renamed" {
 		t.Fatal("self-service changed role or failed rename")
 	}
@@ -315,8 +313,8 @@ func TestLastAdminAndAdminSelfEdit(t *testing.T) {
 	v.Set("confirm_password", "admin-new-password")
 	requireStatus(t, formRequest(t, h, path, c, v), 303)
 	requireStatus(t, do(t, h, "GET", "/settings/admin", c), 302)
-	database.DB.First(u, u.ID)
-	raw, err := issueSession(u, time.Hour)
+	testDB.First(u, u.ID)
+	raw, err := testAPI().issueSession(u, time.Hour)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -359,7 +357,7 @@ func TestActiveSSEStopsAfterRevocation(t *testing.T) {
 	if _, err := reader.ReadString('\n'); err != nil {
 		t.Fatal(err)
 	}
-	if err := database.DB.Where("user_id = ?", u.ID).Delete(&models.Session{}).Error; err != nil {
+	if err := testDB.Where("user_id = ?", u.ID).Delete(&models.Session{}).Error; err != nil {
 		t.Fatal(err)
 	}
 	result := make(chan string, 1)
@@ -403,12 +401,12 @@ func TestLogOutputEscapedAndAdminOnly(t *testing.T) {
 func TestVersionAndUnknownRoleFailClosed(t *testing.T) {
 	h := realServer(t)
 	u, c := roleUser(t, "operator")
-	if err := database.DB.Model(u).Update("auth_version", u.AuthVersion+1).Error; err != nil {
+	if err := testDB.Model(u).Update("auth_version", u.AuthVersion+1).Error; err != nil {
 		t.Fatal(err)
 	}
 	requireStatus(t, do(t, h, "GET", "/api/profiles", c), 401)
 	u, c = roleUser(t, "operator")
-	if err := database.DB.Model(u).Update("role", "unrecognized").Error; err != nil {
+	if err := testDB.Model(u).Update("role", "unrecognized").Error; err != nil {
 		t.Fatal(err)
 	}
 	requireStatus(t, do(t, h, "GET", "/api/profiles", c), 401)
@@ -435,7 +433,7 @@ func TestStaleAdminFormsAndCrossOriginForm(t *testing.T) {
 		t.Fatal("stale form not rejected")
 	}
 	var target models.User
-	database.DB.First(&target, u.ID)
+	testDB.First(&target, u.ID)
 	if target.Username != u.Username {
 		t.Fatal("stale form overwrote new state")
 	}

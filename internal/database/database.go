@@ -1,8 +1,10 @@
 package database
 
 import (
+	"fmt"
 	"github.com/google/uuid"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"time"
@@ -15,12 +17,17 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
-var DB *gorm.DB
+type Store struct{ DB *gorm.DB }
 
-func InitDatabase(dbPath string) error {
+func Open(dbPath string, migrate bool) (*Store, error) {
+	if !migrate {
+		if _, err := os.Stat(dbPath); err != nil {
+			return nil, fmt.Errorf("start ICEvirtue server to initialize database: %w", err)
+		}
+	}
 	if dir := filepath.Dir(dbPath); dir != "." {
 		if err := os.MkdirAll(dir, 0755); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -34,7 +41,7 @@ func InitDatabase(dbPath string) error {
 		},
 	)
 
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	db, err := gorm.Open(sqlite.Open("file:"+(&url.URL{Path: dbPath}).EscapedPath()+"?_txlock=immediate&_pragma=busy_timeout(5000)"), &gorm.Config{
 		Logger:  newLogger,
 		NowFunc: func() time.Time { return time.Now().UTC() },
 		// Translate driver errors into gorm's own sentinels, so a unique-index violation
@@ -44,25 +51,43 @@ func InitDatabase(dbPath string) error {
 		TranslateError: true,
 	})
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	db.Exec("PRAGMA journal_mode=WAL;")
-	db.Exec("PRAGMA synchronous=NORMAL;")
-	db.Exec("PRAGMA cache_size=-32000;")
-	db.Exec("PRAGMA busy_timeout=5000;")
-	db.Exec("PRAGMA temp_store=MEMORY;")
 
 	sqlDB, err := db.DB()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	sqlDB.SetMaxOpenConns(1)
 	sqlDB.SetMaxIdleConns(1)
-
+	ok := false
+	defer func() {
+		if !ok {
+			sqlDB.Close()
+		}
+	}()
+	for _, pragma := range []string{"PRAGMA journal_mode=WAL", "PRAGMA synchronous=NORMAL", "PRAGMA cache_size=-32000", "PRAGMA temp_store=MEMORY"} {
+		if err := db.Exec(pragma).Error; err != nil {
+			return nil, err
+		}
+	}
+	store := &Store{DB: db}
+	var n int64
+	ready := db.Migrator().HasTable(&models.SchemaMigration{}) && db.Model(&models.SchemaMigration{}).Where("version = ?", models.ModularitySchema).Count(&n).Error == nil && n == 1
+	if !migrate {
+		if !ready {
+			return nil, fmt.Errorf("database requires migration; start ICEvirtue server before workers")
+		}
+		ok = true
+		return store, nil
+	}
+	if ready {
+		ok = true
+		return store, nil
+	}
 	err = db.AutoMigrate(
 		&models.ApplicationConfiguration{}, &models.Wordlist{}, &models.ScanJob{}, &models.WordlistPin{},
-		&models.SchemaMigration{},
+		&models.SchemaMigration{}, &models.ScanRun{}, &models.ScanStageRun{}, &models.ScanToolRun{}, &models.WorkerHeartbeat{}, &models.SchedulerLease{}, &models.OutboxEvent{},
 		&models.User{},
 		&models.Session{},
 		&models.Notification{},
@@ -74,7 +99,7 @@ func InitDatabase(dbPath string) error {
 		&models.DirectoryFinding{},
 	)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Legacy accounts were provisioned as administrators by ICEvirtue-admin.
@@ -106,13 +131,51 @@ func InitDatabase(dbPath string) error {
 		}
 		return tx.Create(&models.SchemaMigration{Version: version}).Error
 	}); err != nil {
-		return err
+		return nil, err
 	}
 
 	if err := appconfig.Seed(db); err != nil {
+		return nil, err
+	}
+	if err := store.RunDataMigrations(); err != nil {
+		return nil, err
+	}
+	if err := store.migrateWorkers(); err != nil {
+		return nil, err
+	}
+	ok = true
+	log.Printf("[+] Database connected and migrated: %s", dbPath)
+	return store, nil
+}
+
+func (s *Store) Close() error {
+	db, err := s.DB.DB()
+	if err != nil {
 		return err
 	}
-	DB = db
-	log.Printf("[+] Database connected and migrated: %s", dbPath)
-	return nil
+	return db.Close()
+}
+func (s *Store) migrateWorkers() error {
+	return s.DB.Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Profile{}).Where("id IN (SELECT profile_id FROM scan_jobs WHERE state = 'running')").Update("last_scan_status", "interrupted: upgrade").Error; err != nil {
+			return err
+		}
+		if err := tx.Where("state = ?", "running").Delete(&models.ScanJob{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("1=1").Delete(&models.WordlistPin{}).Error; err != nil {
+			return err
+		}
+		for _, column := range []string{"is_scanning", "is_queued"} {
+			if tx.Migrator().HasColumn("profiles", column) {
+				if err := tx.Exec("ALTER TABLE profiles DROP COLUMN " + column).Error; err != nil {
+					return err
+				}
+			}
+		}
+		if err := tx.Create(&models.SchedulerLease{ID: 1}).Error; err != nil {
+			return err
+		}
+		return tx.Create(&models.SchemaMigration{Version: models.ModularitySchema}).Error
+	})
 }

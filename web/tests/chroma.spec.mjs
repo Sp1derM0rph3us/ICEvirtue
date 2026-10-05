@@ -116,7 +116,9 @@ test('WAF technologies are unique on Home and explicit in node details', async (
 
 test('sourced Mantra credentials link to their JS file and legacy rows stay unattributed', async ({ page }) => {
   await signIn(page);
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const { buildSecretRow, buildSecretCard, goToProfilesPage, loadProfilesPage } = await import("/static/js/dashboard/views.js");
+    const { state } = await import("/static/js/dashboard/state.js");
     const finding = {
       SecretType: 'generic', SecretValue: 'test-value', Engine: 'Mantra',
       SourceURL: 'https://app.acme.example.com/app.js',
@@ -138,7 +140,8 @@ test('archived credentials show archive evidence and live links only when observ
   await signIn(page);
   const source = 'https://app.acme.example.com/old.js';
   const archive = `https://web.archive.org/web/20200101000000/${source}`;
-  await page.evaluate(({ source, archive }) => {
+  await page.evaluate(async ({ source, archive }) => {
+    const { buildSecretRow, buildSecretCard } = await import("/static/js/dashboard/views.js");
     const base = {
       SecretType: 'aws', SecretValue: 'test-value', Engine: 'SecretHound',
       SourceURL: source, ArchiveURL: archive,
@@ -163,7 +166,9 @@ test('archived credentials show archive evidence and live links only when observ
 
 test('credential views show engine and limit SecretHound details to a node', async ({ page }) => {
   await signIn(page);
-  const rendered = await page.evaluate(() => {
+  const rendered = await page.evaluate(async () => {
+    const { buildSecretRow, buildSecretCard, goToProfilesPage, loadProfilesPage } = await import("/static/js/dashboard/views.js");
+    const { state } = await import("/static/js/dashboard/state.js");
     const finding = {
       SecretType: 'aws', SecretValue: 'AKIA-test',
       SourceURL: 'https://a.example.com/app.js', Engine: 'SecretHound',
@@ -206,9 +211,9 @@ test('Profiles spacing, schedule labels, short IDs and filled Delete work in bot
   await expect(id).toHaveText(/^[a-f0-9]{6}$/i);
   const schedule = row.locator('[id^="schedule-text-"]');
   const raw = await schedule.getAttribute('data-schedule');
-  const display = await page.evaluate(value => scheduleLabel(value), raw);
+  const display = await page.evaluate(async value => (await import("/static/js/dashboard/views.js")).scheduleLabel(value), raw);
   await expect(schedule).toHaveText(display);
-  expect(await page.evaluate(() => scheduleLabel('@every 8760h'))).toBe('Every 365 days (interval)');
+  expect(await page.evaluate(async () => (await import("/static/js/dashboard/views.js")).scheduleLabel('@every 8760h'))).toBe('Every 365 days (interval)');
   const field = await page.locator('#input-domain').boundingBox();
   const scheduleControl = await page.locator('.chroma-schedule-control').boundingBox();
   const add = await page.getByRole('button', { name: 'Add profile' }).boundingBox();
@@ -219,7 +224,9 @@ test('Profiles spacing, schedule labels, short IDs and filled Delete work in bot
   expect(edit.x - (label.x + label.width)).toBeGreaterThanOrEqual(8);
   for (const theme of ['dark', 'light']) {
     await page.evaluate(value => { document.documentElement.dataset.theme = value; }, theme);
-    const radii = await page.evaluate(() => {
+    const radii = await page.evaluate(async () => {
+    const { buildSecretRow, buildSecretCard, goToProfilesPage, loadProfilesPage } = await import("/static/js/dashboard/views.js");
+    const { state } = await import("/static/js/dashboard/state.js");
       const radius = selector => getComputedStyle(document.querySelector(selector)).borderTopLeftRadius;
       return {
         standard: radius('#targets-tbody [data-action="edit-schedule"]'),
@@ -246,7 +253,7 @@ test('Findings panels and node-table columns have breathing room', async ({ page
   await signIn(page);
   await page.locator('#nav-btn-findings').click();
   await expect(page.locator('#table-subs')).toBeVisible();
-  const profile = await page.locator('#view-discoveries > .chroma-controls-panel').boundingBox();
+  const profile = await page.locator('#view-discoveries > .chroma-controls-panel').first().boundingBox();
   const filters = await page.locator('#controls-bar').boundingBox();
   const results = await page.locator('.chroma-finding-panel').boundingBox();
   expect(filters.y - (profile.y + profile.height)).toBeGreaterThanOrEqual(12);
@@ -375,9 +382,11 @@ test('a late Profiles page response cannot replace the newer page', async ({ pag
   await page.goto('/?view=profiles');
   await expect(page.locator('#profiles-pager-position')).toHaveText('Page 1 / 3');
   state.delayPage = 2;
-  await page.evaluate(() => {
+  await page.evaluate(async () => {
+    const { buildSecretRow, buildSecretCard, goToProfilesPage, loadProfilesPage } = await import("/static/js/dashboard/views.js");
+    const { state } = await import("/static/js/dashboard/state.js");
     goToProfilesPage(2);
-    viewState.profilesPage = 3;
+    state.viewState.profilesPage = 3;
     loadProfilesPage();
   });
   await expect(page.locator('#profiles-pager-position')).toHaveText('Page 3 / 3');
@@ -399,7 +408,7 @@ test('severity breakdown opens after hover, reuses cache, and hides on leave and
   await page.waitForTimeout(100);
   await expect(page.locator('#severity-tooltip')).toBeHidden();
   await expect(page.locator('#severity-tooltip')).toBeVisible();
-  await expect(page.locator('#severity-tooltip')).toContainText(/Critical|High|Medium|Low|Info/);
+  await expect(page.locator('#severity-tooltip')).toContainText(/Critical|High|Medium|Low|Info/i);
   await page.mouse.move(0, 0);
   await expect(page.locator('#severity-tooltip')).toBeHidden();
   await badge.focus();
@@ -468,7 +477,7 @@ for (const viewport of [
       await expect(page.locator('#targets-tbody tr')).toHaveCount(0);
       await expect(page.locator('#targets-mobile li')).not.toHaveCount(0);
       await page.locator('#nav-btn-profiles').click();
-      await expect(page.locator('#targets-mobile [data-action="scan"]')).toBeVisible();
+      await expect(page.locator('#targets-mobile [data-action="scan"]').first()).toBeVisible();
       await page.locator('#nav-btn-findings').click();
       await expect(page.locator('#tbody-subs tr')).toHaveCount(0);
       await expect(page.locator('#subs-mobile li')).not.toHaveCount(0);

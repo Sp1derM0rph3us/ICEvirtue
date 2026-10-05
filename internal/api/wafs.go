@@ -1,14 +1,11 @@
 package api
 
 import (
-	"log"
 	"net/http"
 	"sort"
 	"strings"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 type nodeWAFs struct {
@@ -16,7 +13,7 @@ type nodeWAFs struct {
 	Scanned bool     `json:"scanned"`
 }
 
-func getProfileWAFs(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileWAFs(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
@@ -27,13 +24,9 @@ func getProfileWAFs(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, result)
 		return
 	}
-	var values []string
-	if err := database.DB.Model(&models.AliveHost{}).
-		Distinct("waf_name").
-		Where("profile_id = ? AND host = ? AND waf_name IS NOT NULL", id, host).
-		Pluck("waf_name", &values).Error; err != nil {
-		log.Printf("[-] Summarizing WAF observations for %s/%s: %v", id, host, err)
-		http.Error(w, "failed to summarize WAF observations", http.StatusInternalServerError)
+	values, err := a.queries.wafs(id, host)
+	if err != nil {
+		http.Error(w, "failed to summarize WAF observations", 500)
 		return
 	}
 	result.Scanned = len(values) > 0

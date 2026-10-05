@@ -1,0 +1,28 @@
+[Unit]
+Description=ICEvirtue scan worker %i
+After=network-online.target icevirtue.service
+Wants=network-online.target
+# No Requires/PartOf web dependency: scans continue during a web outage.
+
+[Service]
+Type=simple
+User=icevirtue
+Group=icevirtue
+UMask=0077
+StateDirectory=icevirtue
+CacheDirectory=icevirtue-worker-%i
+WorkingDirectory=/opt/icevirtue
+Environment=PATH=/usr/local/bin:/usr/bin:/bin
+Environment=TMPDIR=/var/cache/icevirtue-worker-%i
+ExecStart=/usr/local/bin/ICEvirtue-worker --db-path /var/lib/icevirtue/icevirtue.db --upload-dir /var/lib/icevirtue/uploads --tool-home /var/cache/icevirtue-worker-%i
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=45
+KillMode=control-group
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

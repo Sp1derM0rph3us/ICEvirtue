@@ -12,18 +12,16 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-	"sync"
+
 	"syscall"
 	"time"
 )
 
-// ToolHome overrides where the external tools keep their config directories.
+// t.Home overrides where the external tools keep their config directories.
 // Wired to the --tool-home flag.
-var ToolHome string
 
-// defaultToolHome is a var rather than a const so tests can point it at a temp
+// t.defaultHome is a var rather than a const so tests can point it at a temp
 // directory instead of depending on the real permissions of /opt.
-var defaultToolHome = "/opt/icevirtue"
 
 // toolTimeout converts an administrator-configured per-tool budget (minutes,
 // from ToolSettings) into the wall-clock deadline a tool runs under. Without a
@@ -50,11 +48,6 @@ const maxStreamCapture = 64 * 1024
 // remains the scan-wide safety net. A var so tests can lower it.
 var maxToolOutputBytes int64 = 1 << 30
 
-var (
-	toolHomeOnce     sync.Once
-	resolvedToolHome string
-)
-
 // resolveToolHome returns a directory that exists and is writable so the
 // goflags-based tools (subfinder, httpx, dnsx, nuclei, katana) can create their
 // config directories.
@@ -68,12 +61,12 @@ var (
 // and StateDirectory=, then /opt/icevirtue, $HOME, the working directory and
 // finally the temp directory. The systemd entries come early on purpose, since
 // under ProtectSystem=strict they are the only writable candidates in the list.
-func resolveToolHome() string {
-	toolHomeOnce.Do(func() {
+func (t *Toolchain) resolveToolHome() string {
+	t.homeOnce.Do(func() {
 		var candidates []string
 
-		if ToolHome != "" {
-			candidates = append(candidates, ToolHome)
+		if t.Home != "" {
+			candidates = append(candidates, t.Home)
 		}
 
 		// systemd's CacheDirectory= and StateDirectory= are the only locations
@@ -84,8 +77,8 @@ func resolveToolHome() string {
 		candidates = append(candidates, systemdDirs("CACHE_DIRECTORY")...)
 		candidates = append(candidates, systemdDirs("STATE_DIRECTORY")...)
 
-		if ToolHome == "" {
-			candidates = append(candidates, defaultToolHome)
+		if t.Home == "" {
+			candidates = append(candidates, t.defaultHome)
 		}
 
 		if home, err := os.UserHomeDir(); err == nil && home != "" {
@@ -102,7 +95,7 @@ func resolveToolHome() string {
 				rejected = append(rejected, fmt.Sprintf("%s (%v)", dir, err))
 				continue
 			}
-			resolvedToolHome = dir
+			t.resolvedHome = dir
 			break
 		}
 
@@ -112,14 +105,14 @@ func resolveToolHome() string {
 			logf("[-] Unusable tool config home, falling back: %s", r)
 		}
 
-		if resolvedToolHome == "" {
+		if t.resolvedHome == "" {
 			logf("[-] No writable tool config home found. External tools will fail; pass --tool-home to point at a writable directory.")
 			return
 		}
 
-		logf("[+] Tool config home: %s", resolvedToolHome)
+		logf("[+] Tool config home: %s", t.resolvedHome)
 	})
-	return resolvedToolHome
+	return t.resolvedHome
 }
 
 // systemdDirs reads one of systemd's directory environment variables. systemd
@@ -166,8 +159,8 @@ func checkToolHome(dir string) error {
 // toolEnv returns the parent environment with HOME and XDG_CONFIG_HOME forced
 // onto a writable directory. os.UserConfigDir prefers XDG_CONFIG_HOME and falls
 // back to $HOME/.config, so both have to be set to cover either branch.
-func toolEnv() []string {
-	home := resolveToolHome()
+func (t *Toolchain) toolEnv() []string {
+	home := t.resolveToolHome()
 	if home == "" {
 		return os.Environ()
 	}
@@ -208,17 +201,33 @@ func (run *runner) runToolToFiles(name string, args []string, timeout time.Durat
 	return err
 }
 
-func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (io.ReadCloser, error) {
-	path, err := resolveTool(name)
+// ProcessExecutor isolates external execution from orchestration and database access.
+type ProcessExecutor interface {
+	Execute(context.Context, string, string, []string, io.Reader, time.Duration, bool) (io.ReadCloser, error)
+}
+
+func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (out io.ReadCloser, err error) {
+	out = io.NopCloser(strings.NewReader(""))
+	id, e := run.beginTool(name)
+	if e != nil {
+		run.rememberStorageError(e)
+		return out, e
+	}
+	defer func() { e := run.endTool(id, err); run.rememberStorageError(e); err = errors.Join(err, e) }()
+	return run.executor.Execute(run.ctx, run.scratch, name, args, stdin, timeout, captureStdout)
+}
+
+func (tools *Toolchain) Execute(parent context.Context, scratch, name string, args []string, stdin io.Reader, timeout time.Duration, captureStdout bool) (io.ReadCloser, error) {
+	path, err := tools.resolveTool(name)
 	if err != nil {
 		return io.NopCloser(strings.NewReader("")), err
 	}
 
-	ctx, cancel := context.WithTimeout(run.ctx, timeout)
+	ctx, cancel := context.WithTimeout(parent, timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, path, args...)
-	cmd.Env = toolEnv()
+	cmd.Env = tools.toolEnv()
 	cmd.Stdin = stdin
 
 	// Run the tool in its own process group and kill the whole group when the
@@ -241,7 +250,7 @@ func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reade
 	var stdout io.ReadCloser = io.NopCloser(strings.NewReader(""))
 	var output *toolOutput
 	if captureStdout {
-		file, err := os.CreateTemp(run.scratch, "icevirtue-output-*")
+		file, err := os.CreateTemp(scratch, "icevirtue-output-*")
 		if err != nil {
 			return stdout, fmt.Errorf("%s output file: %w", name, err)
 		}
@@ -273,7 +282,7 @@ func (run *runner) runToolWithCapture(name string, args []string, stdin io.Reade
 		}
 
 		return stdout, fmt.Errorf("%s failed after %s (%s)\n  path:   %s\n  args:   %s\n  HOME:   %s\n  stderr: %s\n  stdout: %s",
-			name, elapsed, reason, path, strings.Join(args, " "), resolveToolHome(),
+			name, elapsed, reason, path, strings.Join(args, " "), tools.resolveToolHome(),
 			describeStream(errb.String()), describeStream(outb.String()))
 	}
 
@@ -370,8 +379,8 @@ func (s *lineReader) Err() error {
 // of them are actually on PATH. Deliberately non-fatal: application settings
 // can disable stages and legitimately make some tools
 // unnecessary.
-func PreflightTools(c models.ApplicationConfiguration) {
-	resolveToolHome()
+func (t *Toolchain) PreflightTools(c models.ApplicationConfiguration) {
+	t.resolveToolHome()
 
 	tools := []struct {
 		name   string
@@ -391,26 +400,26 @@ func PreflightTools(c models.ApplicationConfiguration) {
 	}
 
 	var present, missing, skipped, doubtful []string
-	for _, t := range tools {
-		if !t.needed {
-			skipped = append(skipped, t.name)
+	for _, spec := range tools {
+		if !spec.needed {
+			skipped = append(skipped, spec.name)
 			continue
 		}
 
 		// resolveTool logs its own warning for a doubtful match, and caches the
 		// result so no tool is probed again when the pipeline actually runs.
-		path, err := resolveTool(t.name)
+		path, err := t.resolveTool(spec.name)
 		if err != nil {
-			missing = append(missing, t.name)
+			missing = append(missing, spec.name)
 			continue
 		}
 
-		if note := cachedToolNote(t.name); note != "" {
-			doubtful = append(doubtful, fmt.Sprintf("%s (%s)", t.name, path))
+		if note := t.cachedToolNote(spec.name); note != "" {
+			doubtful = append(doubtful, fmt.Sprintf("%s (%s)", spec.name, path))
 			continue
 		}
 
-		present = append(present, fmt.Sprintf("%s (%s)", t.name, path))
+		present = append(present, fmt.Sprintf("%s (%s)", spec.name, path))
 	}
 
 	logf("[+] Preflight: %d/%d required tools resolved", len(present), len(present)+len(doubtful)+len(missing))

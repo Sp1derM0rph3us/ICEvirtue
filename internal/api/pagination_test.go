@@ -7,7 +7,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -31,7 +30,7 @@ func getSubdomainPage(t *testing.T, id fmt.Stringer, query string) ListResponse[
 	t.Helper()
 
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/subdomains",
-		"/api/profiles/"+id.String()+"/subdomains"+query, getProfileSubdomains)
+		"/api/profiles/"+id.String()+"/subdomains"+query, testAPI().getProfileSubdomains)
 	return decodePage[subdomainRow](t, rec, "subdomains"+query)
 }
 
@@ -115,11 +114,11 @@ func TestProfilesPageBeyond250KeepsTheFullPickerIndex(t *testing.T) {
 	for i := range profiles {
 		profiles[i] = models.Profile{Domain: fmt.Sprintf("host-%03d.example.com", i+1)}
 	}
-	if err := database.DB.Create(&profiles).Error; err != nil {
+	if err := testDB.Create(&profiles).Error; err != nil {
 		t.Fatalf("seeding profiles: %v", err)
 	}
 
-	rec := route(t, http.MethodGet, "/api/profiles", "/api/profiles?page=11&size=25", getProfiles)
+	rec := route(t, http.MethodGet, "/api/profiles", "/api/profiles?page=11&size=25", testAPI().getProfiles)
 	got := decodePage[models.Profile](t, rec, "profiles?page=11&size=25")
 	if got.Page.Page != 11 || got.Page.Size != 25 || got.Page.TotalRows != 251 || got.Page.TotalPages != 11 {
 		t.Errorf("page metadata = %+v, want page 11 of 11, size 25, total 251", got.Page)
@@ -128,7 +127,7 @@ func TestProfilesPageBeyond250KeepsTheFullPickerIndex(t *testing.T) {
 		t.Errorf("last profile page = %+v, want only host-250.example.com", got.Data)
 	}
 
-	index := route(t, http.MethodGet, "/api/profiles/index", "/api/profiles/index", getProfileIndex)
+	index := route(t, http.MethodGet, "/api/profiles/index", "/api/profiles/index", testAPI().getProfileIndex)
 	if index.Code != http.StatusOK {
 		t.Fatalf("profile index = %d, want 200: %s", index.Code, index.Body.String())
 	}
@@ -156,7 +155,7 @@ func TestSubdomainPagesPartitionEveryRow(t *testing.T) {
 			ProfileID: profile.ID,
 			Domain:    fmt.Sprintf("host-%04d.example.com", (i*97)%total),
 		}
-		if err := database.DB.Create(&sub).Error; err != nil {
+		if err := testDB.Create(&sub).Error; err != nil {
 			t.Fatalf("seeding subdomain %d: %v", i, err)
 		}
 	}
@@ -197,7 +196,7 @@ func TestSubdomainPageSizeIsHonouredAndReported(t *testing.T) {
 	profile := newAPIEnv(t)
 
 	for i := range 120 {
-		if err := database.DB.Create(&models.Subdomain{
+		if err := testDB.Create(&models.Subdomain{
 			ProfileID: profile.ID, Domain: fmt.Sprintf("host-%04d.example.com", i),
 		}).Error; err != nil {
 			t.Fatalf("seeding: %v", err)
@@ -230,7 +229,7 @@ func TestEmptyPageIsAnArrayNotNull(t *testing.T) {
 	profile := newAPIEnv(t)
 
 	rec := route(t, http.MethodGet, "/api/profiles/{id}/subdomains",
-		"/api/profiles/"+profile.ID.String()+"/subdomains", getProfileSubdomains)
+		"/api/profiles/"+profile.ID.String()+"/subdomains", testAPI().getProfileSubdomains)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status %d", rec.Code)
 	}

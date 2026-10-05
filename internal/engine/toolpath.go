@@ -9,13 +9,12 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
-	"sync"
+
 	"time"
 )
 
-// ToolPaths pins a tool to an exact binary, as a comma-separated list of
+// t.Paths pins a tool to an exact binary, as a comma-separated list of
 // name=path pairs. Wired to --tool-paths.
-var ToolPaths string
 
 // versionProbeTimeout bounds the identity probe. Asking a tool for its version
 // is meant to be instant, so anything slower is not answering.
@@ -69,23 +68,18 @@ type resolution struct {
 	Note string
 }
 
-var (
-	toolPathMu    sync.Mutex
-	toolPathCache = map[string]resolution{}
-)
-
 // resolveTool finds the binary for a logical tool name, caching the outcome so
 // the identity probe runs at most once per tool per process.
-func resolveTool(tool string) (string, error) {
-	toolPathMu.Lock()
-	defer toolPathMu.Unlock()
+func (t *Toolchain) resolveTool(tool string) (string, error) {
+	t.pathMu.Lock()
+	defer t.pathMu.Unlock()
 
-	if r, ok := toolPathCache[tool]; ok {
+	if r, ok := t.pathCache[tool]; ok {
 		return r.Path, r.Err
 	}
 
-	r := locateTool(tool)
-	toolPathCache[tool] = r
+	r := t.locateTool(tool)
+	t.pathCache[tool] = r
 
 	if r.Err == nil && r.Note != "" {
 		log.Printf("[-] %s: %s", tool, r.Note)
@@ -96,15 +90,15 @@ func resolveTool(tool string) (string, error) {
 
 // cachedToolNote reports why an already-resolved tool is doubtful, or "" when it
 // is not. Only meaningful after resolveTool has run for that tool.
-func cachedToolNote(tool string) string {
-	toolPathMu.Lock()
-	defer toolPathMu.Unlock()
+func (t *Toolchain) cachedToolNote(tool string) string {
+	t.pathMu.Lock()
+	defer t.pathMu.Unlock()
 
-	return toolPathCache[tool].Note
+	return t.pathCache[tool].Note
 }
 
-func locateTool(tool string) resolution {
-	if path, ok := overriddenToolPath(tool); ok {
+func (t *Toolchain) locateTool(tool string) resolution {
+	if path, ok := t.overriddenToolPath(tool); ok {
 		if _, err := exec.LookPath(path); err != nil {
 			return resolution{Err: fmt.Errorf("%s: --tool-paths points at %s, which is not usable: %v", tool, path, err)}
 		}
@@ -129,7 +123,7 @@ func locateTool(tool string) resolution {
 			return resolution{Path: path}
 		}
 
-		if err := verifyToolIdentity(path); err != nil {
+		if err := t.verifyToolIdentity(path); err != nil {
 			rejected = append(rejected, fmt.Sprintf("%s (%v)", path, err))
 			continue
 		}
@@ -154,8 +148,8 @@ func locateTool(tool string) resolution {
 }
 
 // overriddenToolPath reads --tool-paths, a comma-separated list of name=path.
-func overriddenToolPath(tool string) (string, bool) {
-	for _, pair := range splitList(ToolPaths) {
+func (t *Toolchain) overriddenToolPath(tool string) (string, bool) {
+	for _, pair := range splitList(t.Paths) {
 		name, path, ok := strings.Cut(pair, "=")
 		if !ok {
 			continue
@@ -176,12 +170,12 @@ func overriddenToolPath(tool string) (string, bool) {
 // both: python3-httpx, which owns the name httpx on Debian, Kali and Parrot,
 // exits 2 with "No such option". Checking behaviour rather than looking up
 // package names keeps this working on any distribution.
-func verifyToolIdentity(path string) error {
+func (t *Toolchain) verifyToolIdentity(path string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), versionProbeTimeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, path, "-version")
-	cmd.Env = toolEnv()
+	cmd.Env = t.toolEnv()
 
 	var out bytes.Buffer
 	cmd.Stdout = &out

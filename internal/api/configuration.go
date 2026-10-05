@@ -15,8 +15,7 @@ import (
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/access"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/auth"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 	"github.com/go-chi/chi/v5"
@@ -25,7 +24,7 @@ import (
 
 var errConfigForbidden = errors.New("session or administrator permission changed; sign in again")
 
-func configAuthorize(r *http.Request) wordlists.Authorize {
+func (a *API) configAuthorize(r *http.Request) wordlists.Authorize {
 	claims, ok := UserFromContext(r.Context())
 	return func(tx *gorm.DB) error {
 		if !ok || claims.ExpiresAt == nil || !time.Now().Before(claims.ExpiresAt.Time) {
@@ -40,11 +39,11 @@ func configAuthorize(r *http.Request) wordlists.Authorize {
 		return nil
 	}
 }
-func requireConfigCSRF(next http.Handler) http.Handler {
+func (a *API) requireConfigCSRF(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			c, ok := UserFromContext(r.Context())
-			if !ok || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(auth.CSRFToken(c))) != 1 {
+			if !ok || subtle.ConstantTimeCompare([]byte(r.Header.Get("X-CSRF-Token")), []byte(a.signer.CSRFToken(c))) != 1 {
 				http.Error(w, "invalid CSRF token; reload the page", 403)
 				return
 			}
@@ -54,7 +53,7 @@ func requireConfigCSRF(next http.Handler) http.Handler {
 }
 func (a *API) configurationRoutes(r chi.Router) {
 	r.Route("/api/admin", func(r chi.Router) {
-		r.Use(noStore, a.requireAPIAuth, requirePermission(access.ManageConfiguration), a.requireSameOrigin, requireConfigCSRF)
+		r.Use(noStore, a.requireAPIAuth, requirePermission(access.ManageConfiguration), a.requireSameOrigin, a.requireConfigCSRF)
 		r.Get("/configuration", a.getConfiguration)
 		r.Post("/configuration/reset", a.resetConfiguration)
 		r.With(requireJSONBody).Put("/configuration/{section}", a.saveConfiguration)
@@ -94,7 +93,7 @@ func configError(w http.ResponseWriter, err error) {
 	respondJSON(w, status, map[string]string{"error": message})
 }
 func (a *API) getConfiguration(w http.ResponseWriter, r *http.Request) {
-	c, e := appconfig.Load(database.DB)
+	c, e := appconfig.Load(a.db)
 	if e != nil {
 		configError(w, e)
 		return
@@ -128,27 +127,7 @@ func (a *API) saveConfiguration(w http.ResponseWriter, r *http.Request) {
 		configError(w, appconfig.ValidationError(e.Error()))
 		return
 	}
-	var c models.ApplicationConfiguration
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if e := configAuthorize(r)(tx); e != nil {
-			return e
-		}
-		var e error
-		c, e = appconfig.Load(tx)
-		if e != nil {
-			return e
-		}
-		switch v := settings.(type) {
-		case *models.PasswordPolicy:
-			c.Password = *v
-		case *models.ScanSettings:
-			c.Scan = *v
-		case *models.ToolSettings:
-			c.Tools = *v
-		}
-		c.UpdatedBy = currentUser(r).PublicID
-		return appconfig.Save(tx, &c, envelope.Revision)
-	})
+	c, err := appconfig.SaveSection(a.db, a.configAuthorize(r), currentUser(r).PublicID, envelope.Revision, settings)
 	if err != nil {
 		configError(w, err)
 		return
@@ -163,20 +142,7 @@ func (a *API) saveConfiguration(w http.ResponseWriter, r *http.Request) {
 // CSRF protection as a save, and takes the current revision so a concurrent edit
 // still loses to the optimistic lock rather than being silently discarded.
 func (a *API) resetConfiguration(w http.ResponseWriter, r *http.Request) {
-	var c models.ApplicationConfiguration
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		if e := configAuthorize(r)(tx); e != nil {
-			return e
-		}
-		current, e := appconfig.Load(tx)
-		if e != nil {
-			return e
-		}
-		c = appconfig.Defaults()
-		c.Revision = current.Revision
-		c.UpdatedBy = currentUser(r).PublicID
-		return appconfig.Save(tx, &c, current.Revision)
-	})
+	c, err := appconfig.Reset(a.db, a.configAuthorize(r), currentUser(r).PublicID)
 	if err != nil {
 		configError(w, err)
 		return
@@ -260,8 +226,8 @@ func uniqueJSON(d *json.Decoder, depth int) error {
 	return e
 }
 func (a *API) listWordlists(w http.ResponseWriter, r *http.Request) {
-	items := []models.Wordlist{}
-	if e := database.DB.Where("state = ?", "ready").Order("created_at DESC").Limit(wordlists.MaxFiles).Find(&items).Error; e != nil {
+	items, e := wordlists.ListReady(a.db)
+	if e != nil {
 		configError(w, e)
 		return
 	}
@@ -296,7 +262,7 @@ func (a *API) uploadWordlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	reader := &singlePartReader{part: part, mr: mr}
-	item, e := a.cfg.Wordlists.Upload(ctx, part.FileName(), r.URL.Query().Get("kind"), currentUser(r).PublicID, reader, configAuthorize(r))
+	item, e := a.cfg.Wordlists.Upload(ctx, part.FileName(), r.URL.Query().Get("kind"), currentUser(r).PublicID, reader, a.configAuthorize(r))
 	if e != nil {
 		configError(w, e)
 		return
@@ -343,7 +309,7 @@ func (a *API) deleteWordlist(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id := chi.URLParam(r, "wordlistID")
-	if e := a.cfg.Wordlists.Delete(id, configAuthorize(r)); e != nil {
+	if e := a.cfg.Wordlists.Delete(id, a.configAuthorize(r)); e != nil {
 		configError(w, e)
 		return
 	}

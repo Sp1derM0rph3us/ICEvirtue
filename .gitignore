@@ -61,3 +61,7 @@ test-results/
 # Default private wordlist storage and server process locks
 uploads/
 *.server.lock
+
+/bin/
+ICEvirtue-worker
+ICEvirtue-admin

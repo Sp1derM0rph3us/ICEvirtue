@@ -72,7 +72,7 @@ Each stage logs a summary showing exactly which tools contributed what:
 
 ## Requirements
 
-You need Go 1.26 or newer to build, and **all of the external tools listed above have to be installed and reachable on the `PATH` of the user ICEvirtue runs as**. This is the single most common reason a fresh install does not work, so ICEvirtue prints a preflight summary at startup telling you exactly which tools it found and which it could not, before any scan is ever triggered. Check that line first when a stage fails.
+You need Go 1.26 or newer to build, and **all of the external tools listed above have to be installed and reachable on the `PATH` of the user ICEvirtue runs as**. This is the single most common reason a fresh install does not work, so ICEvirtue-worker prints a preflight summary at startup telling you exactly which tools it found and which it could not, before any scan is ever triggered. Check that line first when a stage fails.
 
 Not every tool is needed in every configuration. Which ones ICEvirtue actually requires depends on the flags you start it with:
 
@@ -113,7 +113,7 @@ ICEvirtue handles this without needing to know which distribution it is on. For 
 If nothing passes the probe, ICEvirtue uses the first candidate it found rather than refusing to run, on the grounds that the probe might be wrong about a working binary, but it says so clearly and tells you how to override it. When that happens, or whenever you want to be explicit, pin the binary yourself:
 
 ```Shell
-ICEvirtue --tool-paths httpx=/usr/bin/httpx-toolkit,nuclei=/opt/tools/nuclei
+ICEvirtue-worker --tool-paths httpx=/usr/bin/httpx-toolkit,nuclei=/opt/tools/nuclei
 ```
 
 An explicit `--tool-paths` entry is used as given, with no discovery and no probing.
@@ -137,16 +137,19 @@ sudo su
 
 git clone https://github.com/Sp1derM0rph3us/ICEvirtue.git
 cd ICEvirtue
-go build -o /usr/bin/ICEvirtue main.go            # the engine and dashboard
+go build -o /usr/bin/ICEvirtue .                 # web server
+go build -o /usr/bin/ICEvirtue-worker ./cmd/worker # scans and scheduling
 go build -o /usr/bin/ICEvirtue-admin cmd/admin/main.go   # user management
 chmod 775 /usr/bin/ICEvirtue*
 ```
 
 If you installed any of the recon tools with `go install`, they landed in `$GOPATH/bin` (usually `~/go/bin`). That directory is on your interactive `PATH` but almost certainly not on the `PATH` of a service, so either copy those binaries into `/usr/bin` too or set the service `PATH` explicitly as shown further down.
 
+**Deployment change:** scans and scheduling now require separate worker processes. Read [server/worker deployment and upgrade instructions](docs/modularity.md) before upgrading.
+
 ## Setting Up
 
-ICEvirtue needs three things in place before it is useful: the `web` folder, a database, and at least one dashboard user.
+ICEvirtue requires the `web` folder, a server-initialized database, a dashboard user, and at least one scan worker. Start the web server once before running the administration CLI.
 
 The `web` folder holds the dashboard, split into two directories that are treated very differently:
 
@@ -155,7 +158,7 @@ web/
 ├── templates/      the HTML pages. Never served directly.
 │   ├── login.html
 │   └── home.html
-└── static/         served verbatim under /static/, so treat it as public.
+└── static/         only css/ and js/ are served publicly.
     └── css/
         ├── output.css
         └── theme.css
@@ -191,17 +194,19 @@ Because the password is passed as a command line argument it will land in your s
 
 ## Running ICEvirtue
 
-Start the server against the database used by the administration CLI:
+Start the server first to migrate the database, then start workers using the same database and upload paths:
 
 ```Shell
 ICEvirtue --db-path /opt/icevirtue/icevirtue.db --upload-dir /opt/icevirtue/uploads
+# Separate terminal/service:
+ICEvirtue-worker --db-path /opt/icevirtue/icevirtue.db --upload-dir /opt/icevirtue/uploads
 ```
 
 Open the dashboard on port `8888` (or choose another with `--api-port`) and navigate to **Settings → Admin dashboard → Application configurations**. Configure password policy, global scan skips, wordlists and tool limits there. DNSX and directory discovery start disabled with empty wordlist selections. Upload lists, select them, enable the desired stages, and save.
 
-Settings persist in SQLite. Running scans keep their original configuration; queued scans take a snapshot when they start. Manual and scheduled scans share a queue of up to 100 waiting jobs, with two concurrent scans by default. [Configuration API, limits and upgrade instructions](docs/application-configuration.md).
+Settings persist in SQLite. Running scans keep their original configuration; queued scans take a snapshot when they start. Manual and scheduled scans share a queue of up to 100 waiting jobs, with two concurrent scans globally across all workers by default. [Configuration API, limits and upgrade instructions](docs/application-configuration.md).
 
-### ICEvirtue Flag Reference
+### Server and worker flag reference
 
 Scan behavior flags have moved to the admin configuration API and dashboard.
 
@@ -213,8 +218,8 @@ Scan behavior flags have moved to the admin configuration API and dashboard.
 | `--secure-cookies` | `false` | Mark the session cookie `Secure`. Turn this on whenever the dashboard is reached over HTTPS, including behind a TLS-terminating proxy. It defaults off because a browser accepts a `Secure` cookie over plain HTTP and then never sends it back, so turning it on without TLS makes login silently impossible. |
 | `--session-ttl` | `24h` | How long a dashboard session lasts before it has to be re-established. |
 | `--trusted-origin` | *(empty)* | An `Origin` to accept on state-changing requests in addition to the request's own host. Repeatable. **Required behind a reverse proxy that rewrites `Host`**, otherwise every write is refused with 403. See "Behind A Reverse Proxy". |
-| `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
-| `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
+| Worker only: `--tool-home` | *(auto)* | Directory the spawned recon tools use for their own config, defaulting to `/opt/icevirtue` and falling back to `$HOME`. See "Where State Lives". |
+| Worker only: `--tool-paths` | *(empty)* | Comma-separated `name=path` overrides pinning a tool to an exact binary, for example `httpx=/usr/bin/httpx-toolkit`. Skips discovery and the identity probe for that tool. |
 | `--upload-dir` | `uploads` | Private wordlist storage under the service working directory; keep outside the web directory. |
 | `--waymore-config` | *(empty)* | Server-managed Waymore provider configuration file. |
 | `--reload-templates` | `false` | Development-only template reloading. |
@@ -228,6 +233,8 @@ By default only hosts answering `200`, `301`, `302` or `307` are handed to fuzzi
 
 Upload wordlists through Application configurations. Administrators select opaque file IDs; server paths are never accepted by the API.
 
+The worker additionally accepts `--waymore-config /path/config.yml` for provider settings. See [all process responsibilities](docs/modularity.md).
+
 ## ICEvirtue-admin Reference
 
 `ICEvirtue-admin` exists only to seed dashboard accounts. It takes a single subcommand, `create`:
@@ -240,36 +247,13 @@ ICEvirtue-admin create --username 'netrunner' --password 'super-secret-password'
 |---|---|---|
 | `--username` | *(required)* | Username for the new dashboard account. |
 | `--password` | *(required)* | Password matching the stored policy (default 8–26 Unicode characters, always at most 72 UTF-8 bytes). Stored as a bcrypt hash, never in plain text. |
-| `--db-path` | `./icevirtue.db` | Database to write the account into. Created and migrated if it does not exist. |
+| `--db-path` | `./icevirtue.db` | Database to write the account into. Must already be initialized by the web server. |
 
 Both `--username` and `--password` are mandatory, and usernames are unique, so creating an account that already exists fails rather than overwriting it. The CLI creates an Admin account for initial provisioning and recovery. Use Settings → Admin dashboard → Users to create Viewer or Operator accounts and manage existing accounts.
 
 ## Running As A systemd Service
 
-A systemd system service gets **no `$HOME`** and defaults to `WorkingDirectory=/`. That combination breaks the projectdiscovery tools (`subfinder`, `httpx`, `dnsx`, `nuclei`, `katana`), because they resolve their config directory from `$XDG_CONFIG_HOME`, then `$HOME/.config`, and finally relative to the working directory. With no writable candidate they exit immediately, printing `open subfinder/config.yaml: no such file or directory`. The same happens if `$HOME` is set but not writable by the service user, which is what you get from a system account created without a home directory, or from `ProtectHome=`.
-
-ICEvirtue defends itself against this by giving every tool it spawns a `HOME` it has verified is writable, so it works out of the box. You should still pin the environment explicitly rather than rely on a fallback:
-
-```ini
-[Unit]
-Description=ICEvirtue continuous reconnaissance engine
-After=network-online.target
-Wants=network-online.target
-
-[Service]
-Type=simple
-StateDirectory=icevirtue
-WorkingDirectory=/opt/icevirtue
-Environment=HOME=/opt/icevirtue
-Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-ExecStart=/usr/bin/ICEvirtue --db-path /opt/icevirtue/icevirtue.db --api-port 8888 --upload-dir /opt/icevirtue/uploads
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-`WorkingDirectory` matters twice over, since it is where the `web` folder is looked up (or pass `--web-dir` and stop depending on it). `StateDirectory=icevirtue` makes systemd create `/var/lib/icevirtue` with the right ownership and hand its path to the process, which is where the session signing key ends up. If you add `User=` to run as a dedicated account, make sure that account can read the wordlists and write both the database directory and `/opt/icevirtue`.
+Install the separate [web server unit](deploy/icevirtue.service) and [worker template](deploy/icevirtue-worker@.service). Start the server to migrate and reconcile, then start `icevirtue-worker@1` and additional instances as needed. All use the same service identity and local database/uploads. Workers remain active during a web outage. See [deployment, paired backups, recovery and rollback](docs/modularity.md).
 
 ## Behind A Reverse Proxy
 
@@ -415,7 +399,7 @@ If the dashboard shows a `halted:` status, the reason is in the status itself an
 
 ICEvirtue writes captured tool stdout to private temporary files and parses it sequentially after each process exits, including usable output from failed or timed-out tools. Files are closed and removed after parsing. Stdout and stderr diagnostic excerpts remain capped at 64 KiB each. SecretHound and Waymore write their findings to explicit files, so their console output is retained only for diagnostics.
 
-Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR` to a writable, disk-backed directory with sufficient free space to move output storage away from RAM; a tmpfs-backed `/tmp` still consumes memory. Disk I/O can increase scan time, disk exhaustion causes reported tool errors, and abrupt application termination can leave temporary files behind. There is no output size cutoff: heap use still depends on the largest record, accumulated findings, and deduplication state. SecretHound's JSON results are still loaded as an array.
+Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR` to a writable, disk-backed directory with sufficient free space to move output storage away from RAM; a tmpfs-backed `/tmp` still consumes memory. Disk I/O can increase scan time, disk exhaustion causes reported tool errors, and abrupt application termination can leave temporary files behind. Captured stdout is capped at 1 GiB per tool, and the worker cancels a scan below 64 MiB of filesystem free space. Heap use still depends on the largest record, accumulated findings, and deduplication state. SecretHound's JSON results are still loaded as an array.
 
 
 ## Disclaimer

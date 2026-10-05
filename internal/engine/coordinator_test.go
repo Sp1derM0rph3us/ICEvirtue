@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
+
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 	"gorm.io/gorm"
@@ -18,7 +18,7 @@ import (
 
 func TestCoordinatorAdmissionLimitsAndRecovery(t *testing.T) {
 	p, _ := newPipelineEnv(t, "passive")
-	c := NewCoordinator(database.DB, nil)
+	c := NewCoordinator(testDB, nil)
 	defer c.cancel()
 	var wg sync.WaitGroup
 	results := make(chan error, 20)
@@ -41,18 +41,18 @@ func TestCoordinatorAdmissionLimitsAndRecovery(t *testing.T) {
 	}
 	for i := 1; i < MaxQueuedScans; i++ {
 		p := models.Profile{Domain: fmt.Sprintf("%d.example.test", i), Enabled: true}
-		database.DB.Create(&p)
+		testDB.Create(&p)
 		if e := c.Enqueue(p.ID.String(), "manual"); e != nil {
 			t.Fatal(e)
 		}
 	}
 	extra := models.Profile{Domain: "extra.example.test", Enabled: true}
-	database.DB.Create(&extra)
+	testDB.Create(&extra)
 	if e := c.Enqueue(extra.ID.String(), "manual"); !errors.Is(e, ErrQueueFull) {
 		t.Fatal(e)
 	}
-	database.DB.Model(&models.ScanJob{}).Where("profile_id = ?", p.ID).Update("state", "running")
-	database.DB.Model(p).Update("is_scanning", true)
+	testDB.Model(&models.ScanJob{}).Where("profile_id = ?", p.ID).Update("state", "running")
+
 	if e := c.Recover(); e != nil {
 		t.Fatal(e)
 	}
@@ -61,14 +61,14 @@ func TestCoordinatorAdmissionLimitsAndRecovery(t *testing.T) {
 		t.Fatalf("not recovered %+v", fresh)
 	}
 	var n int64
-	database.DB.Model(&models.ScanJob{}).Count(&n)
+	testDB.Model(&models.ScanJob{}).Count(&n)
 	if n != 99 {
 		t.Fatalf("queued jobs lost: %d", n)
 	}
 }
 func TestCoordinatorSnapshotsSettingsAndPinsLists(t *testing.T) {
 	p, _ := newPipelineEnv(t, "full")
-	store, e := wordlists.New(database.DB, filepath.Join(t.TempDir(), "uploads"), filepath.Join(t.TempDir(), "web"))
+	store, e := wordlists.New(testDB, filepath.Join(t.TempDir(), "uploads"), filepath.Join(t.TempDir(), "web"))
 	if e != nil {
 		t.Fatal(e)
 	}
@@ -77,25 +77,25 @@ func TestCoordinatorSnapshotsSettingsAndPinsLists(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	configuration, _ := appconfig.Load(database.DB)
+	configuration, _ := appconfig.Load(testDB)
 	configuration.Scan.SkipDirectory = false
 	configuration.Scan.DirectoryWordlists = []string{item.ID}
-	database.DB.Save(&configuration)
-	c := NewCoordinator(database.DB, store)
+	testDB.Save(&configuration)
+	c := NewCoordinator(testDB, store)
 	defer c.cancel()
 	started := make(chan *runner, 4)
 	release := make(chan struct{})
 	c.execute = func(run *runner, p *models.Profile) {
 		started <- run
 		<-release
-		database.DB.Model(p).Update("is_scanning", false)
+
 	}
 	defer func() { close(release); c.wg.Wait() }()
 	for i := 0; i < 3; i++ {
 		id := p.ID
 		if i > 0 {
 			other := models.Profile{Domain: fmt.Sprintf("queued%d.test", i), Enabled: true}
-			database.DB.Create(&other)
+			testDB.Create(&other)
 			id = other.ID
 		}
 		if e = c.Enqueue(id.String(), "manual"); e != nil {
@@ -104,7 +104,7 @@ func TestCoordinatorSnapshotsSettingsAndPinsLists(t *testing.T) {
 	}
 	configuration.Tools.WAFTimeoutSeconds = 44
 	configuration.Revision = 2
-	database.DB.Save(&configuration)
+	testDB.Save(&configuration)
 	for i := 0; i < 3; i++ {
 		if e = c.dispatch(); e != nil {
 			t.Fatal(e)
@@ -127,7 +127,7 @@ func TestCoordinatorSnapshotsSettingsAndPinsLists(t *testing.T) {
 	configuration.Tools.WAFTimeoutSeconds = 99
 	configuration.Scan.DirectoryWordlists = []string{}
 	configuration.Scan.SkipDirectory = true
-	database.DB.Save(&configuration)
+	testDB.Save(&configuration)
 	if first.wafTimeout != 44*time.Second || first.config.Revision != 2 || len(first.directoryPaths) != 1 {
 		t.Fatal("scan did not retain start snapshot")
 	}

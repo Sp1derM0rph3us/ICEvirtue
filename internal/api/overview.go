@@ -4,15 +4,10 @@ import (
 	"errors"
 	"log"
 	"net/http"
-	"sort"
-	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
-
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
 type overviewProfile struct {
@@ -64,113 +59,13 @@ func utcOrNil(value time.Time) *time.Time {
 	return &utc
 }
 
-func getProfileOverview(w http.ResponseWriter, r *http.Request) {
+func (a *API) getProfileOverview(w http.ResponseWriter, r *http.Request) {
 	id, ok := profileID(w, r)
 	if !ok {
 		return
 	}
 
-	var result profileOverview
-	var profile models.Profile
-	err := database.DB.Transaction(func(tx *gorm.DB) error {
-		// The database pool contains one connection. Every statement in this
-		// transaction must use tx or it would wait for its own connection forever.
-		if err := tx.First(&profile, "id = ?", id).Error; err != nil {
-			return err
-		}
-		result.Profile = overviewProfile{
-			ID: profile.ID, Domain: profile.Domain, IsScanning: profile.IsScanning, IsQueued: profile.IsQueued,
-			LastScanUTC: utcOrNil(profile.LastScan), LastScanStatus: profile.LastScanStatus,
-		}
-
-		assets := tx.Model(&models.Subdomain{}).Where("subdomains.profile_id = ?", id)
-		if err := assets.Count(&result.Assets.Total).Error; err != nil {
-			return err
-		}
-		if err := tx.Model(&models.Subdomain{}).
-			Where("subdomains.profile_id = ?", id).
-			Where(`EXISTS (SELECT 1 FROM alive_hosts a
-				WHERE a.profile_id = subdomains.profile_id
-				AND a.host = subdomains.host AND a.deleted_at IS NULL)`).
-			Count(&result.Assets.HTTPObserved).Error; err != nil {
-			return err
-		}
-		var wafNames []string
-		if err := tx.Model(&models.AliveHost{}).
-			Distinct("waf_name").
-			Where("profile_id = ? AND waf_name IS NOT NULL AND lower(waf_name) <> ?", id, "none").
-			Pluck("waf_name", &wafNames).Error; err != nil {
-			return err
-		}
-		result.DetectedWAFs = make([]string, 0, len(wafNames))
-		seenWAFs := make(map[string]bool, len(wafNames))
-		for _, name := range wafNames {
-			name = strings.TrimSpace(name)
-			key := strings.ToLower(name)
-			if name != "" && !seenWAFs[key] {
-				result.DetectedWAFs = append(result.DetectedWAFs, name)
-				seenWAFs[key] = true
-			}
-		}
-		sort.Slice(result.DetectedWAFs, func(i, j int) bool {
-			return strings.ToLower(result.DetectedWAFs[i]) < strings.ToLower(result.DetectedWAFs[j])
-		})
-
-		var latest models.Subdomain
-		err := tx.Model(&models.Subdomain{}).Select("last_changed").
-			Where("profile_id = ?", id).
-			Order("julianday(last_changed) DESC, subdomains.id DESC").Take(&latest).Error
-		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return err
-		}
-		if err == nil {
-			result.LastIdentifiedChangeUTC = utcOrNil(latest.LastChanged)
-		}
-
-		var severities []severitySummary
-		if err := tx.Model(&models.Vulnerability{}).
-			Select(overviewSeverityBucket+" AS severity, COUNT(*) AS count").
-			Where("vulnerabilities.profile_id = ?", id).
-			Group(overviewSeverityBucket).Scan(&severities).Error; err != nil {
-			return err
-		}
-		counts := make(map[string]int64, len(severities))
-		for _, item := range severities {
-			counts[item.Severity] = item.Count
-		}
-		result.FindingSeverities = make([]severitySummary, 0, len(overviewSeverityOrder))
-		for _, severity := range overviewSeverityOrder {
-			result.FindingSeverities = append(result.FindingSeverities,
-				severitySummary{Severity: severity, Count: counts[severity]})
-		}
-
-		var findings []priorityFinding
-		if err := tx.Model(&models.Vulnerability{}).
-			Select(`vulnerabilities.id, vulnerabilities.severity, vulnerabilities.name,
-				vulnerabilities.template_id, vulnerabilities.host, vulnerabilities.url,
-				vulnerabilities.last_seen,
-				EXISTS (SELECT 1 FROM subdomains s WHERE s.profile_id = vulnerabilities.profile_id
-					AND s.host = vulnerabilities.host AND s.deleted_at IS NULL) AS has_asset`).
-			Where("vulnerabilities.profile_id = ?", id).
-			Where("trim(lower(vulnerabilities.severity)) IN ('critical', 'high')").
-			Order("CASE trim(lower(vulnerabilities.severity)) WHEN 'critical' THEN 0 ELSE 1 END").
-			Order("vulnerabilities.id DESC").Limit(8).Scan(&findings).Error; err != nil {
-			return err
-		}
-		if findings == nil {
-			findings = []priorityFinding{}
-		}
-		result.PriorityFindings = findings
-		for i := range result.PriorityFindings {
-			finding := &result.PriorityFindings[i]
-			finding.Severity = strings.ToLower(strings.TrimSpace(finding.Severity))
-			if strings.TrimSpace(finding.Name) == "" {
-				finding.Name = finding.TemplateID
-			}
-			finding.LastSeenUTC = finding.LastSeenUTC.UTC()
-		}
-		return nil
-	})
+	result, err := a.queries.overview(id)
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		http.Error(w, "profile not found", http.StatusNotFound)
 		return

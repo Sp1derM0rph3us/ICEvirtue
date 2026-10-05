@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/appconfig"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/jobs"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"github.com/google/uuid"
 	"io"
@@ -35,7 +36,7 @@ func testRunner() *runner {
 	c.Scan.SkipDNSX = false
 	c.Scan.SkipDirectory = false
 	c.Tools.WaymoreResponseLimit = WaymoreResponseLimit
-	return &runner{ctx: context.Background(), config: c, dnsxPaths: splitList(DnsxList), directoryPaths: splitList(DirectoryList), wafTimeout: GetWAFProcessTimeout()}
+	return &runner{FindingStore: NewFindingStore(testDB, models.ScanJob{}), executor: testTools, tools: testTools, ctx: context.Background(), config: c, dnsxPaths: splitList(DnsxList), directoryPaths: splitList(DirectoryList), wafTimeout: GetWAFProcessTimeout()}
 }
 func RunAmass(profile *models.Profile) ([]string, error) { return testRunner().RunAmass(profile) }
 func collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvidence, func(), error) {
@@ -44,7 +45,25 @@ func collectWaymore(profile *models.Profile) ([]string, map[string][]archiveEvid
 func RunDnsx(profile *models.Profile, wordlistPath string) ([]string, error) {
 	return testRunner().RunDnsx(profile, wordlistPath)
 }
-func OrchestrateScan(profile *models.Profile) { testRunner().OrchestrateScan(profile) }
+func OrchestrateScan(profile *models.Profile) {
+	q := &jobs.Queue{DB: testDB}
+	if e := q.Enqueue(profile.ID.String(), "manual"); e != nil {
+		return
+	}
+	claim, e := q.Claim("test")
+	if e != nil {
+		panic(e)
+	}
+	if claim == nil {
+		return
+	}
+	r := testRunner()
+	r.job = claim.Job
+	out := r.OrchestrateScan(&claim.Profile)
+	if e = q.Finish(claim.Job, out.Status, out.Summary); e != nil {
+		panic(e)
+	}
+}
 func stageDiscovery(profile *models.Profile) ([]string, *stageReport) {
 	return testRunner().stageDiscovery(profile)
 }
@@ -61,40 +80,40 @@ func targetHosts(profile *models.Profile, hosts []models.AliveHost) []models.Ali
 	return testRunner().targetHosts(profile, hosts)
 }
 func persistSubdomains(profile *models.Profile, subdomains []string) int {
-	return testRunner().persistSubdomains(profile, subdomains)
+	return mustCount(testRunner().persistSubdomains(profile, subdomains))
 }
 func persistHosts(profile *models.Profile, hosts []models.AliveHost) int {
-	return testRunner().persistHosts(profile, hosts)
+	return mustCount(testRunner().persistHosts(profile, hosts))
 }
 func persistWAFs(profile *models.Profile, observations []wafObservation) int {
-	return testRunner().persistWAFs(profile, observations)
+	return mustCount(testRunner().persistWAFs(profile, observations))
 }
 func persistDirectories(profile *models.Profile, dirs []models.DirectoryFinding) int {
-	return testRunner().persistDirectories(profile, dirs)
+	return mustCount(testRunner().persistDirectories(profile, dirs))
 }
 func persistVulns(profile *models.Profile, vulns []models.Vulnerability) int {
-	return testRunner().persistVulns(profile, vulns)
+	return mustCount(testRunner().persistVulns(profile, vulns))
 }
 func persistSecrets(profile *models.Profile, secrets []models.SecretFinding) int {
-	return testRunner().persistSecrets(profile, secrets)
+	return mustCount(testRunner().persistSecrets(profile, secrets))
 }
 func diffSubdomains(profileID *uuid.UUID, subdomains []string) int {
-	return testRunner().diffSubdomains(profileID, subdomains)
+	return mustCount(testRunner().diffSubdomains(profileID, subdomains))
 }
 func diffHosts(profileID *uuid.UUID, hosts []models.AliveHost) int {
-	return testRunner().diffHosts(profileID, hosts)
+	return mustCount(testRunner().diffHosts(profileID, hosts))
 }
 func diffWAFs(profileID *uuid.UUID, observations []wafObservation) int {
-	return testRunner().diffWAFs(profileID, observations)
+	return mustCount(testRunner().diffWAFs(profileID, observations))
 }
 func diffVulns(profileID *uuid.UUID, vulns []models.Vulnerability) int {
-	return testRunner().diffVulns(profileID, vulns)
+	return mustCount(testRunner().diffVulns(profileID, vulns))
 }
 func diffSecrets(profileID *uuid.UUID, secrets []models.SecretFinding) int {
-	return testRunner().diffSecrets(profileID, secrets)
+	return mustCount(testRunner().diffSecrets(profileID, secrets))
 }
 func diffDirectories(profileID *uuid.UUID, dirs []models.DirectoryFinding) int {
-	return testRunner().diffDirectories(profileID, dirs)
+	return mustCount(testRunner().diffDirectories(profileID, dirs))
 }
 func runTool(name string, args []string, stdin io.Reader, timeout time.Duration) (io.ReadCloser, error) {
 	return testRunner().runTool(name, args, stdin, timeout)
@@ -147,3 +166,19 @@ func detectWAF(endpoint string, processTimeout time.Duration) (string, error) {
 func RunWAFDetection(hosts []models.AliveHost) ([]wafObservation, error) {
 	return testRunner().RunWAFDetection(hosts)
 }
+
+var testTools = NewToolchain("", "", "")
+
+func mustCount(n int, e error) int {
+	if e != nil {
+		panic(e)
+	}
+	return n
+}
+func resolveToolHome() string                    { return testTools.resolveToolHome() }
+func toolEnv() []string                          { return testTools.toolEnv() }
+func resolveTool(s string) (string, error)       { return testTools.resolveTool(s) }
+func cachedToolNote(s string) string             { return testTools.cachedToolNote(s) }
+func locateTool(s string) resolution             { return testTools.locateTool(s) }
+func overriddenToolPath(s string) (string, bool) { return testTools.overriddenToolPath(s) }
+func verifyToolIdentity(s string) error          { return testTools.verifyToolIdentity(s) }

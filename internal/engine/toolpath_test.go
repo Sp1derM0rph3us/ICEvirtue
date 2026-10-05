@@ -11,18 +11,18 @@ import (
 func resetToolPaths(t *testing.T) {
 	t.Helper()
 
-	prev := ToolPaths
-	toolPathMu.Lock()
-	toolPathCache = map[string]resolution{}
-	toolPathMu.Unlock()
+	prev := testTools.Paths
+	testTools.pathMu.Lock()
+	testTools.pathCache = map[string]resolution{}
+	testTools.pathMu.Unlock()
 
 	t.Cleanup(func() {
-		ToolPaths = prev
-		toolPathMu.Lock()
-		toolPathCache = map[string]resolution{}
-		toolPathMu.Unlock()
+		testTools.Paths = prev
+		testTools.pathMu.Lock()
+		testTools.pathCache = map[string]resolution{}
+		testTools.pathMu.Unlock()
 	})
-	ToolPaths = ""
+	testTools.Paths = ""
 }
 
 // writeStub puts an executable shell script named `name` in dir.
@@ -51,7 +51,7 @@ exit 2`
 func TestResolveToolSkipsImposterAndPicksVerifiedAlternative(t *testing.T) {
 	resetToolPaths(t)
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
@@ -74,7 +74,7 @@ func TestResolveToolSkipsImposterAndPicksVerifiedAlternative(t *testing.T) {
 func TestResolveToolPrefersThePlainNameWhenItVerifies(t *testing.T) {
 	resetToolPaths(t)
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
@@ -95,7 +95,7 @@ func TestResolveToolPrefersThePlainNameWhenItVerifies(t *testing.T) {
 func TestResolveToolFallsBackWithADoubtfulNote(t *testing.T) {
 	resetToolPaths(t)
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
@@ -124,14 +124,14 @@ func TestResolveToolFallsBackWithADoubtfulNote(t *testing.T) {
 func TestResolveToolHonoursToolPathsOverride(t *testing.T) {
 	resetToolPaths(t)
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
 	writeStub(t, bin, "httpx", imposterBody)
 	pinned := writeStub(t, t.TempDir(), "my-httpx", imposterBody) // deliberately fails the probe
 
-	ToolPaths = "nuclei=/some/other, httpx=" + pinned
+	testTools.Paths = "nuclei=/some/other, httpx=" + pinned
 
 	got, err := resolveTool("httpx")
 	if err != nil {
@@ -147,7 +147,7 @@ func TestResolveToolHonoursToolPathsOverride(t *testing.T) {
 
 func TestResolveToolReportsAnUnusableOverride(t *testing.T) {
 	resetToolPaths(t)
-	ToolPaths = "httpx=/nonexistent/httpx"
+	testTools.Paths = "httpx=/nonexistent/httpx"
 
 	_, err := resolveTool("httpx")
 	if err == nil {
@@ -178,7 +178,7 @@ func TestResolveToolMissingNamesEveryCandidate(t *testing.T) {
 func TestResolveToolDoesNotProbeUnverifiedTools(t *testing.T) {
 	resetToolPaths(t)
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	bin := t.TempDir()
 	t.Setenv("PATH", bin)
@@ -199,7 +199,7 @@ func TestResolveToolDoesNotProbeUnverifiedTools(t *testing.T) {
 
 func TestVerifyToolIdentityRejectsMissingVersionNumber(t *testing.T) {
 	resetToolHome(t)
-	ToolHome = t.TempDir()
+	testTools.Home = t.TempDir()
 
 	// Exits 0 but prints no version, which is not a goflags tool.
 	path := writeStub(t, t.TempDir(), "weird", `echo "hello there"; exit 0`)

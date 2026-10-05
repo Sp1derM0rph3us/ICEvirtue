@@ -9,7 +9,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -19,15 +18,15 @@ import (
 func newAPIEnv(t *testing.T) *models.Profile {
 	t.Helper()
 
-	prevDB := database.DB
-	t.Cleanup(func() { database.DB = prevDB })
+	prevDB := testDB
+	t.Cleanup(func() { testDB = prevDB })
 
-	if err := database.InitDatabase(filepath.Join(t.TempDir(), "test.db")); err != nil {
+	if err := initTestDatabase(filepath.Join(t.TempDir(), "test.db")); err != nil {
 		t.Fatalf("InitDatabase: %v", err)
 	}
 
 	profile := &models.Profile{Domain: "example.com", Mode: "full", Schedule: "@every 24h", Enabled: true}
-	if err := database.DB.Create(profile).Error; err != nil {
+	if err := testDB.Create(profile).Error; err != nil {
 		t.Fatalf("creating profile: %v", err)
 	}
 	return profile
@@ -64,12 +63,12 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 		{"directory", &models.DirectoryFinding{ProfileID: id, SubdomainURL: "https://a.example.com", DirURL: "https://a.example.com/admin", StatusCode: 200}},
 	}
 	for _, s := range seed {
-		if err := database.DB.Create(s.row).Error; err != nil {
+		if err := testDB.Create(s.row).Error; err != nil {
 			t.Fatalf("seeding %s: %v", s.name, err)
 		}
 	}
 
-	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+id.String(), (&API{}).deleteProfile)
+	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+id.String(), testAPI().deleteProfile)
 	if rec.Code != http.StatusNoContent {
 		t.Fatalf("DELETE returned %d, want 204: %s", rec.Code, rec.Body.String())
 	}
@@ -86,7 +85,7 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 	}
 	for _, tbl := range tables {
 		var n int64
-		if err := database.DB.Model(tbl.model).Where("profile_id = ?", id).Count(&n).Error; err != nil {
+		if err := testDB.Model(tbl.model).Where("profile_id = ?", id).Count(&n).Error; err != nil {
 			t.Fatalf("counting %s: %v", tbl.name, err)
 		}
 		if n != 0 {
@@ -95,7 +94,7 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 	}
 
 	var profiles int64
-	if err := database.DB.Unscoped().Model(&models.Profile{}).Where("id = ?", id).Count(&profiles).Error; err != nil {
+	if err := testDB.Unscoped().Model(&models.Profile{}).Where("id = ?", id).Count(&profiles).Error; err != nil {
 		t.Fatalf("counting profiles: %v", err)
 	}
 	if profiles != 0 {
@@ -106,12 +105,12 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 func TestDeleteProfileRejectsABadID(t *testing.T) {
 	newAPIEnv(t)
 
-	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/not-a-uuid", (&API{}).deleteProfile)
+	rec := route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/not-a-uuid", testAPI().deleteProfile)
 	if rec.Code != http.StatusBadRequest {
 		t.Errorf("DELETE with a malformed id returned %d, want 400", rec.Code)
 	}
 
-	rec = route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+uuid.NewString(), (&API{}).deleteProfile)
+	rec = route(t, http.MethodDelete, "/api/profiles/{id}", "/api/profiles/"+uuid.NewString(), testAPI().deleteProfile)
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("DELETE of an unknown profile returned %d, want 404", rec.Code)
 	}

@@ -4,7 +4,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -61,7 +60,7 @@ printf '%s\n' '`+houndJSON+`' > "$output"
 		t.Fatalf("rescan inserted %d rows, want 0", got)
 	}
 	var updated models.SecretFinding
-	if err := database.DB.Where("source_url = ?", findings[0].SourceURL).First(&updated).Error; err != nil {
+	if err := testDB.Where("source_url = ?", findings[0].SourceURL).First(&updated).Error; err != nil {
 		t.Fatal(err)
 	}
 	if updated.Risk != "medium" || updated.Occurrences != 3 || len(updated.Context) != 1 || updated.Context[0] != "updated context" {
@@ -163,7 +162,7 @@ func TestSeparateScansPreserveArchiveEvidenceAcrossScannerTypes(t *testing.T) {
 		t.Fatalf("later Mantra scan inserted %d duplicate(s)", got)
 	}
 	var row models.SecretFinding
-	if err := database.DB.Where("profile_id = ?", id).First(&row).Error; err != nil {
+	if err := testDB.Where("profile_id = ?", id).First(&row).Error; err != nil {
 		t.Fatal(err)
 	}
 	if row.Engine != "SecretHound" || !row.SeenLive || row.ArchiveURL != archive {
@@ -189,7 +188,7 @@ func TestMantraCannotDowngradeSecretHoundRecord(t *testing.T) {
 		t.Fatalf("Mantra rescan inserted %d findings, want 0", got)
 	}
 	var stored models.SecretFinding
-	if err := database.DB.Where("profile_id = ? AND source_url = ?", id, source).First(&stored).Error; err != nil {
+	if err := testDB.Where("profile_id = ? AND source_url = ?", id, source).First(&stored).Error; err != nil {
 		t.Fatal(err)
 	}
 	if stored.Engine != "SecretHound" || stored.Risk != "high" || stored.Description != "known risk" ||
@@ -203,7 +202,7 @@ func TestSecretHoundRediscoveryLabelsLegacyRow(t *testing.T) {
 	legacy := models.SecretFinding{
 		ProfileID: id, SourceURL: "https://a.example.com/app.js", SecretType: "aws", SecretValue: "same",
 	}
-	if err := database.DB.Create(&legacy).Error; err != nil {
+	if err := testDB.Create(&legacy).Error; err != nil {
 		t.Fatal(err)
 	}
 	rediscovered := legacy
@@ -215,7 +214,7 @@ func TestSecretHoundRediscoveryLabelsLegacyRow(t *testing.T) {
 		t.Fatalf("rediscovery inserted %d rows, want 0", got)
 	}
 	var updated models.SecretFinding
-	if err := database.DB.First(&updated, legacy.ID).Error; err != nil {
+	if err := testDB.First(&updated, legacy.ID).Error; err != nil {
 		t.Fatal(err)
 	}
 	if updated.Engine != "SecretHound" || updated.Risk != "high" || len(updated.Context) != 1 {
@@ -235,7 +234,7 @@ func TestSecretHoundToolPathOverride(t *testing.T) {
 	resetToolPaths(t)
 	bin := t.TempDir()
 	path := writeStub(t, bin, "hound-custom", "exit 0")
-	ToolPaths = "secrethound=" + path
+	testTools.Paths = "secrethound=" + path
 	got, err := resolveTool("secrethound")
 	if err != nil || got != path {
 		t.Fatalf("resolveTool(secrethound) = %q, %v; want %q", got, err, path)

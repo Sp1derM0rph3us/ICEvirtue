@@ -17,6 +17,12 @@ import (
 )
 
 func main() {
+	if err := run(); err != nil {
+		log.Print(err)
+		os.Exit(1)
+	}
+}
+func run() error {
 	dbPath := flag.String("db-path", "mock-dashboard.db", "Disposable SQLite database to create")
 	username := flag.String("username", "demo", "Dashboard username to seed")
 	password := flag.String("password", "recon-demo", "Dashboard password to seed")
@@ -24,26 +30,29 @@ func main() {
 	flag.Parse()
 
 	if err := prepareDatabase(*dbPath, *reset); err != nil {
-		log.Fatal(err)
+		return err
 	}
-	if err := database.InitDatabase(*dbPath); err != nil {
-		log.Fatalf("initializing fixture database: %v", err)
+	store, err := database.Open(*dbPath, true)
+	if err != nil {
+		return err
 	}
-	if err := database.RunDataMigrations(); err != nil {
-		log.Fatalf("migrating fixture database: %v", err)
-	}
+	defer store.Close()
+	fixture := &fixture{store: store}
 
 	hash, err := bcrypt.GenerateFromPassword([]byte(*password), bcrypt.DefaultCost)
 	if err != nil {
-		log.Fatalf("hashing demo password: %v", err)
+		return fmt.Errorf("hashing demo password: %w", err)
 	}
-	if err := database.DB.Create(&models.User{Username: *username, PasswordHash: string(hash), Role: "admin"}).Error; err != nil {
-		log.Fatalf("creating demo user: %v", err)
+	if err := store.DB.Create(&models.User{Username: *username, PasswordHash: string(hash), Role: "admin"}).Error; err != nil {
+		return fmt.Errorf("creating demo user: %w", err)
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
-	seedPrimaryProfile(now)
-	seedSecondaryProfile(now)
+	fixture.seedPrimaryProfile(now)
+	fixture.seedSecondaryProfile(now)
+	if fixture.err != nil {
+		return fixture.err
+	}
 
 	abs, err := filepath.Abs(*dbPath)
 	if err != nil {
@@ -52,6 +61,7 @@ func main() {
 	fmt.Printf("[+] Mock dashboard database created: %s\n", abs)
 	fmt.Printf("[+] Sign in with username %q and password %q\n", *username, *password)
 	fmt.Printf("[+] Start ICEvirtue with: ICEvirtue --db-path %q\n", abs)
+	return nil
 }
 
 func prepareDatabase(path string, reset bool) error {
@@ -75,38 +85,38 @@ func prepareDatabase(path string, reset bool) error {
 	return nil
 }
 
-func seedPrimaryProfile(now time.Time) {
-	profile := createProfile("acme.example.com", "full", "every day at 09:00")
+func (f *fixture) seedPrimaryProfile(now time.Time) {
+	profile := f.createProfile("acme.example.com", "full", "every day at 09:00")
 
-	app := createAsset(profile, "app.acme.example.com", now.AddDate(0, 0, -45), now.AddDate(0, 0, -1), now)
-	api := createAsset(profile, "api.acme.example.com", now.AddDate(0, 0, -30), now.AddDate(0, 0, -4), now)
-	admin := createAsset(profile, "admin.acme.example.com", now.AddDate(0, 0, -20), now.Add(-7*24*time.Hour), now)
-	createAsset(profile, "legacy.acme.example.com", now.AddDate(0, 0, -70), now.AddDate(0, 0, -70), now)
-	createAsset(profile, "quiet.acme.example.com", now.AddDate(0, 0, -10), now.AddDate(0, 0, -10), now)
-	createAsset(profile, "203.0.113.42", now.AddDate(0, 0, -12), now.AddDate(0, 0, -2), now)
+	app := f.createAsset(profile, "app.acme.example.com", now.AddDate(0, 0, -45), now.AddDate(0, 0, -1), now)
+	api := f.createAsset(profile, "api.acme.example.com", now.AddDate(0, 0, -30), now.AddDate(0, 0, -4), now)
+	admin := f.createAsset(profile, "admin.acme.example.com", now.AddDate(0, 0, -20), now.Add(-7*24*time.Hour), now)
+	f.createAsset(profile, "legacy.acme.example.com", now.AddDate(0, 0, -70), now.AddDate(0, 0, -70), now)
+	f.createAsset(profile, "quiet.acme.example.com", now.AddDate(0, 0, -10), now.AddDate(0, 0, -10), now)
+	f.createAsset(profile, "203.0.113.42", now.AddDate(0, 0, -12), now.AddDate(0, 0, -2), now)
 
-	createHost(profile, "https://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 200, "Cloudflare")
+	f.createHost(profile, "https://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 200, "Cloudflare")
 	// Same product on a second endpoint exercises Home's one-entry-per-WAF list
 	// and the node detail's aggregation across HTTP and HTTPS.
-	createHost(profile, "http://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 301, "Cloudflare")
-	createHost(profile, "https://api.acme.example.com", "203.0.113.11", "Acme API", "nginx", 403, "Unknown WAF")
-	createHost(profile, "https://admin.acme.example.com", "203.0.113.12", "Admin console", "nginx", 200, "none")
-	createHost(profile, "http://203.0.113.42", "203.0.113.42", "Legacy endpoint", "Apache", 301, "none")
+	f.createHost(profile, "http://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 301, "Cloudflare")
+	f.createHost(profile, "https://api.acme.example.com", "203.0.113.11", "Acme API", "nginx", 403, "Unknown WAF")
+	f.createHost(profile, "https://admin.acme.example.com", "203.0.113.12", "Admin console", "nginx", 200, "none")
+	f.createHost(profile, "http://203.0.113.42", "203.0.113.42", "Legacy endpoint", "Apache", 301, "none")
 
-	createVulnerability(profile, app, "missing-hsts", "https://app.acme.example.com", "critical", "HSTS header missing", "The application does not set a Strict-Transport-Security header.")
-	createVulnerability(profile, app, "exposed-git-config", "https://app.acme.example.com/.git/config", "high", "Exposed Git configuration", "A Git configuration file is publicly accessible.")
-	createVulnerability(profile, app, "x-frame-options", "https://app.acme.example.com", "medium", "X-Frame-Options missing", "The portal can be embedded by another origin.")
-	createVulnerability(profile, app, "tech-detect", "https://app.acme.example.com", "info", "Technology detected", "The host exposes identifiable framework metadata.")
-	createVulnerability(profile, api, "swagger-ui", "https://api.acme.example.com/swagger", "low", "Swagger UI exposed", "An API documentation interface is available.")
-	createVulnerability(profile, api, "tech-detect", "https://api.acme.example.com", "info", "Technology detected", "The host exposes identifiable framework metadata.")
-	createVulnerability(profile, admin, "default-login", "https://admin.acme.example.com/login", "high", "Default login page", "An administrative login surface was discovered.")
+	f.createVulnerability(profile, app, "missing-hsts", "https://app.acme.example.com", "critical", "HSTS header missing", "The application does not set a Strict-Transport-Security header.")
+	f.createVulnerability(profile, app, "exposed-git-config", "https://app.acme.example.com/.git/config", "high", "Exposed Git configuration", "A Git configuration file is publicly accessible.")
+	f.createVulnerability(profile, app, "x-frame-options", "https://app.acme.example.com", "medium", "X-Frame-Options missing", "The portal can be embedded by another origin.")
+	f.createVulnerability(profile, app, "tech-detect", "https://app.acme.example.com", "info", "Technology detected", "The host exposes identifiable framework metadata.")
+	f.createVulnerability(profile, api, "swagger-ui", "https://api.acme.example.com/swagger", "low", "Swagger UI exposed", "An API documentation interface is available.")
+	f.createVulnerability(profile, api, "tech-detect", "https://api.acme.example.com", "info", "Technology detected", "The host exposes identifiable framework metadata.")
+	f.createVulnerability(profile, admin, "default-login", "https://admin.acme.example.com/login", "high", "Default login page", "An administrative login surface was discovered.")
 
-	createDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/admin", 403)
-	createDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/backup.zip", 200)
-	createDirectory(profile, api, "https://api.acme.example.com", "https://api.acme.example.com/v1", 200)
-	createDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/debug", 405)
+	f.createDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/admin", 403)
+	f.createDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/backup.zip", 200)
+	f.createDirectory(profile, api, "https://api.acme.example.com", "https://api.acme.example.com/v1", 200)
+	f.createDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/debug", 405)
 
-	createSecret(profile, models.SecretFinding{
+	f.createSecret(profile, models.SecretFinding{
 		SourceURL:   "https://app.acme.example.com/static/app.9f4a.js",
 		SecretType:  "aws-access-key",
 		SecretValue: "AKIAIOSFODNN7EXAMPLE",
@@ -116,7 +126,7 @@ func seedPrimaryProfile(now time.Time) {
 		Context:     []string{"const awsAccessKeyId = 'AKIAIOSFODNN7EXAMPLE';", "window.appConfig.awsAccessKeyId = awsAccessKeyId;"},
 		Occurrences: 2,
 	})
-	createSecret(profile, models.SecretFinding{
+	f.createSecret(profile, models.SecretFinding{
 		SourceURL:   "https://api.acme.example.com/openapi.json",
 		SecretType:  "generic-api-key",
 		SecretValue: "demo-api-key-7d2d",
@@ -126,7 +136,7 @@ func seedPrimaryProfile(now time.Time) {
 		Context:     []string{"x-api-key: demo-api-key-7d2d"},
 		Occurrences: 1,
 	})
-	createSecret(profile, models.SecretFinding{
+	f.createSecret(profile, models.SecretFinding{
 		SourceURL:   "mantra-discovery",
 		SecretType:  "generic-token",
 		SecretValue: "mock-mantra-token-42",
@@ -134,7 +144,7 @@ func seedPrimaryProfile(now time.Time) {
 	})
 	// This overlap remains in the database but the Credentials API prefers the
 	// sourced SecretHound row when both engines report the same credential.
-	createSecret(profile, models.SecretFinding{
+	f.createSecret(profile, models.SecretFinding{
 		SourceURL:   "mantra-discovery",
 		SecretType:  "aws-access-key",
 		SecretValue: "AKIAIOSFODNN7EXAMPLE",
@@ -142,52 +152,64 @@ func seedPrimaryProfile(now time.Time) {
 	})
 }
 
-func seedSecondaryProfile(now time.Time) {
-	profile := createProfile("globex.example.net", "passive", "every week at 10:00")
-	portal := createAsset(profile, "portal.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -3), now)
-	createAsset(profile, "assets.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -15), now)
-	createHost(profile, "https://portal.globex.example.net", "198.51.100.20", "Globex partner portal", "Caddy", 200, "Akamai")
-	createVulnerability(profile, portal, "cors-misconfig", "https://portal.globex.example.net/api", "medium", "Permissive CORS policy", "The API accepts an untrusted origin.")
-	createDirectory(profile, portal, "https://portal.globex.example.net", "https://portal.globex.example.net/health", 200)
+func (f *fixture) seedSecondaryProfile(now time.Time) {
+	profile := f.createProfile("globex.example.net", "passive", "every week at 10:00")
+	portal := f.createAsset(profile, "portal.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -3), now)
+	f.createAsset(profile, "assets.globex.example.net", now.AddDate(0, 0, -15), now.AddDate(0, 0, -15), now)
+	f.createHost(profile, "https://portal.globex.example.net", "198.51.100.20", "Globex partner portal", "Caddy", 200, "Akamai")
+	f.createVulnerability(profile, portal, "cors-misconfig", "https://portal.globex.example.net/api", "medium", "Permissive CORS policy", "The API accepts an untrusted origin.")
+	f.createDirectory(profile, portal, "https://portal.globex.example.net", "https://portal.globex.example.net/health", 200)
 }
 
-func createProfile(domain, mode, schedule string) models.Profile {
+func (f *fixture) createProfile(domain, mode, schedule string) models.Profile {
 	profile := models.Profile{Domain: domain, Mode: mode, Schedule: schedule, Enabled: true}
-	if err := database.DB.Create(&profile).Error; err != nil {
-		log.Fatalf("creating profile %s: %v", domain, err)
+	if err := f.create(&profile); err != nil {
+		f.err = fmt.Errorf("creating profile %s: %v", domain, err)
 	}
 	return profile
 }
 
-func createAsset(profile models.Profile, domain string, firstSeen, lastChanged, lastSeen time.Time) string {
+func (f *fixture) createAsset(profile models.Profile, domain string, firstSeen, lastChanged, lastSeen time.Time) string {
 	row := models.Subdomain{ProfileID: profile.ID, Domain: domain, FirstSeen: firstSeen, LastChanged: lastChanged, LastSeen: lastSeen}
-	if err := database.DB.Create(&row).Error; err != nil {
-		log.Fatalf("creating asset %s: %v", domain, err)
+	if err := f.create(&row); err != nil {
+		f.err = fmt.Errorf("creating asset %s: %v", domain, err)
 	}
 	return domain
 }
 
-func createHost(profile models.Profile, url, ip, title, webServer string, status int, waf string) {
-	if err := database.DB.Create(&models.AliveHost{ProfileID: profile.ID, URL: url, IP: ip, Title: title, WebServer: webServer, StatusCode: status, WAFName: &waf}).Error; err != nil {
-		log.Fatalf("creating host %s: %v", url, err)
+func (f *fixture) createHost(profile models.Profile, url, ip, title, webServer string, status int, waf string) {
+	if err := f.create(&models.AliveHost{ProfileID: profile.ID, URL: url, IP: ip, Title: title, WebServer: webServer, StatusCode: status, WAFName: &waf}); err != nil {
+		f.err = fmt.Errorf("creating host %s: %v", url, err)
 	}
 }
 
-func createVulnerability(profile models.Profile, host, templateID, url, severity, name, description string) {
-	if err := database.DB.Create(&models.Vulnerability{ProfileID: profile.ID, TemplateID: templateID, URL: url, Severity: severity, Name: name, Description: description}).Error; err != nil {
-		log.Fatalf("creating vulnerability for %s: %v", host, err)
+func (f *fixture) createVulnerability(profile models.Profile, host, templateID, url, severity, name, description string) {
+	if err := f.create(&models.Vulnerability{ProfileID: profile.ID, TemplateID: templateID, URL: url, Severity: severity, Name: name, Description: description}); err != nil {
+		f.err = fmt.Errorf("creating vulnerability for %s: %v", host, err)
 	}
 }
 
-func createDirectory(profile models.Profile, host, subdomainURL, dirURL string, status int) {
-	if err := database.DB.Create(&models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: subdomainURL, DirURL: dirURL, StatusCode: status}).Error; err != nil {
-		log.Fatalf("creating directory for %s: %v", host, err)
+func (f *fixture) createDirectory(profile models.Profile, host, subdomainURL, dirURL string, status int) {
+	if err := f.create(&models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: subdomainURL, DirURL: dirURL, StatusCode: status}); err != nil {
+		f.err = fmt.Errorf("creating directory for %s: %v", host, err)
 	}
 }
 
-func createSecret(profile models.Profile, finding models.SecretFinding) {
+func (f *fixture) createSecret(profile models.Profile, finding models.SecretFinding) {
 	finding.ProfileID = profile.ID
-	if err := database.DB.Create(&finding).Error; err != nil {
-		log.Fatalf("creating secret from %s: %v", finding.SourceURL, err)
+	if err := f.create(&finding); err != nil {
+		f.err = fmt.Errorf("creating secret from %s: %v", finding.SourceURL, err)
 	}
+}
+
+type fixture struct {
+	store *database.Store
+	err   error
+}
+
+func (f *fixture) create(row any) error {
+	if f.err != nil {
+		return f.err
+	}
+	return f.store.DB.Create(row).Error
 }

@@ -12,7 +12,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 )
 
@@ -38,7 +37,7 @@ func TestCreateProfileValidatesMode(t *testing.T) {
 			body := fmt.Sprintf(`{"domain":%q,"schedule":"every day at 03:00"%s}`, domain, tc.field)
 			rec := postJSON(t, h, "/api/profiles", body, cookie)
 			var rows []models.Profile
-			if err := database.DB.Where("domain = ?", domain).Find(&rows).Error; err != nil {
+			if err := testDB.Where("domain = ?", domain).Find(&rows).Error; err != nil {
 				t.Fatal(err)
 			}
 			if tc.want == "" {
@@ -117,7 +116,7 @@ func TestConcurrentCreateYieldsOneCreatedAndTheRest409(t *testing.T) {
 	}
 
 	var rows int64
-	database.DB.Model(&models.Profile{}).Where("domain = ?", "race.example.com").Count(&rows)
+	testDB.Model(&models.Profile{}).Where("domain = ?", "race.example.com").Count(&rows)
 	if rows != 1 {
 		t.Errorf("the database holds %d rows for the domain, want 1", rows)
 	}
@@ -139,7 +138,7 @@ func TestCreateProfileRejectsAnInvalidSchedule(t *testing.T) {
 	}
 
 	var rows int64
-	database.DB.Model(&models.Profile{}).Where("domain = ?", "bad-schedule.example.com").Count(&rows)
+	testDB.Model(&models.Profile{}).Where("domain = ?", "bad-schedule.example.com").Count(&rows)
 	if rows != 0 {
 		t.Error("the profile was stored despite the invalid schedule")
 	}
@@ -165,7 +164,7 @@ func TestDeleteHardDeletesChildren(t *testing.T) {
 		&models.DirectoryFinding{ProfileID: id, SubdomainURL: "https://a.example.com", DirURL: "https://a.example.com/admin"},
 	}
 	for _, row := range seed {
-		if err := database.DB.Create(row).Error; err != nil {
+		if err := testDB.Create(row).Error; err != nil {
 			t.Fatalf("seeding: %v", err)
 		}
 	}
@@ -181,7 +180,7 @@ func TestDeleteHardDeletesChildren(t *testing.T) {
 	for _, table := range []string{"subdomains", "alive_hosts", "vulnerabilities", "secret_findings", "directory_findings"} {
 		var n int64
 		// Raw SQL, so no soft-delete scope can hide a surviving row.
-		if err := database.DB.Raw("SELECT COUNT(*) FROM "+table+" WHERE profile_id = ?", id).Scan(&n).Error; err != nil {
+		if err := testDB.Raw("SELECT COUNT(*) FROM "+table+" WHERE profile_id = ?", id).Scan(&n).Error; err != nil {
 			t.Fatalf("counting %s: %v", table, err)
 		}
 		if n != 0 {
@@ -199,11 +198,10 @@ func TestDeleteIsRefusedWhileScanning(t *testing.T) {
 	h := newServerWithUsers(t)
 	id := profile.ID
 
-	if err := database.DB.Create(&models.Subdomain{ProfileID: id, Domain: "a.example.com"}).Error; err != nil {
+	if err := testDB.Create(&models.Subdomain{ProfileID: id, Domain: "a.example.com"}).Error; err != nil {
 		t.Fatalf("seeding: %v", err)
 	}
-	if err := database.DB.Model(&models.Profile{}).Where("id = ?", id).
-		Update("is_scanning", true).Error; err != nil {
+	if err := testDB.Create(&models.ScanJob{ProfileID: id.String(), State: "running"}).Error; err != nil {
 		t.Fatalf("seeding the scan lock: %v", err)
 	}
 
@@ -217,14 +215,14 @@ func TestDeleteIsRefusedWhileScanning(t *testing.T) {
 	}
 
 	var children int64
-	database.DB.Raw("SELECT COUNT(*) FROM subdomains WHERE profile_id = ?", id).Scan(&children)
+	testDB.Raw("SELECT COUNT(*) FROM subdomains WHERE profile_id = ?", id).Scan(&children)
 	if children != 1 {
 		t.Errorf("the refused delete removed %d child row(s); it must remove none", 1-children)
 	}
 
 	// And the lock it did not take must still be held by the run that owns it.
 	var scanning bool
-	database.DB.Raw("SELECT is_scanning FROM profiles WHERE id = ?", id).Scan(&scanning)
+	testDB.Raw("SELECT EXISTS(SELECT 1 FROM scan_jobs WHERE profile_id = ? AND state = 'running')", id).Scan(&scanning)
 	if !scanning {
 		t.Error("the refused delete released a scan lock it never held")
 	}
@@ -248,7 +246,7 @@ func TestDeleteReleasesTheLockOnFailure(t *testing.T) {
 	}
 
 	var rows int64
-	database.DB.Raw("SELECT COUNT(*) FROM profiles WHERE id = ?", profile.ID).Scan(&rows)
+	testDB.Raw("SELECT COUNT(*) FROM profiles WHERE id = ?", profile.ID).Scan(&rows)
 	if rows != 0 {
 		t.Error("the profile row survived a successful delete")
 	}
@@ -293,7 +291,7 @@ func TestEditScheduleReturnsTheValueItWrote(t *testing.T) {
 	}
 
 	var stored string
-	database.DB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&stored)
+	testDB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&stored)
 	if stored != want {
 		t.Errorf("the stored schedule is %q, want %q", stored, want)
 	}
@@ -305,7 +303,7 @@ func TestEditScheduleRejectsAnUnparseableValue(t *testing.T) {
 	h := newServerWithUsers(t)
 
 	var before string
-	database.DB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&before)
+	testDB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&before)
 
 	req := httptest.NewRequest(http.MethodPut, "/api/profiles/"+profile.ID.String()+"/schedule",
 		strings.NewReader(`{"schedule":"whenever"}`))
@@ -319,7 +317,7 @@ func TestEditScheduleRejectsAnUnparseableValue(t *testing.T) {
 	}
 
 	var after string
-	database.DB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&after)
+	testDB.Raw("SELECT schedule FROM profiles WHERE id = ?", profile.ID).Scan(&after)
 	if after != before {
 		t.Errorf("the stored schedule changed from %q to %q despite the 400", before, after)
 	}
