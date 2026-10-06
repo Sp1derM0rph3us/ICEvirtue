@@ -157,22 +157,7 @@ func (run *FindingStore) diffVulns(id *uuid.UUID, rows []models.Vulnerability) (
 	})
 }
 func (run *FindingStore) diffDirectories(id *uuid.UUID, rows []models.DirectoryFinding) (int, error) {
-	return storeRows(run, *id, "directories", rows, func(tx *gorm.DB, d models.DirectoryFinding) (bool, bool, *string, error) {
-		d.ProfileID = *id
-		host := hostkey.NormalizeOrNil(d.SubdomainURL)
-		var old models.DirectoryFinding
-		e := tx.Where("profile_id=? AND dir_url=?", *id, d.DirURL).First(&old).Error
-		if errors.Is(e, gorm.ErrRecordNotFound) {
-			e = tx.Create(&d).Error
-			return e == nil, e == nil, host, e
-		}
-		if e != nil {
-			return false, false, host, e
-		}
-		changed := old.StatusCode != d.StatusCode
-		e = tx.Model(&old).Updates(map[string]any{"last_seen": time.Now().UTC(), "host": host, "status_code": d.StatusCode}).Error
-		return false, changed, host, e
-	})
+	return run.storeDirectoryObservations(*id, rows, nil)
 }
 func (run *FindingStore) diffSecrets(id *uuid.UUID, rows []models.SecretFinding) (int, error) {
 	return storeRows(run, *id, "secrets", rows, func(tx *gorm.DB, s models.SecretFinding) (bool, bool, *string, error) {

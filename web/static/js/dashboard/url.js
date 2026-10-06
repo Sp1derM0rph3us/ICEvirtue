@@ -31,6 +31,7 @@ function readViewState() {
   state.viewState.nodeTab = SUB_TABS.includes(nodeTab) ? nodeTab : 'vulns';
   state.viewState.sort = SORTS.includes(sort) ? sort : 'name-asc';
   state.viewState.filter = FILTERS.includes(filter) ? filter : null;
+  state.viewState.assessment = ['confirmed','unknown'].includes(q.get('assessment')) ? q.get('assessment') : 'all';
   // A node name is only ever compared and displayed, never used to build a path,
   // but it still reaches the DOM, so it goes through esc() at every use site.
   state.viewState.node = node && node.length <= 253 ? node : null;
@@ -63,6 +64,7 @@ export function writeViewState() {
   if (state.viewState.profilesSize !== DEFAULT_PROFILES_SIZE) q.set('profiles_size', String(state.viewState.profilesSize));
   if (state.viewState.sort !== 'name-asc') q.set('sort', state.viewState.sort);
   if (state.viewState.filter) q.set('filter', state.viewState.filter);
+  if (state.viewState.node && state.viewState.nodeTab === 'dirs' && state.viewState.assessment !== 'all') q.set('assessment', state.viewState.assessment);
   const search = q.toString();
   history.replaceState(null, '', search ? `?${search}` : location.pathname);
 }

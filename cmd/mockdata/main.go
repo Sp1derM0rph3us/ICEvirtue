@@ -90,6 +90,7 @@ func (f *fixture) seedPrimaryProfile(now time.Time) {
 
 	app := f.createAsset(profile, "app.acme.example.com", now.AddDate(0, 0, -45), now.AddDate(0, 0, -1), now)
 	api := f.createAsset(profile, "api.acme.example.com", now.AddDate(0, 0, -30), now.AddDate(0, 0, -4), now)
+	auth := f.createAsset(profile, "auth.acme.example.com", now.AddDate(0, 0, -5), now.AddDate(0, 0, -1), now)
 	admin := f.createAsset(profile, "admin.acme.example.com", now.AddDate(0, 0, -20), now.Add(-7*24*time.Hour), now)
 	f.createAsset(profile, "legacy.acme.example.com", now.AddDate(0, 0, -70), now.AddDate(0, 0, -70), now)
 	f.createAsset(profile, "quiet.acme.example.com", now.AddDate(0, 0, -10), now.AddDate(0, 0, -10), now)
@@ -101,6 +102,7 @@ func (f *fixture) seedPrimaryProfile(now time.Time) {
 	f.createHost(profile, "http://app.acme.example.com", "203.0.113.10", "Acme customer portal", "cloudflare", 301, "Cloudflare")
 	f.createHost(profile, "https://api.acme.example.com", "203.0.113.11", "Acme API", "nginx", 403, "Unknown WAF")
 	f.createHost(profile, "https://admin.acme.example.com", "203.0.113.12", "Admin console", "nginx", 200, "none")
+	f.createHost(profile, "https://auth.acme.example.com", "203.0.113.13", "Acme sign-in redirect", "nginx", 302, "none")
 	f.createHost(profile, "http://203.0.113.42", "203.0.113.42", "Legacy endpoint", "Apache", 301, "none")
 
 	f.createVulnerability(profile, app, "missing-hsts", "https://app.acme.example.com", "critical", "HSTS header missing", "The application does not set a Strict-Transport-Security header.")
@@ -115,6 +117,24 @@ func (f *fixture) seedPrimaryProfile(now time.Time) {
 	f.createDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/backup.zip", 200)
 	f.createDirectory(profile, api, "https://api.acme.example.com", "https://api.acme.example.com/v1", 200)
 	f.createDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/debug", 405)
+
+	// Ambiguous paths remain available for review without inflating confirmed counts.
+	f.createAssessedDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/account", 200, "unknown", "matches_missing_paths")
+	f.createAssessedDirectory(profile, api, "https://api.acme.example.com", "https://api.acme.example.com/private", 403, "unknown", "matches_missing_paths")
+	f.createAssessedDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/internal", 405, "unknown", "baseline_unstable")
+	f.createAssessedDirectory(profile, auth, "https://auth.acme.example.com", "https://auth.acme.example.com/reports", 302, "unknown", "matches_missing_paths")
+	f.createAssessedDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/old-export", 200, "legacy", "")
+
+	// Each redirect is attributed to its source node. Destination enumeration is
+	// independent of scope; preview.acme.example.com has not been enumerated.
+	f.createAssessedDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/admin-console", 301, "unknown", "cross_host")
+	f.createAssessedDirectory(profile, app, "https://app.acme.example.com", "https://app.acme.example.com/preview", 307, "unknown", "cross_host")
+	f.createAssessedDirectory(profile, admin, "https://admin.acme.example.com", "https://admin.acme.example.com/sso", 303, "unknown", "cross_scope")
+	f.createRedirect(profile, app, "https://app.acme.example.com/admin-console", "https://admin.acme.example.com/login", "admin.acme.example.com", "cross_host", true, 301, now)
+	f.createRedirect(profile, app, "https://app.acme.example.com/preview", "https://preview.acme.example.com/", "preview.acme.example.com", "cross_host", false, 307, now)
+	f.createRedirect(profile, admin, "https://admin.acme.example.com/sso", "https://login.identity.example.net/authorize", "login.identity.example.net", "cross_scope", false, 303, now)
+	// Root redirects exist even without a corresponding directory finding.
+	f.createRedirect(profile, auth, "https://auth.acme.example.com", "https://login.identity.example.net/authorize", "login.identity.example.net", "cross_scope", false, 302, now)
 
 	f.createSecret(profile, models.SecretFinding{
 		SourceURL:   "https://app.acme.example.com/static/app.9f4a.js",
@@ -190,8 +210,18 @@ func (f *fixture) createVulnerability(profile models.Profile, host, templateID, 
 }
 
 func (f *fixture) createDirectory(profile models.Profile, host, subdomainURL, dirURL string, status int) {
-	if err := f.create(&models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: subdomainURL, DirURL: dirURL, StatusCode: status}); err != nil {
+	f.createAssessedDirectory(profile, host, subdomainURL, dirURL, status, "confirmed", "distinct_from_missing_paths")
+}
+
+func (f *fixture) createAssessedDirectory(profile models.Profile, host, subdomainURL, dirURL string, status int, assessment, reason string) {
+	if err := f.create(&models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: subdomainURL, DirURL: dirURL, StatusCode: status, Assessment: assessment, AssessmentReason: reason}); err != nil {
 		f.err = fmt.Errorf("creating directory for %s: %v", host, err)
+	}
+}
+
+func (f *fixture) createRedirect(profile models.Profile, host, sourceURL, destinationURL, destinationHost, kind string, enumerated bool, status int, observedAt time.Time) {
+	if err := f.create(&models.RedirectObservation{ProfileID: profile.ID, Host: host, SourceURL: sourceURL, DestinationURL: destinationURL, DestinationHost: destinationHost, Kind: kind, PreviouslyEnumerated: enumerated, StatusCode: status, ObservedAt: observedAt}); err != nil {
+		f.err = fmt.Errorf("creating redirect for %s: %v", host, err)
 	}
 }
 

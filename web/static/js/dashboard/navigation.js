@@ -155,6 +155,7 @@ export function switchDiscTab(tab, load = true) {
 export function openSubDashboard(host, label) {
   state.viewState.node = host;
   state.viewState.nodeTab = 'vulns';
+  state.viewState.assessment = 'all';
   state.viewState.page = 1;
   state.viewState.size = defaultSizeForView();
   state.viewState.filter = null;

@@ -172,6 +172,8 @@ func NewRouter(cfg Config) (http.Handler, error) {
 				r.Get("/vulnerabilities/severity-summary", a.getVulnerabilitySeveritySummary)
 				r.Get("/vulnerabilities", a.getProfileVulnerabilities)
 				r.Get("/directories", a.getProfileDirectories)
+				r.Get("/redirects", a.getProfileRedirects)
+				r.Get("/redirects/summary", a.getRedirectSummary)
 			})
 		})
 

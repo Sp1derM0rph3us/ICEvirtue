@@ -2,7 +2,8 @@ package models
 
 import "time"
 
-const ModularitySchema = "2026_10_modularity_v1"
+const WorkerSchemaV1 = "2026_10_modularity_v1"
+const ModularitySchema = "2026_10_directory_validation_v1"
 
 type ScanRun struct {
 	NewFindings int        `json:"new_findings"`

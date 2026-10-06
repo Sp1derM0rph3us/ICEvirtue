@@ -352,6 +352,7 @@
                 <button data-click="control-28" id="filter-btn-status-2xx-3xx" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">2xx/3xx</button>
                 <button data-click="control-29" id="filter-btn-status-403" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">403 Block</button>
                 <button data-click="control-30" id="filter-btn-status-other" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Others</button>
+                <button type="button" id="filter-btn-unknown-directories" class="filter-pill chroma-filter-pill">Unknown directories</button>
                 <button data-click="control-31" id="filter-btn-updated" class="filter-pill px-4 py-2 rounded-sm text-[11px] font-sans font-black border transition-all uppercase tracking-widest bg-transparent text-slate-600 border-slate-800 hover:border-accent hover:text-accent">Last Sync</button>
                 </div>
             </div>
@@ -459,6 +460,12 @@
 
                         <!-- Directories Tab -->
                         <div id="sub-content-dirs" class="hidden">
+                            <div class="sub-dirs-controls">
+                              <label class="directory-assessment-control" for="directory-assessment-filter">Directory assessment
+                                <select id="directory-assessment-filter"><option value="all">All</option><option value="confirmed">Confirmed</option><option value="unknown">Unknown</option></select>
+                              </label>
+                              <button type="button" id="node-redirect-details" class="chroma-button-secondary text-xs hidden">Redirect destinations</button>
+                            </div>
                             <table class="chroma-table chroma-desktop-table w-full text-left bg-card font-sans">
                                 <thead class="bg-black border-b border-slate-900">
                                     <tr class="text-slate-500 text-xs uppercase tracking-widest">
@@ -511,8 +518,13 @@
 
     </main>
 
+    <dialog id="redirect-details-dialog" class="redirect-details-dialog">
+      <div class="st-panel-h"><h2 id="redirect-details-title">Redirect observations</h2><button type="button" id="redirect-details-close" class="chroma-button-secondary text-xs" aria-label="Close redirect observations">Close</button></div>
+      <ul id="redirect-details-list"></ul>
+      <div class="redirect-details-pager"><button type="button" id="redirect-details-prev" class="chroma-button-secondary text-xs">Previous</button><span id="redirect-details-page"></span><button type="button" id="redirect-details-next" class="chroma-button-secondary text-xs">Next</button></div>
+    </dialog>
     <div id="severity-tooltip" role="tooltip" class="chroma-severity-tooltip hidden px-3 py-2 text-left">
-        <div class="text-[10px] font-sans font-black uppercase tracking-widest text-slate-500">Nuclei findings</div>
+        <div id="severity-tooltip-title" class="text-[10px] font-sans font-black uppercase tracking-widest text-slate-500">Nuclei findings</div>
         <div id="severity-tooltip-content" class="mt-2 text-xs text-slate-300"></div>
     </div>
 

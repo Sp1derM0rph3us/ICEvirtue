@@ -20,6 +20,10 @@ func TestStreamingFuzzerDeduplicatesAndPersists(t *testing.T) {
 		mu.Lock()
 		requests[r.URL.Path]++
 		mu.Unlock()
+		if r.URL.Path != "/admin" && r.URL.Path != "/login" {
+			http.NotFound(w, r)
+			return
+		}
 		w.WriteHeader(200)
 	}))
 	defer server.Close()
@@ -34,7 +38,7 @@ func TestStreamingFuzzerDeduplicatesAndPersists(t *testing.T) {
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if requests["/admin"] != 1 || requests["/login"] != 1 {
+	if requests["/admin"] != 2 || requests["/login"] != 2 {
 		t.Fatalf("not deduplicated: %v", requests)
 	}
 	var count int64

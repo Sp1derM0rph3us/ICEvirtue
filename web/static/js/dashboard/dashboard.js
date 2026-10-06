@@ -1,3 +1,4 @@
+import { setupRedirectDetails, showRedirectDetails } from './redirects.js';
 import { mountHistory } from './history.js';
 import { closeEditModal, closeSubDashboard, deleteTarget, editSchedule, forceScan, goToPage, goToProfilesPage, hideSeverityTooltip, loadCurrentView, loadHomeOverview, loadNodeAddresses, loadProfilesPage, onHomeProfileChanged, onPageSizeChanged, onProfileChanged, onProfilesPageSizeChanged, onSortChanged, openSeverityTooltip, openSubDashboard, populateMinutes, refreshProfiles, reloadCurrentPage, renderCurrentView, renderProfileRows, resetFilterPills, scheduleLabel, scheduleSeverityTooltip, switchDiscTab, switchSubDashboardTab, switchView, syncSizeSelect, toggleFilter, toggleTheme } from './views.js';
 import { api, logout } from './api.js';
@@ -133,7 +134,7 @@ const handleProfileAction = e => {
 document.getElementById('view-discoveries').addEventListener('click', e => {
   const btn = e.target.closest('[data-action="open-node"]');
   if (btn) openSubDashboard(btn.dataset.domain, btn.dataset.label);
-  const badge = e.target.closest('[data-action="show-severity-summary"]');
+  const badge = e.target.closest('[data-action="show-severity-summary"], [data-action="show-redirect-summary"]');
   // Let the click's automatic viewport scroll finish before opening the overlay.
   if (badge) requestAnimationFrame(() => openSeverityTooltip(badge));
 });
@@ -141,21 +142,21 @@ document.getElementById('view-discoveries').addEventListener('click', e => {
 // Delegation survives table redraws. pointerover/out are used because their
 // mouseenter/leave counterparts do not bubble from generated badges.
 document.getElementById('view-discoveries').addEventListener('pointerover', e => {
-  const badge = e.target.closest('[data-action="show-severity-summary"]');
+  const badge = e.target.closest('[data-action="show-severity-summary"], [data-action="show-redirect-summary"]');
   if (!badge || e.relatedTarget && badge.contains(e.relatedTarget)) return;
   scheduleSeverityTooltip(badge);
 });
 document.getElementById('view-discoveries').addEventListener('pointerout', e => {
-  const badge = e.target.closest('[data-action="show-severity-summary"]');
+  const badge = e.target.closest('[data-action="show-severity-summary"], [data-action="show-redirect-summary"]');
   if (!badge || e.relatedTarget && badge.contains(e.relatedTarget)) return;
   hideSeverityTooltip();
 });
 document.getElementById('view-discoveries').addEventListener('focusin', e => {
-  const badge = e.target.closest('[data-action="show-severity-summary"]');
+  const badge = e.target.closest('[data-action="show-severity-summary"], [data-action="show-redirect-summary"]');
   if (badge) openSeverityTooltip(badge);
 });
 document.getElementById('view-discoveries').addEventListener('focusout', e => {
-  if (e.target.closest('[data-action="show-severity-summary"]')) hideSeverityTooltip();
+  if (e.target.closest('[data-action="show-severity-summary"], [data-action="show-redirect-summary"]')) hideSeverityTooltip();
 });
 document.getElementById('table-subs').addEventListener('scroll', hideSeverityTooltip, {
   passive: true
@@ -347,3 +348,17 @@ document.addEventListener('change', event => {
 connectEvents();
 
 mountHistory();
+
+setupRedirectDetails();
+// The full source -> destination redirect list is now reached only from inside a
+// node, where the detail belongs. loadNodeAddresses reveals this button when the
+// open node actually has redirects.
+document.getElementById('node-redirect-details').addEventListener('click', () => {
+  if (state.viewState.node) showRedirectDetails(state.viewState.node);
+});
+document.getElementById('filter-btn-unknown-directories').addEventListener('click', () => toggleFilter('unknown-directories'));
+document.getElementById('directory-assessment-filter').addEventListener('change', e => {
+  state.viewState.assessment = e.target.value;
+  state.viewState.page = 1;
+  loadCurrentView();
+});

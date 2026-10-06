@@ -18,6 +18,7 @@ import (
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/database"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/jobs"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/wordlists"
 )
 
 func TestWorkerEngineHelper(t *testing.T) {
@@ -30,7 +31,15 @@ func TestWorkerEngineHelper(t *testing.T) {
 		t.Fatal(e)
 	}
 	defer s.Close()
-	c := NewCoordinator(s.DB, nil)
+	var uploads *wordlists.Store
+	if dir := os.Getenv("ICEVIRTUE_TEST_UPLOADS"); dir != "" {
+		uploads, e = wordlists.OpenWorker(s.DB, dir)
+		if e != nil {
+			t.Fatal(e)
+		}
+		defer uploads.Close()
+	}
+	c := NewCoordinator(s.DB, uploads)
 	c.SetTools(NewToolchain(os.Getenv("ICEVIRTUE_TEST_HOME"), os.Getenv("ICEVIRTUE_TEST_TOOLS"), ""))
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM)
 	defer stop()

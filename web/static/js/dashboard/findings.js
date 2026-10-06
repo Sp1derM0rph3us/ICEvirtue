@@ -1,3 +1,4 @@
+import { nodeObservationBadges, renderRedirectSummary } from './redirects.js';
 import { SEVERITY_TOOLTIP_DELAY, mobileLayout, state } from './state.js';
 import { apiJSON } from './api.js';
 import { activeView, writeViewState } from './url.js';
@@ -40,21 +41,25 @@ export function openSeverityTooltip(badge) {
   const tooltip = document.getElementById('severity-tooltip');
   const content = document.getElementById('severity-tooltip-content');
   const host = badge.dataset.host;
-  const cacheKey = `${state.viewState.profile}:${host}`;
+  const redirect = badge.dataset.action === 'show-redirect-summary';
+  const kind = badge.dataset.kind || '';
+  document.getElementById('severity-tooltip-title').textContent = redirect ? (kind === 'cross_host' ? 'Cross-Host Redirect' : kind === 'cross_scope' ? 'Cross-Scope Redirect' : 'Redirect destinations') : 'Severity breakdown';
+  const render = redirect ? renderRedirectSummary : renderSeverityTooltip;
+  const cacheKey = `${state.viewState.profile}:${host}:${redirect ? kind : 'severity'}`;
   const request = ++state.severityTooltipRequest;
   tooltip.classList.remove('hidden');
   placeSeverityTooltip(badge);
   const cached = state.severitySummaryCache.get(cacheKey);
   if (cached) {
-    renderSeverityTooltip(cached);
+    render(cached);
     return;
   }
   content.textContent = 'Loading…';
-  apiJSON(`/api/profiles/${encodeURIComponent(state.viewState.profile)}/vulnerabilities/severity-summary?host=${encodeURIComponent(host)}`).then(rows => {
+  apiJSON(redirect ? `/api/profiles/${encodeURIComponent(state.viewState.profile)}/redirects/summary?host=${encodeURIComponent(host)}&kind=${encodeURIComponent(kind)}` : `/api/profiles/${encodeURIComponent(state.viewState.profile)}/vulnerabilities/severity-summary?host=${encodeURIComponent(host)}`).then(rows => {
     if (request !== state.severityTooltipRequest || state.severityTooltipBadge !== badge) return;
     const summary = Array.isArray(rows) ? rows : [];
     state.severitySummaryCache.set(cacheKey, summary);
-    renderSeverityTooltip(summary);
+    render(summary);
     placeSeverityTooltip(badge);
   }).catch(() => {
     if (request === state.severityTooltipRequest && state.severityTooltipBadge === badge) {
@@ -86,12 +91,12 @@ export function buildSubRow(s) {
     statusHtml = `<span class="px-3 py-1 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${code}</span>`;
   }
   let findingsHtml = '';
-  if (!s.vuln_count && !s.dir_count && !s.secret_count) {
+  if (!s.vuln_count && !s.dir_count && !s.secret_count && !s.cross_host_count && !s.cross_scope_count) {
     findingsHtml = `<span class="text-slate-800 text-xs font-sans font-black tracking-widest">---</span>`;
   } else {
-    if (s.vuln_count > 0) findingsHtml += `<button type="button" data-action="show-severity-summary" data-host="${esc(s.host)}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-finding-badge inline-flex items-center gap-1.5 px-2.5 py-1 text-[10px] font-sans font-black">${countLabel(s.vuln_count)} Findings</button> `;
-    if (s.dir_count > 0) findingsHtml += `<span class="chroma-status chroma-status--idle">${countLabel(s.dir_count)} directories</span> `;
-    if (s.secret_count > 0) findingsHtml += `<span class="chroma-status chroma-status--idle">${countLabel(s.secret_count)} credentials</span>`;
+    if (s.vuln_count > 0) findingsHtml += `<button type="button" data-action="show-severity-summary" data-host="${esc(s.host)}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-obs-badge chroma-obs-badge--alert">${countLabel(s.vuln_count)} Findings</button> `;
+    findingsHtml += nodeObservationBadges(s);
+    if (s.secret_count > 0) findingsHtml += `<span class="chroma-obs-badge chroma-obs-badge--idle">${countLabel(s.secret_count)} credentials</span>`;
   }
 
   // A node can only be opened when it has a correlation key. Without one there
@@ -161,13 +166,26 @@ export function buildVulnRow(v) {
             `;
   return tr;
 }
+function directoryAssessmentNote(d) {
+  const reason = {
+    matches_missing_paths: 'Matches nonexistent paths', baseline_unstable: 'Baseline could not be established',
+    response_unstable: 'Response changed during validation', cross_host: 'Redirects to another host in this profile',
+    cross_scope: 'Redirects outside this profile', body_limit: 'Response exceeds inspection limit', body_unreadable: 'Response body could not be read',
+    redirect_loop: 'Redirect loop', redirect_limit: 'Redirect limit reached', redirect_boundary: 'Redirect crosses permitted transport boundary',
+    invalid_redirect: 'Invalid redirect destination', request_failed: 'Request could not be completed',
+    distinct_from_missing_paths: 'Confirmed against nonexistent paths'
+  };
+  return d.Assessment === 'legacy' || !d.Assessment ? 'Legacy · recorded before validation' : `HTTP ${d.StatusCode} · ${reason[d.AssessmentReason] || d.Assessment}`;
+}
 export function buildDirRow(d) {
   let statusClass = 'bg-slate-900 text-slate-600 border-slate-800';
   if (d.StatusCode === 200) statusClass = 'bg-emerald-950/40 text-emerald-500 border-emerald-900/50';else if (d.StatusCode === 301 || d.StatusCode === 302 || d.StatusCode === 307) statusClass = 'bg-blue-950/40 text-blue-400 border-blue-900/50';else if (d.StatusCode === 403 || d.StatusCode === 401) statusClass = 'bg-orange-950/40 text-orange-400 border-orange-900/50';
+  if (d.Assessment === 'unknown') statusClass = 'text-orange-400 border-orange-900/50';
   const tr = document.createElement('tr');
   tr.className = 'hover:bg-accent/[0.04] transition-colors group';
   tr.innerHTML = `
-                <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${esc(d.StatusCode)}</span></td>
+                <td class="p-4"><span class="px-3 py-1.5 border rounded-sm text-[11px] font-sans font-black tracking-widest ${statusClass}">${esc(d.Assessment === "unknown" ? "Unknown" : d.StatusCode)}</span>
+ <small class="directory-assessment-note">${esc(directoryAssessmentNote(d))}</small></td>
                 <td class="p-4 font-mono text-xs font-bold tracking-tight"><a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer" class="text-accent hover:text-white transition-colors break-all">${esc(d.DirURL)}</a></td>
             `;
   return tr;
@@ -183,7 +201,7 @@ export function buildSubCard(s) {
   const host = esc(s.host || '');
   const title = s.host ? `<button type="button" data-action="open-node" data-domain="${host}" data-label="${domain}" class="chroma-accent text-left">${domain}</button>` : domain;
   const status = s.status_code == null ? 'No response recorded' : esc(s.status_code);
-  const badges = [s.vuln_count > 0 ? `<button type="button" data-action="show-severity-summary" data-host="${host}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-finding-badge px-2 py-1">${countLabel(s.vuln_count)} Findings</button>` : '', s.dir_count > 0 ? `<span class="chroma-status chroma-status--idle">${countLabel(s.dir_count)} directories</span>` : '', s.secret_count > 0 ? `<span class="chroma-status chroma-status--idle">${countLabel(s.secret_count)} credentials</span>` : ''].filter(Boolean).join(' ');
+  const badges = [s.vuln_count > 0 ? `<button type="button" data-action="show-severity-summary" data-host="${host}" aria-label="${countLabel(s.vuln_count)} Nuclei findings; focus for severity breakdown" aria-describedby="severity-tooltip" aria-expanded="false" class="findings-summary-badge chroma-obs-badge chroma-obs-badge--alert">${countLabel(s.vuln_count)} Findings</button>` : '', nodeObservationBadges(s), s.secret_count > 0 ? `<span class="chroma-obs-badge chroma-obs-badge--idle">${countLabel(s.secret_count)} credentials</span>` : ''].filter(Boolean).join(' ');
   const actions = s.host ? `<button type="button" data-action="open-node" data-domain="${host}" data-label="${domain}" class="chroma-button-secondary">Open node</button>` : '';
   return mobileCard(title, [['HTTP status', status], ['Observations', badges || 'None recorded'], ['First seen', esc(new Date(s.first_seen).toLocaleDateString())], ['Last sync', esc(new Date(s.last_changed).toLocaleDateString())]], actions);
 }
@@ -198,7 +216,7 @@ export function buildVulnCard(v) {
   return mobileCard(esc(v.Name || 'Unnamed finding'), [['Severity', `<span class="chroma-priority-badge ${level}">${esc(v.Severity || 'Unknown')}</span>`], ['Template', `<code>${esc(v.TemplateID)}</code>`]]);
 }
 export function buildDirCard(d) {
-  return mobileCard(esc(d.DirURL), [['HTTP status', esc(d.StatusCode)], ['URL', `<a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer">Open directory URL</a>`]]);
+  return mobileCard(esc(d.DirURL), [['HTTP status', esc(d.Assessment === 'unknown' ? 'Unknown' : d.StatusCode)], ['Assessment', esc(directoryAssessmentNote(d))], ['URL', `<a href="${esc(safeURL(d.DirURL))}" target="_blank" rel="noopener noreferrer">Open directory URL</a>`]]);
 }
 export function renderRows(tbodyId, mobileId, rows, tableBuilder, cardBuilder, colspan, emptyMessage) {
   const mobile = document.getElementById(mobileId);
@@ -261,7 +279,7 @@ export function renderNewFindingsBadge() {
   badge.classList.toggle('hidden', total === 0);
   badge.classList.toggle('flex', total > 0);
   if (total === 0) return;
-  const parts = Object.entries(state.pendingNewFindings).map(([kind, n]) => `${n} ${kind}`).join(', ');
+  const parts = Object.entries(state.pendingNewFindings).map(([kind, n]) => `${n} ${kind === "unknown_directories" ? "Unknown directories" : kind}`).join(', ');
   document.getElementById('new-findings-text').textContent = `${parts} — refresh`;
 }
 
@@ -306,6 +324,7 @@ export async function loadCurrentView() {
     // A node's tab. host scopes it server-side, replacing three client-side
     // filter passes over the whole dataset.
     params.set('host', state.viewState.node);
+    if (view === 'dirs') params.set('assessment', state.viewState.assessment || 'all');
     path = view === 'dirs' ? `${base}/directories` : view === 'nodesecs' ? `${base}/secrets` : `${base}/vulnerabilities`;
   }
   try {
@@ -313,6 +332,10 @@ export async function loadCurrentView() {
     if (token.abort) return;
     state.currentRows = body.data || [];
     state.pageMeta = body.page || state.pageMeta;
+    if (view === 'dirs') {
+      state.viewState.assessment = body.page.assessment || 'all';
+      document.getElementById('directory-assessment-filter').value = state.viewState.assessment;
+    }
 
     // The server is the authority on what it served: it clamps size and pulls
     // an out-of-range page back into the set. Adopting its answer is what keeps
@@ -390,8 +413,13 @@ export async function loadNodeAddresses() {
   const profileID = state.viewState.profile;
   const node = state.viewState.node;
   ipEl.textContent = 'IP: Resolving… | Checking WAF…';
-  const [hostResult, wafResult] = await Promise.allSettled([apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/hosts` + `?host=${encodeURIComponent(node)}&size=25`), apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/wafs?host=${encodeURIComponent(node)}`)]);
+  // The redirect summary rides along here so the node's Directories tab knows
+  // whether to offer "Redirect destinations": one lightweight request per node
+  // open, rather than keeping a flag in sync across the list and deep links.
+  const [hostResult, wafResult, redirectResult] = await Promise.allSettled([apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/hosts` + `?host=${encodeURIComponent(node)}&size=25`), apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/wafs?host=${encodeURIComponent(node)}`), apiJSON(`/api/profiles/${encodeURIComponent(profileID)}/redirects/summary?host=${encodeURIComponent(node)}`)]);
   if (request !== state.nodeInfoRequest || profileID !== state.viewState.profile || node !== state.viewState.node) return;
+  const redirectBtn = document.getElementById('node-redirect-details');
+  if (redirectBtn) redirectBtn.classList.toggle('hidden', !(redirectResult.status === 'fulfilled' && Array.isArray(redirectResult.value) && redirectResult.value.length > 0));
   let ipText = 'IP unavailable';
   if (hostResult.status === 'fulfilled') {
     const ips = [...new Set((hostResult.value.data || []).map(h => h.IP).filter(Boolean))];

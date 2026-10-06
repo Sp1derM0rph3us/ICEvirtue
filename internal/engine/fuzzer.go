@@ -6,13 +6,12 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"time"
+	"sync/atomic"
 
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	_ "github.com/glebarez/go-sqlite"
@@ -97,18 +96,23 @@ func (run *runner) RunDirectoryFuzzing(profile *models.Profile, hosts []models.A
 			return 0, e
 		}
 	}
-	transport := &http.Transport{MaxIdleConns: 100, MaxIdleConnsPerHost: 50, IdleConnTimeout: 10 * time.Second}
-	defer transport.CloseIdleConnections()
-	client := &http.Client{Transport: transport, Timeout: 10 * time.Second, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}
+	observer, closeObserver := newDirectoryObserver()
+	defer closeObserver()
+	cache := newBaselineCache(directoryWorkers)
+	type finding struct {
+		row      *models.DirectoryFinding
+		redirect *models.RedirectObservation
+	}
+	var unknown, confirmed, rejected, requestErrors, controls atomic.Int64
 	type job struct {
 		host models.AliveHost
 		word string
 	}
 	jobs := make(chan job, 100)
-	findings := make(chan models.DirectoryFinding, 100)
+	findings := make(chan finding, 100)
 	producerErr := make(chan error, 1)
 	var wg sync.WaitGroup
-	for i := 0; i < 50; i++ {
+	for i := 0; i < directoryWorkers; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -125,24 +129,39 @@ func (run *runner) RunDirectoryFuzzing(profile *models.Profile, hosts []models.A
 				if e != nil || parsed.Host != base.Host || parsed.Scheme != base.Scheme || parsed.User != nil {
 					continue
 				}
-				req, e := http.NewRequestWithContext(ctx, http.MethodGet, parsed.String(), nil)
-				if e != nil {
-					continue
+				obs, assessment, reason, baselineRequests := classifyDirectory(ctx, observer, cache, parsed, profile.Domain, run.knownHosts)
+				controls.Add(int64(baselineRequests))
+				if obs.initial == 0 && ctx.Err() == nil {
+					requestErrors.Add(1)
 				}
-				req.Header.Set("User-Agent", "ICEvirtue-Fuzzer/1.0")
-				response, e := client.Do(req)
-				if e != nil {
-					continue
+				if assessment == "unknown" {
+					unknown.Add(1)
+					if reason != "matches_missing_paths" && reason != "cross_host" && reason != "cross_scope" {
+						requestErrors.Add(1)
+					}
 				}
-				status := response.StatusCode
-				response.Body.Close()
-				if status == 200 || status == 301 || status == 302 || status == 403 || status == 405 {
+				if assessment == "confirmed" {
+					confirmed.Add(1)
+				}
+				if assessment == "" {
+					rejected.Add(1)
+				}
+				var row *models.DirectoryFinding
+				if assessment != "" {
+					row = &models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: j.host.URL, DirURL: parsed.String(), StatusCode: obs.initial, Assessment: assessment, AssessmentReason: reason}
+				}
+				if obs.redirect != nil {
+					obs.redirect.ProfileID = profile.ID
+					obs.redirect.Host = normalizedHostname(base)
+				}
+				if row != nil || obs.redirect != nil {
 					select {
-					case findings <- models.DirectoryFinding{ProfileID: profile.ID, SubdomainURL: j.host.URL, DirURL: parsed.String(), StatusCode: status}:
+					case findings <- finding{row, obs.redirect}:
 					case <-ctx.Done():
 						return
 					}
 				}
+
 			}
 		}()
 	}
@@ -182,29 +201,42 @@ func (run *runner) RunDirectoryFuzzing(profile *models.Profile, hosts []models.A
 	total := 0
 	var storageErr error
 	batch := make([]models.DirectoryFinding, 0, 100)
+	redirects := make([]models.RedirectObservation, 0, 100)
 	for finding := range findings {
-		batch = append(batch, finding)
-		if len(batch) == 100 {
+		if finding.row != nil {
+			batch = append(batch, *finding.row)
+		}
+		if finding.redirect != nil {
+			redirects = append(redirects, *finding.redirect)
+		}
+		if len(batch) >= 100 || len(redirects) >= 100 {
 			if storageErr == nil {
 				var added int
-				added, storageErr = run.storeDirectoryBatch(profile, batch)
+				added, storageErr = run.storeDirectoryObservations(profile, batch, redirects)
 				total += added
 				if storageErr != nil {
 					cancel()
 				}
 			}
 			batch = batch[:0]
+			redirects = redirects[:0]
 		}
 	}
-	if len(batch) > 0 {
+	if len(batch) > 0 || len(redirects) > 0 {
 		if storageErr == nil {
 			var added int
-			added, storageErr = run.storeDirectoryBatch(profile, batch)
+			added, storageErr = run.storeDirectoryObservations(profile, batch, redirects)
 			total += added
 			if storageErr != nil {
 				cancel()
 			}
 		}
 	}
-	return total, errors.Join(<-producerErr, ctx.Err(), storageErr)
+	run.fuzzerSummary = fmt.Sprintf("%d baseline requests; %d confirmed observations; %d Unknown observations; %d rejected; %d validation errors", controls.Load(), confirmed.Load(), unknown.Load(), rejected.Load(), requestErrors.Load())
+	logf("[Directory validation] %s", run.fuzzerSummary)
+	var validationErr error
+	if requestErrors.Load() > 0 {
+		validationErr = fmt.Errorf("directory validation incomplete: %d observations could not be validated", requestErrors.Load())
+	}
+	return total, errors.Join(<-producerErr, ctx.Err(), storageErr, validationErr)
 }

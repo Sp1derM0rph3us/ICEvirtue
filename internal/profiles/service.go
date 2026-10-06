@@ -42,7 +42,7 @@ func (s Service) Delete(id uuid.UUID) error {
 		if e := tx.Where("profile_id=?", id.String()).Delete(&models.ScanRun{}).Error; e != nil {
 			return e
 		}
-		for _, m := range []any{&models.Subdomain{}, &models.AliveHost{}, &models.Vulnerability{}, &models.SecretFinding{}, &models.DirectoryFinding{}} {
+		for _, m := range []any{&models.Subdomain{}, &models.AliveHost{}, &models.Vulnerability{}, &models.SecretFinding{}, &models.DirectoryFinding{}, &models.RedirectObservation{}} {
 			if e := tx.Unscoped().Where("profile_id=?", id).Delete(m).Error; e != nil {
 				return e
 			}

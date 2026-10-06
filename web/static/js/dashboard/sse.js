@@ -40,6 +40,7 @@ export function connectEvents() {
         if (panel && !panel.classList.contains('hidden')) loadNotifications();
         return;
       }
+      if (data.type === 'discovery_update') state.severitySummaryCache = new Map();
       if (data.type !== 'discovery_update' || data.profile_id !== state.viewState.profile) return;
 
       // Count them and say so. This used to schedule a refetch of the entire

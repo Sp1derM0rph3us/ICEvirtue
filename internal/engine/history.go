@@ -51,6 +51,12 @@ func (run *runner) endStage(report *stageReport, stored int, storageErr error) e
 				}
 				note = "tool failed, timed out, or returned incomplete output"
 			}
+			if r.Summary != "" {
+				if note != "" {
+					note += "; "
+				}
+				note += r.Summary
+			}
 			// Tool names and skip reasons are application constants; raw errors are excluded.
 			row := models.ScanToolRun{Scope: "result", RunID: run.job.RunID, StageID: run.stageID, Name: r.Tool, Status: state, Summary: note, OutputCount: r.Count, StartedAt: r.StartedAt, FinishedAt: r.FinishedAt}
 			if e := tx.Create(&row).Error; e != nil {

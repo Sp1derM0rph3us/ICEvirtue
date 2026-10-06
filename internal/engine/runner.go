@@ -8,7 +8,9 @@ import (
 )
 
 type runner struct {
-	ctx context.Context
+	knownHosts    map[string]bool
+	fuzzerSummary string
+	ctx           context.Context
 	*FindingStore
 	executor ProcessExecutor
 	errMu    sync.Mutex

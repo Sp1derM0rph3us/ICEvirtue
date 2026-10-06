@@ -202,13 +202,22 @@ func (a *API) getProfileDirectories(w http.ResponseWriter, r *http.Request) {
 	}
 
 	q := parseListQuery(r, defaultPageDirectories, dirSorts, "url-asc")
+	q.Assessment = r.URL.Query().Get("assessment")
+	if q.Assessment != "confirmed" && q.Assessment != "unknown" {
+		q.Assessment = "all"
+	}
 	if q.HostUnresolvable() {
 		respondJSON(w, http.StatusOK, emptyPage[models.DirectoryFinding](q))
 		return
 	}
 
 	listPage[models.DirectoryFinding](a.queries, w, q, &models.DirectoryFinding{}, "",
-		profileScope(id, "directory_findings", hostScope(q, "directory_findings")), dirSorts[q.Sort])
+		profileScope(id, "directory_findings", hostScope(q, "directory_findings"), func(db *gorm.DB) *gorm.DB {
+			if q.Assessment != "all" {
+				return db.Where("assessment=?", q.Assessment)
+			}
+			return db
+		}), dirSorts[q.Sort])
 }
 
 func (a *API) getProfileSecrets(w http.ResponseWriter, r *http.Request) {

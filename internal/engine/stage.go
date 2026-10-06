@@ -22,6 +22,7 @@ import (
 // results and then died, or that was killed by its timeout partway through, has
 // still contributed everything it managed to emit, and that output is kept.
 type toolRun struct {
+	Summary               string
 	StartedAt, FinishedAt time.Time
 	Tool                  string
 	Count                 int

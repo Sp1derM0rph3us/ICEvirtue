@@ -96,7 +96,7 @@ func Open(dbPath string, migrate bool) (*Store, error) {
 		&models.AliveHost{},
 		&models.Vulnerability{},
 		&models.SecretFinding{},
-		&models.DirectoryFinding{},
+		&models.DirectoryFinding{}, &models.RedirectObservation{},
 	)
 	if err != nil {
 		return nil, err
@@ -143,6 +143,9 @@ func Open(dbPath string, migrate bool) (*Store, error) {
 	if err := store.migrateWorkers(); err != nil {
 		return nil, err
 	}
+	if err := db.Create(&models.SchemaMigration{Version: models.ModularitySchema}).Error; err != nil {
+		return nil, err
+	}
 	ok = true
 	log.Printf("[+] Database connected and migrated: %s", dbPath)
 	return store, nil
@@ -156,6 +159,13 @@ func (s *Store) Close() error {
 	return db.Close()
 }
 func (s *Store) migrateWorkers() error {
+	var applied int64
+	if err := s.DB.Model(&models.SchemaMigration{}).Where("version=?", models.WorkerSchemaV1).Count(&applied).Error; err != nil {
+		return err
+	}
+	if applied > 0 {
+		return nil
+	}
 	return s.DB.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Profile{}).Where("id IN (SELECT profile_id FROM scan_jobs WHERE state = 'running')").Update("last_scan_status", "interrupted: upgrade").Error; err != nil {
 			return err
@@ -176,6 +186,6 @@ func (s *Store) migrateWorkers() error {
 		if err := tx.Create(&models.SchedulerLease{ID: 1}).Error; err != nil {
 			return err
 		}
-		return tx.Create(&models.SchemaMigration{Version: models.ModularitySchema}).Error
+		return tx.Create(&models.SchemaMigration{Version: models.WorkerSchemaV1}).Error
 	})
 }

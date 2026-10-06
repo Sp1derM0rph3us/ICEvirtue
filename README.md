@@ -381,6 +381,8 @@ go run . --db-path mock-dashboard.db
 
 Sign in as `demo` with password `recon-demo`. The generated `mock-dashboard.db` and its WAL sidecars are ignored by Git. Run `go run ./cmd/mockdata --reset` to recreate it. The general Credentials tab shows both engines. Open the `app.acme.example.com` or `api.acme.example.com` node to inspect SecretHound risk, occurrences, description, and context. Mantra's unique finding is unattributed and appears only in the general tab; a duplicate Mantra finding is retained in the database but suppressed there. New fixtures use calendar schedules (daily and weekly), which the Profiles table shows with their time of day. Existing fixtures retain their stored `@every` interval until you recreate or edit them; the UI labels those as intervals without inventing a clock time.
 
+Directory fixtures include Confirmed, Unknown, and Legacy observations. Open `app.acme.example.com` to test assessment filters and Cross-Host redirects to both enumerated and unseen destinations. `api.acme.example.com` demonstrates a blanket `403`; `admin.acme.example.com` includes an unstable baseline and a Cross-Scope redirect. `auth.acme.example.com` retains a numeric root `302`, with an Unknown login-redirect directory and a separate root redirect observation. Use **Unknown directories** in Findings to locate ambiguous nodes. Recreate an existing fixture database to obtain these examples; stop its server before using `--reset`.
+
 To run the dev-only Chroma browser smoke suite against this disposable fixture, run `npm install` and `npx playwright install`, leave the dashboard running, then run `npm run test:ui`. The suite exercises Chromium, Firefox and WebKit at phone, tablet, desktop and short-landscape sizes; use `ICEVIRTUE_SMOKE_URL` if the server is not at `http://127.0.0.1:8888`. Do not point the suite at a production database: one test creates and removes a temporary profile.
 
 ## Troubleshooting
@@ -407,3 +409,5 @@ Temporary files follow `TMPDIR` (or the operating system default). Set `TMPDIR` 
 ICEvirtue is a work-in-progress and it is mainly created for my specific needs. Although I might add specific functionalities per request, you are much welcome to fork this project and use it as a baseline to start your own if you have specific needs or visions. This project is also created with the help of AI, so take much care when exposing it for access over the Net.
 
 That being said, it is being developed with ample focus on security, so you don't get ass whooped by another 'runner while you are asleep. I super appreciate bug reports and vulnerability disclosures, feel absolutely free to mess around with this project in your lab environment and report anything you may find. I will absolutely love to hear and fix such bugs.
+
+Directory discovery assessments, redirect visibility, filters, and upgrade steps are documented in [Directory discovery validation](docs/directory-discovery.md).

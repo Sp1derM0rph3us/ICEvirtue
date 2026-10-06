@@ -61,6 +61,7 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 		{"vulnerability", &models.Vulnerability{ProfileID: id, TemplateID: "t", URL: "https://a.example.com", Severity: "info"}},
 		{"secret", &models.SecretFinding{ProfileID: id, SourceURL: "https://a.example.com/x.js", SecretType: "aws", SecretValue: "AKIA"}},
 		{"directory", &models.DirectoryFinding{ProfileID: id, SubdomainURL: "https://a.example.com", DirURL: "https://a.example.com/admin", StatusCode: 200}},
+		{"redirect", &models.RedirectObservation{ProfileID: id, Host: "a.example.com", SourceURL: "https://a.example.com/admin", DestinationHost: "other.com", Kind: "cross_scope"}},
 	}
 	for _, s := range seed {
 		if err := testDB.Create(s.row).Error; err != nil {
@@ -82,6 +83,7 @@ func TestDeleteProfileRemovesEveryChildTable(t *testing.T) {
 		{"vulnerabilities", &models.Vulnerability{}},
 		{"secret_findings", &models.SecretFinding{}},
 		{"directory_findings", &models.DirectoryFinding{}},
+		{"redirect_observations", &models.RedirectObservation{}},
 	}
 	for _, tbl := range tables {
 		var n int64

@@ -24,7 +24,7 @@ func TestWorkerRequiresSchemaAndMigrationPreservesQueue(t *testing.T) {
 	s.DB.Create(&models.ScanJob{ProfileID: r.ID.String(), State: "running"})
 	s.DB.Exec("ALTER TABLE profiles ADD COLUMN is_scanning numeric")
 	s.DB.Exec("ALTER TABLE profiles ADD COLUMN is_queued numeric")
-	s.DB.Where("version=?", models.ModularitySchema).Delete(&models.SchemaMigration{})
+	s.DB.Where("version IN ?", []string{models.ModularitySchema, models.WorkerSchemaV1}).Delete(&models.SchemaMigration{})
 	s.DB.Where("id=1").Delete(&models.SchedulerLease{})
 	s.Close()
 	if worker, e := Open(path, false); e == nil {

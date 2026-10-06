@@ -233,14 +233,16 @@ type SecretFinding struct {
 }
 
 type DirectoryFinding struct {
-	ID uint `gorm:"primaryKey"`
+	Assessment       string `gorm:"not null;default:legacy;index:idx_dir_assessment,priority:3"`
+	AssessmentReason string
+	ID               uint `gorm:"primaryKey"`
 	// The widest of the finding tables — tens of thousands of rows for one profile —
 	// so idx_dir_host carries dir_url and status_code as well, making both the
 	// per-host COUNT(*) and the node's directory listing index-only.
-	ProfileID    uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_dir;index:idx_dir_host,priority:1,where:deleted_at IS NULL;not null"`
+	ProfileID    uuid.UUID      `gorm:"type:uuid;uniqueIndex:idx_profile_dir;index:idx_dir_host,priority:1,where:deleted_at IS NULL;index:idx_dir_assessment,priority:1,where:deleted_at IS NULL;not null"`
 	SubdomainURL string         `gorm:"uniqueIndex:idx_profile_dir;not null"`
-	Host         *string        `gorm:"index:idx_dir_host,priority:2"`
-	DirURL       string         `gorm:"uniqueIndex:idx_profile_dir;index:idx_dir_host,priority:3;not null"`
+	Host         *string        `gorm:"index:idx_dir_host,priority:2;index:idx_dir_assessment,priority:2"`
+	DirURL       string         `gorm:"uniqueIndex:idx_profile_dir;index:idx_dir_host,priority:3;index:idx_dir_assessment,priority:4;not null"`
 	StatusCode   int            `gorm:"index:idx_dir_host,priority:4"`
 	FirstSeen    time.Time      `gorm:"autoCreateTime"`
 	LastSeen     time.Time      `gorm:"autoUpdateTime"`

@@ -35,7 +35,7 @@ export const NAV_VIEWS = ['home', 'profiles', 'findings'];
 export const TABS = ['subs', 'secs'];
 export const SUB_TABS = ['vulns', 'dirs', 'secs'];
 export const SORTS = ['name-asc', 'name-desc', 'findings-desc', 'findings-asc', 'first-asc', 'first-desc', 'update-asc', 'update-desc'];
-export const FILTERS = ['ip', 'subdomain', 'vuln-critical', 'vuln-info', 'secrets', 'status-2xx-3xx', 'status-403', 'status-other', 'updated'];
+export const FILTERS = ['ip', 'subdomain', 'vuln-critical', 'vuln-info', 'secrets', 'status-2xx-3xx', 'status-403', 'status-other', 'updated', 'unknown-directories'];
 
 // A request that has not answered in this long has stopped being useful. There was
 // no timeout at all before -- not in the browser and not on the server, where
@@ -77,7 +77,8 @@ state.viewState = {
   page: 1,
   size: DEFAULT_SIZE.subs,
   sort: 'name-asc',
-  filter: null
+  filter: null,
+ assessment: 'all'
 };
 state.pageMeta = {
   page: 1,

@@ -2,6 +2,7 @@ package engine
 
 import (
 	"fmt"
+	"github.com/Sp1derM0rph3us/ICEvirtue/internal/hostkey"
 	"github.com/Sp1derM0rph3us/ICEvirtue/internal/models"
 	"path/filepath"
 	"strings"
@@ -73,9 +74,17 @@ func (run *runner) stageDiscovery(profile *models.Profile) ([]string, *stageRepo
 func (run *runner) stageValidation(profile *models.Profile, subdomains []string) ([]models.AliveHost, *stageReport) {
 	report := newStageReport("Stage 02 Validation", profile.Domain)
 
+	run.knownHosts = map[string]bool{}
+	for _, name := range subdomains {
+		if key := hostkey.Normalize(name); key != "" {
+			run.knownHosts[key] = true
+		}
+	}
 	hosts, err := run.RunHttpx(profile, subdomains)
 	report.record("httpx", len(hosts), err)
 
+	redirects, redirectErr := run.inspectRootRedirects(profile, hosts)
+	report.record("root redirects", redirects, redirectErr)
 	report.Unique = len(hosts)
 	return hosts, report
 }
@@ -97,6 +106,7 @@ func (run *runner) stageFuzzing(profile *models.Profile, targets []models.AliveH
 
 	dirs, err := run.RunDirectoryFuzzing(profile, targets, wordlists)
 	report.record("fuzzer", dirs, err)
+	report.runs[len(report.runs)-1].Summary = run.fuzzerSummary
 
 	report.Unique = dirs
 	return dirs, report
@@ -140,12 +150,12 @@ func (run *runner) targetHosts(profile *models.Profile, hosts []models.AliveHost
 		}
 
 		switch h.StatusCode {
-		case 200, 301, 302, 307:
+		case 200, 301, 302, 303, 307, 308:
 			targets = append(targets, h)
 		}
 	}
 
-	policy := "default (200, 301, 302, 307)"
+	policy := "default (200 and redirects)"
 	if run.config.Scan.WideTargets {
 		policy = "wide (any status except 404)"
 	}

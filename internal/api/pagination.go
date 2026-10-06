@@ -36,6 +36,7 @@ const (
 // returned a bare JSON array, which is what made truncation undetectable: there was
 // nothing in the response to distinguish a partial page from a complete one.
 type PageMeta struct {
+	Assessment string `json:"assessment,omitempty"`
 	Page       int    `json:"page"`
 	Size       int    `json:"size"`
 	TotalRows  int64  `json:"total_rows"`
@@ -55,10 +56,11 @@ type ListResponse[T any] struct {
 
 // listQuery is a validated set of list parameters.
 type listQuery struct {
-	Page int
-	Size int
-	Sort string // a key that is known to exist in the endpoint's allowlist
-	Host string // normalized; "" means no host scope
+	Assessment string
+	Page       int
+	Size       int
+	Sort       string // a key that is known to exist in the endpoint's allowlist
+	Host       string // normalized; "" means no host scope
 
 	// HostRequested records that the caller asked for a host scope, which has to be
 	// distinguishable from asking for none. A host that normalizes to nothing must
@@ -158,6 +160,7 @@ func (q listQuery) resolve(total int64) (offset int, meta PageMeta) {
 		TotalPages: totalPages,
 		Sort:       q.Sort,
 		Host:       q.Host,
+		Assessment: q.Assessment,
 	}
 }
 
@@ -167,7 +170,7 @@ func (q listQuery) resolve(total int64) (offset int, meta PageMeta) {
 func emptyPage[T any](q listQuery) ListResponse[T] {
 	return ListResponse[T]{
 		Data: []T{},
-		Page: PageMeta{Page: 1, Size: q.Size, TotalRows: 0, TotalPages: 1, Sort: q.Sort, Host: q.Host},
+		Page: PageMeta{Page: 1, Size: q.Size, TotalRows: 0, TotalPages: 1, Sort: q.Sort, Host: q.Host, Assessment: q.Assessment},
 	}
 }
 

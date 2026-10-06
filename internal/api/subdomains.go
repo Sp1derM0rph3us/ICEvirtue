@@ -4,6 +4,7 @@ import (
 	"log"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -28,9 +29,14 @@ import (
 // products of a query, not columns. Returning them from the server is what removes the
 // client-side correlation entirely.
 type subdomainRow struct {
-	ID     uint    `json:"id"`
-	Domain string  `json:"domain"`
-	Host   *string `json:"host"`
+	ConfirmedDirCount int     `json:"confirmed_dir_count"`
+	UnknownDirCount   int     `json:"unknown_dir_count"`
+	LegacyDirCount    int     `json:"legacy_dir_count"`
+	CrossHostCount    int     `json:"cross_host_count"`
+	CrossScopeCount   int     `json:"cross_scope_count"`
+	ID                uint    `json:"id"`
+	Domain            string  `json:"domain"`
+	Host              *string `json:"host"`
 	// StatusCode is null when no alive host was recorded for this name, which is what
 	// the dashboard draws as DEAD.
 	StatusCode  *int      `json:"status_code"`
@@ -90,12 +96,24 @@ const statusExpr = `(SELECT MIN(a.status_code) FROM alive_hosts a
 	  AND a.host = subdomains.host
 	  AND a.deleted_at IS NULL)`
 
+func assessedDirectoryCount(assessment string) string {
+	return strings.Replace(countFor("directory_findings", "d"), "AND d.deleted_at IS NULL", "AND d.deleted_at IS NULL AND d.assessment = '"+assessment+"'", 1)
+}
+func redirectCount(kind string) string {
+	return strings.Replace(countFor("redirect_observations", "r"), "AND r.deleted_at IS NULL", "AND r.deleted_at IS NULL AND r.kind = '"+kind+"'", 1)
+}
+
 var subdomainSelect = `subdomains.id, subdomains.domain, subdomains.host,
 	subdomains.first_seen, subdomains.last_changed, subdomains.last_seen,
 	` + countFor("vulnerabilities", "v") + ` AS vuln_count,
 	` + countFor("directory_findings", "d") + ` AS dir_count,
 	` + countFor("secret_findings", "c") + ` AS secret_count,
-	` + statusExpr + ` AS status_code`
+	` + statusExpr + ` AS status_code,
+ ` + assessedDirectoryCount("confirmed") + ` AS confirmed_dir_count,
+ ` + assessedDirectoryCount("unknown") + ` AS unknown_dir_count,
+ ` + assessedDirectoryCount("legacy") + ` AS legacy_dir_count,
+ ` + redirectCount("cross_host") + ` AS cross_host_count,
+ ` + redirectCount("cross_scope") + ` AS cross_scope_count`
 
 // ipPredicate matches a name that is a bare IPv4 address. dnsx -resp-only emits A
 // record values rather than names, so the subdomains table legitimately contains
@@ -123,8 +141,9 @@ func existsFor(table, alias, extra string) string {
 // page that was already fetched, which looks right and is wrong — the page would be
 // "the matching rows out of these 100" rather than "the first 100 matching rows".
 var subdomainFilters = map[string]string{
-	"ip":        ipPredicate,
-	"subdomain": "NOT " + ipPredicate,
+	"unknown-directories": existsFor("directory_findings", "d", ` AND d.assessment = 'unknown'`),
+	"ip":                  ipPredicate,
+	"subdomain":           "NOT " + ipPredicate,
 
 	// Anything scored above informational.
 	"vuln-critical": existsFor("vulnerabilities", "v",
@@ -223,7 +242,7 @@ func listSubdomainsByVolume(tx *gorm.DB, scope func(*gorm.DB) *gorm.DB, q listQu
 	}
 
 	return tx.Table("(?) AS ranked", inner).
-		Order("(vuln_count + dir_count + secret_count) " + direction + ", domain ASC, id ASC").
+		Order("(vuln_count + confirmed_dir_count + legacy_dir_count + secret_count) " + direction + ", domain ASC, id ASC").
 		Limit(q.Size).Offset(offset).
 		Scan(rows).Error
 }

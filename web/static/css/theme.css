@@ -265,6 +265,41 @@ button:not(:disabled), summary { cursor: pointer; }
 .chroma-finding-badge { background: color-mix(in srgb, var(--ui-coral) 13%, var(--ui-surface)); color: var(--ui-coral); border: 1px solid color-mix(in srgb, var(--ui-coral) 20%, var(--ui-line)); border-radius: 5px; }
 .chroma-finding-badge:hover, .chroma-finding-badge:focus-visible { border-color: var(--ui-coral); }
 .chroma-severity-tooltip { background: var(--ui-surface); color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: 10px; box-shadow: 0 8px 25px var(--ui-shadow); }
+
+/* Observation chips (the Nodes table "Observations" column) are one family:
+ * findings, directories and credentials share an identical box and typeface,
+ * so a node's row reads as one run of chips. They used to be three unrelated
+ * widgets -- a 10px black finding badge, an 11.5px status pill and an unstyled
+ * ~14px redirect button -- which is what made the cell look assembled by
+ * accident. Only colour separates them now: --alert for things worth a look
+ * (findings, redirecting directories), --idle for plain counts. */
+.chroma-obs-badge {
+  display: inline-flex; align-items: center; gap: .35rem;
+  padding: .3rem .55rem; margin: 0;
+  font-family: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: .66rem; font-weight: 800; line-height: 1; letter-spacing: .01em;
+  border: 1px solid var(--ui-line); border-radius: 3px; white-space: nowrap;
+}
+/* The colour rules are written as compound selectors so their specificity
+ * (0,2,0) clears Tailwind Preflight's `[type='button'] { background-color:
+ * transparent }` (0,1,0) no matter the stylesheet order -- without this the
+ * button chips (Findings, redirecting directories) render as bare text with the
+ * fill stripped off, which is exactly the "no box, just text" regression. */
+/* The fills are mixed off --ui-muted / --ui-coral rather than taken straight
+ * from --ui-surface-soft: on the active dark palette that token (#131922) is
+ * within ~3 levels of the row behind it (#10151b), so a surface-soft chip
+ * reads as text with no box. A muted/coral tint plus a stronger border lifts
+ * every chip clear of the row. */
+.chroma-obs-badge.chroma-obs-badge--idle { color: var(--ui-ink); background: color-mix(in srgb, var(--ui-muted) 15%, var(--ui-surface)); border-color: color-mix(in srgb, var(--ui-muted) 36%, var(--ui-line)); }
+.chroma-obs-badge.chroma-obs-badge--alert { color: var(--ui-coral); background: color-mix(in srgb, var(--ui-coral) 20%, var(--ui-surface)); border-color: color-mix(in srgb, var(--ui-coral) 50%, var(--ui-line)); }
+/* --warn is amber, for the directories chip when the node redirects off-scope:
+ * worth attention like a finding, but a different axis, so it must not read as
+ * coral the way the Findings chip does. */
+.chroma-obs-badge.chroma-obs-badge--warn { color: var(--ui-amber); background: color-mix(in srgb, var(--ui-amber) 18%, var(--ui-surface)); border-color: color-mix(in srgb, var(--ui-amber) 50%, var(--ui-line)); }
+button.chroma-obs-badge { cursor: pointer; min-height: 0; transition: border-color .15s ease, background .15s ease, color .15s ease; }
+button.chroma-obs-badge.chroma-obs-badge--alert:hover, button.chroma-obs-badge.chroma-obs-badge--alert:focus-visible { border-color: var(--ui-coral); background: color-mix(in srgb, var(--ui-coral) 28%, var(--ui-surface)); }
+button.chroma-obs-badge.chroma-obs-badge--warn:hover, button.chroma-obs-badge.chroma-obs-badge--warn:focus-visible { border-color: var(--ui-amber); background: color-mix(in srgb, var(--ui-amber) 26%, var(--ui-surface)); }
+button.chroma-obs-badge.chroma-obs-badge--idle:hover, button.chroma-obs-badge.chroma-obs-badge--idle:focus-visible { border-color: var(--ui-muted); background: color-mix(in srgb, var(--ui-muted) 22%, var(--ui-surface)); }
 #severity-tooltip { position: fixed; z-index: 60; pointer-events: none; min-width: 11rem; max-width: min(20rem, calc(100vw - 2rem)); }
 #pager button, #profiles-pager button { border-radius: 9px; }
 #pager button:disabled, #profiles-pager button:disabled { opacity: .36; }
@@ -783,3 +818,30 @@ body.chroma-login-page { display: flex; justify-content: center; align-items: ce
 .settings-back { display: inline-flex; align-items: center; gap: .5rem; width: fit-content; margin-bottom: 1.1rem; font-size: .78rem; text-decoration: none; }
 .settings-back:hover { text-decoration: none; }
 .settings-back svg { width: 1rem; height: 1rem; flex: none; }
+
+.directory-assessment-note { display: block; color: var(--ui-muted); margin-top: 6px; font-size: .7rem; }
+.sub-dirs-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin: 12px 0; }
+.sub-dirs-controls .directory-assessment-control { margin: 0; }
+#node-redirect-details { align-self: center; }
+.directory-assessment-control { display: flex; align-items: center; gap: 12px; margin: 12px 0; color: var(--ui-ink); }
+.directory-assessment-control select { background: var(--ui-surface); color: var(--ui-ink); border: 1px solid var(--ui-line); padding: 8px; }
+/* Redirect observations dialog. A native <dialog>, centred explicitly
+ * (position:fixed + inset:0 + margin:auto, since the UA's own centring was
+ * overridden and the modal was pinning top-left), and dressed as one of the
+ * app's panels: surface + line border, 3px radius, display-font header and
+ * labels, mono data rows, secondary-button controls. */
+.redirect-details-dialog { position: fixed; inset: 0; margin: auto; width: min(620px, calc(100vw - 32px)); max-height: 85vh; overflow-y: auto; background: var(--ui-surface); color: var(--ui-ink); border: 1px solid var(--ui-line); border-radius: 3px; padding: 22px; box-shadow: 0 24px 60px -24px var(--ui-shadow); }
+.redirect-details-dialog::backdrop { background: var(--ui-scrim); }
+.redirect-details-dialog .st-panel-h { align-items: center; }
+.redirect-details-dialog ul { list-style: none; margin: 0; padding: 0; }
+.redirect-details-dialog li { border-top: 1px solid var(--ui-line); padding: 14px 0; }
+.redirect-details-dialog li:first-child { border-top: 0; padding-top: 2px; }
+.redirect-details-dialog li > strong { display: inline-block; margin-bottom: 8px; font-family: var(--font-display); font-size: .62rem; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: var(--ui-amber); }
+.redirect-details-dialog dl { margin: 0; }
+.redirect-details-dialog dt { margin-top: 11px; font-family: var(--font-display); font-size: .56rem; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--ui-muted); }
+.redirect-details-dialog dd { margin: 3px 0 0; font-family: var(--font-mono); font-size: .8rem; color: var(--ui-ink); overflow-wrap: anywhere; }
+.redirect-details-dialog dd a { color: var(--ui-rose); text-decoration: none; }
+.redirect-details-dialog dd a:hover { color: var(--ui-ink); text-decoration: underline; }
+.redirect-details-pager { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--ui-line); }
+.redirect-details-pager button:disabled { opacity: .4; cursor: not-allowed; }
+#redirect-details-page { font-family: var(--font-mono); font-size: .72rem; letter-spacing: .04em; color: var(--ui-muted); }
